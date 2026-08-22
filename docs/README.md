@@ -2,7 +2,7 @@
 
 ## What this is
 
-A broadcast graphics layer for Ultimate tournaments, built on top of UltiOrganizer 4.0 and the **Live! by BULA** 3.0.6 addon. It turns the tournament data an event is already keeping — the score, the clock, rosters, goals and assists — into graphics a video switcher can put on air, and gives the people running the broadcast somewhere to control them from.
+A broadcast graphics layer for Ultimate tournaments, extending **[Live! by BULA](https://github.com/layoutd/live-by-bula)** 3.0.6 (which itself runs on UltiOrganizer 4.0). It turns the tournament data an event is already keeping — the score, the clock, rosters, goals and assists — into graphics a video switcher can put on air, and gives the people running the broadcast somewhere to control them from.
 
 Three surfaces, for three different people:
 
@@ -24,7 +24,7 @@ Everything reads through Live!'s public JSON API. **No overlay touches the datab
 
 ### Requirements
 
-- UltiOrganizer 4.0 with Live! by BULA 3.0.6 installed and a published season.
+- Live! by BULA 3.0.6 installed and a published season — which brings UltiOrganizer 4.0 with it. Live!'s own [Terms of Use](https://github.com/layoutd/live-by-bula/blob/main/Terms%20of%20Use%20-%20Live%20by%20BULA.pdf) must be signed and returned to live@beachultimate.org before use.
 - PHP 8.3+, MariaDB 10.11+ (Live!'s own requirements).
 - `mod_rewrite` and `AllowOverride All` for the short URLs. The dev image (`docs/dev/Dockerfile.app`) has both. Without them everything still works through the long `?view=live/overlays/...` form.
 

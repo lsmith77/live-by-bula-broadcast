@@ -1,0 +1,10 @@
+Creative Commons Attribution-NonCommercial-NoDerivatives 4.0 International (CC BY-NC-ND 4.0)
+
+This work is licensed under the Creative Commons Attribution-NonCommercial-NoDerivatives 4.0 International License. To view a copy of this license, visit http://creativecommons.org/licenses/by-nc-nd/4.0/ or send a letter to Creative Commons, PO Box 1866, Mountain View, CA 94042, USA.
+
+Copyright © 2026 Lukas Kahwe Smith
+
+Matching the licence of Live! by BULA (live/LICENSE.txt), the application this
+extends. Live! by BULA is Copyright © 2025 BULA Ltd and is licensed separately;
+nothing here alters its terms, and this notice covers only the overlay code in
+this repository.
