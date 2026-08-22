@@ -1,0 +1,10 @@
+# Operator state, written by the web server. Per installation, not code:
+# what is on air, kit colours, and shared line-selection rooms.
+/conf/
+
+# Team logos are an installation's own data — the file being there IS the
+# configuration (shared/logos.php), so a logo committed here would brand
+# whichever team happens to hold that id on somebody else's tournament.
+# The directory is tracked; its contents are not.
+/logos/*
+!/logos/README.md
