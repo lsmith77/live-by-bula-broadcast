@@ -1,0 +1,1180 @@
+<?php
+/**
+ * Live! by BULA — Commentator.
+ *
+ *   /index.php?view=live/overlays/commentator&game=702
+ *   /s/702/talk                                          (short form)
+ *
+ * A second-screen reference for the person TALKING over the broadcast, not a
+ * graphic. Nothing here reaches a viewer, which inverts most of the constraints
+ * the overlays work under: it can be dense, it can be a few seconds behind, and
+ * it can show data with a caveat that a lower-third would have to refuse.
+ *
+ * Public and read-only. A commentator preparing for a game should not need an
+ * admin password, and there is nothing here that is not already on the public
+ * tournament site.
+ *
+ * Two modes, because the job has two shapes:
+ *
+ *   PREP  before and between games — rosters, per-player numbers, team form,
+ *         and links into the tournament site for anything deeper.
+ *   PLAY  during a point — who is on the field, in type big enough to read at a
+ *         glance rather than study.
+ *
+ * See docs/COMMENTATOR.md for the reasoning, in particular why jersey number is the
+ * primary index rather than player name.
+ */
+
+if (!defined('UO_ROUTED_VIEW')) {
+    http_response_code(404);
+    exit;
+}
+
+require_once __DIR__ . '/../conf/LocalConfig.php';
+require_once __DIR__ . '/shared/lines.php';
+
+use Overlays\Lines;
+
+$gameId = filter_input(INPUT_GET, 'game', FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
+
+/**
+ * A fresh room code, generated server-side so it is properly random.
+ *
+ * The page offers one rather than asking for one. Left to invent a code people
+ * reach for `12345` or `test`, and two commentary pairs at the same tournament
+ * then land in the same room and silently edit each other's lines mid-game.
+ * Random by default removes that; the field stays editable so the second person
+ * can type whatever the first one reads out.
+ */
+$suggestedCode = (new Lines())->generate();
+$mode = filter_input(INPUT_GET, 'mode') === 'play' ? 'play' : 'prep';
+
+$base = rtrim(defined('UO_URL_PREFIX') ? UO_URL_PREFIX : '/', '/');
+$json = static fn ($v): string => json_encode($v, JSON_UNESCAPED_SLASHES | JSON_HEX_TAG | JSON_HEX_AMP);
+?>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Commentator</title>
+<style>
+    :root { color-scheme: dark; }
+    * { box-sizing: border-box; }
+    body {
+        margin: 0; padding: 1.25rem 1.5rem 3rem;
+        font: 16px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif;
+        background: #0b1220; color: #e2e8f0;
+    }
+    .muted { color: #94a3b8; }
+    a { color: #7dd3fc; }
+
+    /* ---- header ----
+       The header is also the column header for everything below it. The page is
+       two columns of team content all the way down, so naming the teams once at
+       the top — home over the left column, away over the right — labels every
+       panel underneath and buys back the vertical space three repeated headings
+       were costing. It sticks, so the label survives a scroll. */
+    .top { position: sticky; top: 0; z-index: 20; background: #0b1220;
+           display: grid; grid-template-columns: 1fr auto 1fr; align-items: center;
+           gap: .5rem 1rem; padding: .15rem 0 .55rem;
+           border-bottom: 1px solid #1e293b; }
+    /* Available to assistive technology, absent from the layout. Used for the
+       fixture heading, which the visible header states as two names either side
+       of a score rather than as a sentence. */
+    .sr-only { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0;
+               overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
+
+    /* .teamhead is an <h2>: reset the UA heading box so the semantics cost
+       nothing visually. */
+    .teamhead { display: flex; align-items: baseline; gap: .45rem; min-width: 0;
+                margin: 0; font-size: 1rem; font-weight: 400; }
+    .teamhead .nm { font-size: 1.25rem; font-weight: 800; line-height: 1.15;
+                    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .teamhead .seed { color: #94a3b8; font-size: .75rem; font-weight: 600; white-space: nowrap; }
+    .teamhead a { font-size: .72rem; white-space: nowrap; }
+    .teamhead.away { flex-direction: row-reverse; justify-content: flex-start; text-align: right; }
+    .mid { text-align: center; }
+    .scoreline { font-size: 1.6rem; font-weight: 800; font-variant-numeric: tabular-nums;
+                 line-height: 1.1; }
+    .ctx { font-size: .8rem; color: #94a3b8; }
+    .toolbar { display: flex; align-items: center; gap: 1rem; flex-wrap: wrap;
+               padding: .55rem 0 0; }
+    .toolbar .tabs { margin-left: auto; }
+    @media (max-width: 820px) {
+        .top { grid-template-columns: 1fr auto; }
+        .teamhead.away { grid-column: 1 / -1; flex-direction: row; justify-content: flex-start; text-align: left; }
+    }
+    .badge { display: inline-block; padding: .1rem .5rem; border-radius: 999px;
+             font-size: .75rem; font-weight: 700; }
+    .badge.live { background: #14532d; color: #4ade80; }
+    .badge.done { background: #1e293b; color: #94a3b8; }
+    .badge.soon { background: #1e3a5f; color: #7dd3fc; }
+
+    .tabs { display: flex; gap: .35rem; }
+    .tabs button { background: #16213a; border: 1px solid #1e293b; color: #cbd5e1;
+                   padding: .45rem 1rem; border-radius: 5px; font: inherit; font-weight: 600;
+                   font-size: .85rem; cursor: pointer; }
+    .tabs button.on { background: #1d4ed8; border-color: #1d4ed8; color: #fff; }
+
+    /* ---- two-column layouts ---- */
+    .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 1.25rem; margin-top: 1rem; }
+    @media (max-width: 820px) { .cols { grid-template-columns: 1fr; } }
+    .panel { background: #0f1a30; border: 1px solid #1e293b; border-radius: 6px; padding: .85rem 1rem; }
+    .panel h2 { margin: 0 0 .6rem; font-size: .95rem; display: flex; align-items: baseline; gap: .5rem; }
+    .panel h2 .seed { color: #94a3b8; font-size: .8rem; font-weight: 600; }
+    .panel h2 a { margin-left: auto; font-size: .75rem; }
+
+    /* ---- roster ---- */
+    table.roster { width: 100%; border-collapse: collapse; }
+    .roster th { text-align: right; font-size: .68rem; text-transform: uppercase;
+                 letter-spacing: .06em; color: #94a3b8; font-weight: 600; padding: 0 .3rem .3rem; }
+    .roster th.n, .roster th.who { text-align: left; }
+    .roster td { padding: .22rem .3rem; border-top: 1px solid #16213a;
+                 font-variant-numeric: tabular-nums; text-align: right; }
+    .roster td.n { width: 2.6rem; text-align: left; color: #94a3b8; font-weight: 700; }
+    .roster td.who { text-align: left; }
+    .roster td.who button { background: none; border: 0; color: #e2e8f0; font: inherit;
+                            font-weight: 600; cursor: pointer; padding: 0; text-align: left; }
+    .roster td.who button:hover { color: #7dd3fc; text-decoration: underline; }
+    /* A player with no points yet is the DEFAULT state, not an exception — on a
+       fresh game it is most of the roster. So the row dims only its statistics,
+       never the jersey number or the name, which are the two things a
+       commentator is looking the row up BY. */
+    .roster tr.quiet td:not(.n):not(.who) { color: #94a3b8; }
+
+    /* ---- team stats ---- */
+    .stat { display: flex; justify-content: space-between; gap: 1rem; padding: .25rem 0;
+            border-top: 1px solid #16213a; font-variant-numeric: tabular-nums; }
+    .stat:first-of-type { border-top: 0; }
+    .stat b { font-weight: 700; }
+
+    /* ---- play mode ---- */
+    .step { margin-top: 1rem; }
+    .pickhead { display: flex; align-items: baseline; gap: .75rem; flex-wrap: wrap;
+                margin-bottom: .4rem; }
+    .pickhead .count { font-weight: 700; font-variant-numeric: tabular-nums; }
+    .pickhead .count.ok { color: #4ade80; }
+    .pickhead .count.over { color: #f87171; }
+    .nums { display: flex; flex-wrap: wrap; gap: .35rem; }
+    .nums button { min-width: 3.1rem; padding: .5rem .4rem; border-radius: 5px;
+                   border: 1px solid #334155; background: #0b1220; color: #cbd5e1;
+                   font: inherit; font-weight: 700; font-variant-numeric: tabular-nums;
+                   cursor: pointer; line-height: 1.1; }
+    .nums button small { display: block; font-size: .62rem; font-weight: 500;
+                         color: #94a3b8; letter-spacing: .02em; }
+    .nums button.on { background: #1d4ed8; border-color: #60a5fa; color: #fff; }
+    .nums button.on small { color: #dbeafe; }
+
+    .onfield { margin-top: .75rem; }
+    .onfield .side { padding: .6rem .9rem; border-radius: 6px; background: #0f1a30;
+                     border: 1px solid #1e293b; margin-bottom: .6rem; }
+    .onfield .side.away { background: #131c33; }
+    .onfield .side h3 { margin: 0 0 .35rem; font-size: .8rem; text-transform: uppercase;
+                        letter-spacing: .1em; color: #94a3b8; font-weight: 700; }
+    .onfield .line { display: flex; flex-wrap: wrap; gap: .35rem 1.4rem; }
+    .onfield .p { font-size: 1.5rem; font-weight: 700; line-height: 1.25; }
+    .onfield .p span { color: #94a3b8; font-size: 1.05rem; font-weight: 600; margin-right: .3rem;
+                       font-variant-numeric: tabular-nums; }
+    .onfield .empty { color: #94a3b8; font-size: .95rem; }
+    .barbtn { background: #16213a; border: 1px solid #334155; color: #cbd5e1; font: inherit;
+              font-size: .82rem; padding: .4rem .8rem; border-radius: 5px; cursor: pointer; }
+    .barbtn.primary { background: #1d4ed8; border-color: #1d4ed8; color: #fff; font-weight: 600; }
+
+    /* ---- player detail overlay ---- */
+    .sheet { position: fixed; inset: 0; background: rgb(2 6 16 / 72%); display: none;
+             align-items: center; justify-content: center; padding: 1rem; z-index: 50; }
+    .sheet.open { display: flex; }
+    .sheet .card { background: #0f1a30; border: 1px solid #334155; border-radius: 8px;
+                   padding: 1.1rem 1.3rem; max-width: 540px; width: 100%;
+                   max-height: 90vh; overflow-y: auto; }
+    .sheet h3 { margin: 0 0 .1rem; font-size: 1.35rem; }
+    .sheet .sub { color: #94a3b8; font-size: .85rem; margin-bottom: .8rem; }
+    .sheet .grid { display: grid; gap: .3rem .8rem; font-variant-numeric: tabular-nums; }
+    .sheet .grid .h { font-size: .68rem; text-transform: uppercase; letter-spacing: .06em;
+                      color: #94a3b8; font-weight: 600; }
+    .sheet .grid .v { text-align: right; font-weight: 700; }
+    .sheet h4 { margin: 1rem 0 .4rem; font-size: .7rem; text-transform: uppercase;
+                letter-spacing: .08em; color: #94a3b8; font-weight: 700; }
+    .sheet .facts { display: grid; grid-template-columns: 1fr auto; gap: .2rem .8rem;
+                    font-size: .87rem; font-variant-numeric: tabular-nums; }
+    .sheet .facts .k { color: #94a3b8; }
+    .sheet .facts .v { font-weight: 700; text-align: right; }
+    /* Game-by-game: the line a commentator reaches for when a name comes up. */
+    .hist { border-top: 1px solid #16213a; padding: .35rem 0; display: flex;
+            gap: .6rem; align-items: baseline; font-size: .87rem; }
+    .hist .opp { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis;
+                 white-space: nowrap; }
+    .hist .res { color: #94a3b8; font-variant-numeric: tabular-nums; }
+    .hist .res.w { color: #4ade80; font-weight: 700; }
+    .hist .res.l { color: #f87171; }
+    .hist .ga { font-weight: 700; font-variant-numeric: tabular-nums; min-width: 4.2rem;
+                text-align: right; }
+    .sheet footer { display: flex; gap: .6rem; align-items: center; margin-top: 1rem; }
+    .sheet footer .barbtn { margin-left: auto; }
+
+    /* Room code: shown, not asked for. A random one is generated on first load
+       so two commentary pairs at one tournament cannot both pick "12345". */
+    .sync { display: flex; align-items: center; gap: .4rem; font-size: .8rem; }
+    .sync .code { background: #0b1220; border: 1px solid #334155; color: #7dd3fc;
+                  border-radius: 4px; padding: .3rem .45rem; font-weight: 700;
+                  letter-spacing: .12em; text-transform: uppercase;
+                  font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+    /* A 28-player squad needs its own scroll; the panel header stays visible. */
+    .scroll { max-height: 46vh; overflow-y: auto; overscroll-behavior: contain; }
+    .scroll table { width: 100%; }
+    .roster thead th { position: sticky; top: 0; background: #0f1a30; z-index: 1; }
+
+    .chip { background: #16213a; border: 1px solid #1e293b; color: #cbd5e1; font: inherit;
+            font-size: .78rem; font-weight: 600; padding: .25rem .6rem; border-radius: 999px;
+            cursor: pointer; }
+    .chip.on { background: #1d4ed8; border-color: #1d4ed8; color: #fff; }
+
+    .err { padding: 1rem 1.25rem; background: #3f1d1d; border-left: 3px solid #ef4444;
+           border-radius: 4px; margin-top: 1rem; }
+</style>
+</head>
+<body>
+
+<!--
+  The visible header names each team once, positioned over that team's column.
+  That works by proximity, which a screen reader does not have, so the same
+  naming is carried structurally: an <h1> stating the fixture, an <h2> per team
+  that is visually the header text itself, and aria-labelledby on every panel
+  below pointing back at it. One naming, two ways of reaching it.
+-->
+<header class="top">
+    <h1 class="sr-only" id="fixture">Commentator</h1>
+    <h2 class="teamhead home" id="headHome"></h2>
+    <div class="mid">
+        <div class="scoreline" id="score" aria-labelledby="fixture">–</div>
+        <div class="ctx" id="ctx"></div>
+    </div>
+    <h2 class="teamhead away" id="headAway"></h2>
+</header>
+<div class="toolbar">
+    <div class="sync" id="sync"></div>
+    <div class="tabs" role="group" aria-label="View">
+        <button id="tabPrep" type="button" aria-pressed="true">Prep</button>
+        <button id="tabPlay" type="button" aria-pressed="false">Play-by-play</button>
+    </div>
+</div>
+
+<main id="body"><p class="muted">Loading…</p></main>
+
+<div class="sheet" id="sheet" role="dialog" aria-modal="true" aria-labelledby="sheetName">
+    <div class="card" id="sheetCard"></div>
+</div>
+
+<script>
+(function () {
+    'use strict';
+
+    var CONFIG = {
+        base: <?= $json($base) ?>,
+        api: <?= $json($base . '/index.php?view=live/api') ?>,
+        gameId: <?= $json($gameId ?: null) ?>,
+        mode: <?= $json($mode) ?>,
+        linesUrl: <?= $json($base . '/index.php?view=live/overlays/lines') ?>,
+        suggestedCode: <?= $json($suggestedCode) ?>,
+        codeLength: <?= (int) Lines::CODE_LENGTH ?>
+    };
+
+    var el = function (tag, cls, text) {
+        var n = document.createElement(tag);
+        if (cls) { n.className = cls; }
+        if (text !== undefined && text !== null) { n.textContent = text; }
+        return n;
+    };
+    var link = function (href, text, cls) {
+        var a = el('a', cls, text);
+        a.href = href;
+        a.target = '_blank';
+        a.rel = 'noopener';
+        return a;
+    };
+
+    var body = document.getElementById('body');
+    var state = {
+        payload: null,
+        teams: {},          // team_id -> full team payload (roster, stats)
+        mode: CONFIG.mode,
+        // Which players are on the field, per team. Local to this browser for
+        // now; docs/COMMENTATOR.md 6 describes sharing it between two commentators,
+        // which needs a store and is deliberately not in this first version.
+        line: {},
+        step: 1,
+        lastScore: null
+    };
+
+    /* ---------------------------------------------------------------
+       Data
+       --------------------------------------------------------------- */
+
+    function readJson(r) {
+        if (r.status === 503) { throw new Error('Live! is in maintenance mode.'); }
+        return r.json().then(function (b) {
+            if (!r.ok || typeof b.error === 'string') {
+                throw new Error(b.error || ('HTTP ' + r.status));
+            }
+            return b;
+        });
+    }
+
+    function load() {
+        return fetch(CONFIG.api + '&entity=games&id=' + encodeURIComponent(CONFIG.gameId),
+            { credentials: 'same-origin' })
+            .then(readJson)
+            .then(function (p) {
+                state.payload = p;
+                var t = p.teams || {};
+                var ids = [t.hometeam, t.visitorteam].filter(Boolean)
+                    .map(function (x) { return x.team_id; }).filter(Boolean);
+                return Promise.all(ids.map(function (id) {
+                    return fetch(CONFIG.api + '&entity=teams&id=' + encodeURIComponent(id),
+                        { credentials: 'same-origin' })
+                        .then(readJson)
+                        .then(function (team) { state.teams[id] = team; })
+                        .catch(function () { /* roster is optional */ });
+                }));
+            });
+    }
+
+    /** Per-game goals and assists, straight from the goal list. */
+    function gameStats(teamIsHome) {
+        var out = {};
+        (state.payload.goals || []).forEach(function (g) {
+            if ((Number(g.ishomegoal) === 1) !== teamIsHome) { return; }
+            var add = function (id, key) {
+                if (!id) { return; }
+                out[id] = out[id] || { goals: 0, assists: 0 };
+                out[id][key] += 1;
+            };
+            add(g.scorer, 'goals');
+            add(g.assist, 'assists');
+        });
+        return out;
+    }
+
+    function sides() {
+        var t = state.payload.teams || {};
+        return [
+            { key: 'home', team: t.hometeam || {}, isHome: true },
+            { key: 'away', team: t.visitorteam || {}, isHome: false }
+        ];
+    }
+
+    /**
+     * How the roster is ordered.
+     *
+     * Number is the default and stays the default: a commentator sees a shirt
+     * and needs the name, which is a number lookup. The others answer a
+     * different question — "who is doing the damage" — and are for prep and for
+     * between points, not for identifying somebody mid-play.
+     *
+     * "Blocks" is conditional rather than fixed — see blocksTracked(). It ranks by
+     * the tournament total because there is no per-game block list to derive a
+     * this-game figure from, unlike goals and assists.
+     */
+    function sortOptions() {
+        var opts = [
+            { key: 'num', label: '#' },
+            { key: 'goals', label: 'Goals' },
+            { key: 'assists', label: 'Assists' },
+            { key: 'points', label: 'Points' },
+            { key: 'tour', label: 'Tournament' }
+        ];
+        if (blocksTracked()) { opts.push({ key: 'blocks', label: 'Blocks' }); }
+        return opts;
+    }
+    var sortKey = 'num';
+
+    function sortRoster(list) {
+        var byName = function (a, b) { return a.name.localeCompare(b.name); };
+        var desc = function (get) {
+            return function (a, b) { return get(b) - get(a) || byName(a, b); };
+        };
+        if (sortKey === 'goals') { return list.sort(desc(function (p) { return p.gGoals; })); }
+        if (sortKey === 'assists') { return list.sort(desc(function (p) { return p.gAssists; })); }
+        if (sortKey === 'points') { return list.sort(desc(function (p) { return p.gTotal; })); }
+        if (sortKey === 'tour') { return list.sort(desc(function (p) { return p.tTotal; })); }
+        if (sortKey === 'blocks') { return list.sort(desc(function (p) { return p.tBlocks; })); }
+        return list.sort(function (a, b) {
+            var an = a.num === null || a.num === undefined ? 9999 : Number(a.num);
+            var bn = b.num === null || b.num === undefined ? 9999 : Number(b.num);
+            return an - bn || byName(a, b);
+        });
+    }
+
+    /** Roster sorted by jersey number — the lookup a commentator performs most. */
+    function roster(side) {
+        var team = state.teams[side.team.team_id];
+        var players = (team && team.players) || [];
+        var per = gameStats(side.isHome);
+        return players.map(function (p) {
+            var g = per[p.player_id] || { goals: 0, assists: 0 };
+            return {
+                id: p.player_id,
+                num: p.num,
+                name: ((p.firstname || '') + ' ' + (p.lastname || '')).trim() || '—',
+                gGoals: g.goals, gAssists: g.assists, gTotal: g.goals + g.assists,
+                tGoals: Number(p.done) || 0,
+                tAssists: Number(p.fedin) || 0,
+                tTotal: Number(p.total) || 0,
+                // null means "this installation does not track blocks", 0 means
+                // "tracked, none yet" — see blocksTracked().
+                tBlocks: (p.deftotal === undefined || p.deftotal === null)
+                    ? null : (Number(p.deftotal) || 0),
+                tCallahan: Number(p.callahan) || 0,
+                games: Number(p.games) || 0,
+                // Derived rather than read: the roster row carries totalavg only
+                // in the variant Live! serves with defence stats switched off.
+                avg: Number(p.games) > 0 ? (Number(p.total) || 0) / Number(p.games) : 0,
+                team: side.team,
+                division: p.seriesname || ''
+            };
+        });
+    }
+
+    /**
+     * Whether this installation records blocks at all.
+     *
+     * Blocks reach us as `deftotal` on the roster row, and only when Live! has
+     * `ShowDefenseStats` on — otherwise TeamManager serves a roster variant
+     * without the field. So the test is for the field being THERE, not for it
+     * being non-zero: absent means "this installation does not track blocks" and
+     * the column should not exist, while a present 0 means "tracked, nobody has
+     * one yet" and is worth saying out loud. docs/STUDIO.md 3.3.
+     *
+     * The count shares the tournament columns' rule: completed games only, so a
+     * block made in the game currently on the clock is not in it yet.
+     */
+    function blocksTracked() {
+        return sides().some(function (s) {
+            var team = state.teams[s.team.team_id];
+            return ((team && team.players) || []).some(function (p) {
+                return p.deftotal !== undefined && p.deftotal !== null;
+            });
+        });
+    }
+
+    /** Number order regardless of the display sort — the picker is a lookup. */
+    function rosterByNumber(side) {
+        var list = roster(side);
+        return list.slice().sort(function (a, b) {
+            var an = a.num === null || a.num === undefined ? 9999 : Number(a.num);
+            var bn = b.num === null || b.num === undefined ? 9999 : Number(b.num);
+            return an - bn || a.name.localeCompare(b.name);
+        });
+    }
+
+    /* ---------------------------------------------------------------
+       Header
+       --------------------------------------------------------------- */
+
+    function renderTop() {
+        var p = state.payload, r = p.game_result || {}, i = p.game_info || {};
+        var s = sides();
+
+        // Each name sits over the column its panels occupy, so nothing below
+        // needs to name the team again.
+        [['headHome', s[0]], ['headAway', s[1]]].forEach(function (pair) {
+            var host = document.getElementById(pair[0]);
+            var side = pair[1];
+            var parts = [el('span', 'nm', side.team.name || '—')];
+            if (side.team.seed) { parts.push(el('span', 'seed', 'seed ' + side.team.seed)); }
+            if (side.team.team_id) {
+                parts.push(link(CONFIG.base + '/index.php?view=teamcard&team=' + side.team.team_id,
+                    'team ↗'));
+            }
+            // Same DOM order both sides — name, seed, link — so it is read in that
+            // order. The away side is flipped visually with row-reverse, not by
+            // reversing the nodes, which would make a screen reader announce the
+            // heading backwards.
+            host.replaceChildren.apply(host, parts);
+        });
+
+        document.getElementById('fixture').textContent =
+            (s[0].team.name || '?') + ' versus ' + (s[1].team.name || '?');
+        document.getElementById('score').textContent =
+            (Number(r.homescore) || 0) + ' – ' + (Number(r.visitorscore) || 0);
+
+        var ctx = document.getElementById('ctx');
+        ctx.replaceChildren();
+        var live = Number(r.isongoing) === 1;
+        var cls = live ? 'live' : (r.status === 'completed' ? 'done' : 'soon');
+        ctx.append(el('span', 'badge ' + cls, live ? 'Live' : (r.status === 'completed' ? 'Final' : 'Scheduled')));
+        var bits = [i.poolname, i.gamename,
+            i.fieldname ? 'Field ' + i.fieldname : null, i.placename].filter(Boolean);
+        ctx.append(document.createTextNode(' ' + bits.join(' · ')));
+    }
+
+    /* ---------------------------------------------------------------
+       Team stats — the same block under both modes
+       --------------------------------------------------------------- */
+
+    function teamStatsPanel(side) {
+        var t = side.team;
+        var full = state.teams[t.team_id] || {};
+        var i = state.payload.game_info || {};
+        // No visible heading: the sticky header above names this column's team,
+        // and the team page link lives up there with the name. The association is
+        // carried for assistive technology by pointing at that heading.
+        var panel = el('div', 'panel');
+        panel.setAttribute('role', 'region');
+        panel.setAttribute('aria-labelledby', side.isHome ? 'headHome' : 'headAway');
+
+        var row = function (label, value) {
+            var d = el('div', 'stat');
+            d.append(el('span', 'muted', label), el('b', null, value));
+            panel.append(d);
+        };
+        var st = full.stats || {};
+        var pts = full.points || {};
+        row('Record (W–L)', (t.wins !== undefined ? t.wins : (st.wins || 0))
+            + '–' + (t.losses !== undefined ? t.losses : (st.losses || 0)));
+        row('Games played', st.games !== undefined ? st.games : (t.games || 0));
+        row('Points for / against',
+            (pts.scores !== undefined ? pts.scores : (t['for'] || 0))
+            + ' / ' + (pts.against !== undefined ? pts.against : (t.against || 0)));
+        if (t.diff !== undefined) { row('Difference', (t.diff > 0 ? '+' : '') + t.diff); }
+        if (full.poolname) { row('Pool', full.poolname); }
+        if (t.final_standing) { row('Standing', t.final_standing); }
+
+        var links = el('div', 'stat');
+        links.append(el('span', 'muted', 'Tournament'));
+        var wrap = el('span');
+        if (i.pool) {
+            wrap.append(link(CONFIG.base + '/index.php?view=poolstatus&pool=' + i.pool, 'pool ↗'));
+            wrap.append(document.createTextNode('  '));
+        }
+        if (i.series) {
+            wrap.append(link(CONFIG.base + '/index.php?view=seriesstatus&series=' + i.series, 'division ↗'));
+        }
+        links.append(wrap);
+        panel.append(links);
+
+        return panel;
+    }
+
+    function teamStatsRow() {
+        var cols = el('div', 'cols');
+        sides().forEach(function (s) { cols.append(teamStatsPanel(s)); });
+        return cols;
+    }
+
+    /* ---------------------------------------------------------------
+       Prep mode
+       --------------------------------------------------------------- */
+
+    function rosterPanel(side) {
+        var panel = el('div', 'panel');
+        panel.setAttribute('role', 'region');
+        panel.setAttribute('aria-labelledby', side.isHome ? 'headHome' : 'headAway');
+        var list = sortRoster(roster(side));
+        if (!list.length) {
+            panel.append(el('p', 'muted', 'No roster available for this team.'));
+            return panel;
+        }
+
+        var blocks = blocksTracked();
+        var table = el('table', 'roster');
+        table.setAttribute('aria-label', (side.team.name || 'Team') + ' roster');
+        var thead = el('thead'), hr = el('tr');
+        var cols = [['n', '#'], ['who', 'Player'], ['', 'G'], ['', 'A'], ['', 'Pts'], ['', 'Tot']];
+        if (blocks) { cols.push(['', 'Blk']); }
+        cols.forEach(function (c) { hr.append(el('th', c[0], c[1])); });
+        thead.append(hr);
+        table.append(thead);
+
+        var tb = el('tbody');
+        list.forEach(function (p) {
+            var tr = el('tr', p.gTotal ? '' : 'quiet');
+            tr.append(el('td', 'n', p.num === null || p.num === undefined ? '' : p.num));
+
+            var who = el('td', 'who');
+            var btn = el('button', null, p.name);
+            btn.type = 'button';
+            btn.title = 'Details';
+            btn.addEventListener('click', function () { openSheet(p, side); });
+            who.append(btn);
+            tr.append(who);
+
+            tr.append(el('td', null, p.gGoals || '·'));
+            tr.append(el('td', null, p.gAssists || '·'));
+            tr.append(el('td', null, p.gTotal || '·'));
+            tr.append(el('td', null, p.tTotal || '·'));
+            if (blocks) { tr.append(el('td', null, p.tBlocks || '·')); }
+            tb.append(tr);
+        });
+        table.append(tb);
+        // A 28-player squad does not fit a screen beside a second one, so the
+        // list scrolls inside its panel and the header stays put.
+        var scroll = el('div', 'scroll');
+        scroll.append(table);
+        panel.append(scroll);
+        panel.append(el('p', 'muted',
+            list.length + ' players · G / A / Pts are this game, Tot is the tournament'
+            + (blocks ? ', Blk is tournament blocks from completed games' : '')));
+        return panel;
+    }
+
+    function renderPrep() {
+        body.replaceChildren();
+
+        var bar = el('div', 'pickhead');
+        bar.append(el('span', 'muted', 'Sort by'));
+        sortOptions().forEach(function (s) {
+            var b = el('button', 'chip' + (sortKey === s.key ? ' on' : ''), s.label);
+            b.type = 'button';
+            b.setAttribute('aria-pressed', sortKey === s.key ? 'true' : 'false');
+            b.addEventListener('click', function () { sortKey = s.key; renderPrep(); });
+            bar.append(b);
+        });
+        // Team stats first, player lists below.
+        //
+        // The squads are 28 a side and scroll; the team block is short and
+        // fixed. Putting the short thing on top keeps it permanently in view and
+        // means the only content that ever leaves the screen is the tail of a
+        // roster — which is the part a commentator is least likely to want in a
+        // hurry, since the players who matter are near the top of any sort.
+        body.append(teamStatsRow());
+        body.append(bar);
+
+        var cols = el('div', 'cols');
+        sides().forEach(function (s) { cols.append(rosterPanel(s)); });
+        body.append(cols);
+    }
+
+    /* ---------------------------------------------------------------
+       Player detail
+       --------------------------------------------------------------- */
+
+    var sheet = document.getElementById('sheet');
+
+    /**
+     * Per-player scoring history, cached for the life of the page.
+     *
+     * `entity=playerevents` is the same public feed behind Live!'s own player
+     * page, so nothing here is a data point a spectator could not already look
+     * up. It is fetched when a sheet opens rather than with the rosters: 56
+     * players' histories are a lot of requests to make for the handful anyone
+     * clicks.
+     */
+    var eventsCache = {};
+
+    function loadEvents(playerId) {
+        if (eventsCache[playerId]) { return Promise.resolve(eventsCache[playerId]); }
+        return fetch(CONFIG.api + '&entity=playerevents&id=' + encodeURIComponent(playerId),
+            { credentials: 'same-origin' })
+            .then(readJson)
+            .then(function (b) {
+                eventsCache[playerId] = b.playerevents || {};
+                return eventsCache[playerId];
+            })
+            .catch(function () { return null; });
+    }
+
+    /** What this player did in one game, plus who they did it with. */
+    function summariseGame(g, playerId) {
+        var goals = 0, assists = 0, callahans = 0, partners = {};
+        (g.events || []).forEach(function (e) {
+            var scored = Number(e.scorer_id) === Number(playerId);
+            var fed = Number(e.assist_id) === Number(playerId);
+            if (scored) {
+                goals += 1;
+                if (Number(e.iscallahan) === 1) { callahans += 1; }
+                if (e.assist_name) { partners[e.assist_name] = (partners[e.assist_name] || 0) + 1; }
+            }
+            if (fed) {
+                assists += 1;
+                if (e.scorer_name) { partners[e.scorer_name] = (partners[e.scorer_name] || 0) + 1; }
+            }
+        });
+        return { goals: goals, assists: assists, callahans: callahans, partners: partners };
+    }
+
+    function openSheet(p, side) {
+        var card = document.getElementById('sheetCard');
+        card.replaceChildren();
+        var name = el('h3', null, (p.num !== null && p.num !== undefined ? '#' + p.num + '  ' : '') + p.name);
+        name.id = 'sheetName';
+        card.append(name);
+        card.append(el('div', 'sub',
+            [side.team.name, p.division].filter(Boolean).join(' · ')));
+
+        // Blocks earn a column here on the same condition as the roster, so the
+        // sheet and the list never disagree about whether the number exists.
+        var blocks = blocksTracked();
+        var head = ['', 'G', 'A', 'Pts'];
+        var rows = [
+            ['This game', p.gGoals, p.gAssists, p.gTotal],
+            ['Tournament', p.tGoals, p.tAssists, p.tTotal]
+        ];
+        if (blocks) {
+            head.push('Blk');
+            rows[0].push('—');            // no per-game block list exists to split it
+            rows[1].push(p.tBlocks);
+        }
+        var grid = el('div', 'grid');
+        grid.style.gridTemplateColumns = '1fr' + ' auto'.repeat(head.length - 1);
+        [head].concat(rows).forEach(function (row, ri) {
+            row.forEach(function (cell, ci) {
+                grid.append(el('div', ri === 0 || ci === 0 ? 'h' : 'v',
+                    ri === 0 && ci === 0 ? '' : cell));
+            });
+        });
+        card.append(grid);
+
+        var facts = el('div', 'facts');
+        var fact = function (k, v) {
+            facts.append(el('div', 'k', k), el('div', 'v', v));
+        };
+        fact('Games played', p.games || 0);
+        if (p.games) { fact('Points per game', p.avg.toFixed(1)); }
+        if (p.tCallahan) { fact('Callahans', p.tCallahan); }
+        if (blocks) { fact('Blocks', p.tBlocks); }
+        if (p.num !== null && p.num !== undefined) { fact('Jersey', '#' + p.num); }
+        card.append(facts);
+        card.append(el('p', 'muted',
+            'Tournament figures cover completed games, so this game is not in them yet.'));
+
+        var histHead = el('h4', null, 'Game by game');
+        var histBox = el('div');
+        histBox.append(el('p', 'muted', 'Loading…'));
+        card.append(histHead, histBox);
+
+        var foot = el('footer');
+        foot.append(link(CONFIG.base + '/index.php?view=playercard&player=' + p.id,
+            'Full player page ↗'));
+        var close = el('button', 'barbtn', 'Close');
+        close.type = 'button';
+        close.addEventListener('click', closeSheet);
+        foot.append(close);
+        card.append(foot);
+
+        sheet.classList.add('open');
+        // Move focus into the dialog and remember where it came from, so keyboard
+        // and screen-reader users are not left behind it with no way back.
+        lastFocus = document.activeElement;
+        close.focus();
+
+        var openedFor = p.id;
+        loadEvents(p.id).then(function (data) {
+            // The reader may have closed this sheet and opened another one while
+            // the request was in flight.
+            if (!sheet.classList.contains('open') || openedFor !== p.id) { return; }
+            histBox.replaceChildren();
+
+            var games = (data && data.games) || [];
+            if (!games.length) {
+                histBox.append(el('p', 'muted', 'No scoring recorded yet this tournament.'));
+                return;
+            }
+
+            var partners = {};
+            games.slice().reverse().forEach(function (g) {
+                var s = summariseGame(g, p.id);
+                Object.keys(s.partners).forEach(function (name) {
+                    partners[name] = (partners[name] || 0) + s.partners[name];
+                });
+
+                var isHome = Number(g.hometeam) === Number(side.team.team_id);
+                var own = Number(isHome ? g.homescore : g.visitorscore) || 0;
+                var opp = Number(isHome ? g.visitorscore : g.homescore) || 0;
+                var oppName = (isHome ? g.visitorteamname : g.hometeamname) || 'Opponent';
+
+                var row = el('div', 'hist');
+                row.append(el('span', 'opp', 'v ' + oppName));
+                row.append(el('span', 'res ' + (own > opp ? 'w' : (own < opp ? 'l' : '')),
+                    own + '–' + opp));
+                var line = s.goals + 'G ' + s.assists + 'A'
+                    + (s.callahans ? ' ·' + s.callahans + 'C' : '');
+                row.append(el('span', 'ga', line));
+                histBox.append(row);
+            });
+
+            // The connection worth mentioning on air: who this player most often
+            // scores with, in either direction.
+            var top = Object.keys(partners).sort(function (a, b) {
+                return partners[b] - partners[a];
+            })[0];
+            if (top && partners[top] > 1) {
+                histBox.append(el('p', 'muted',
+                    'Most frequent connection: ' + top + ' (' + partners[top] + ')'));
+            }
+        });
+    }
+
+    var lastFocus = null;
+
+    function closeSheet() {
+        if (!sheet.classList.contains('open')) { return; }
+        sheet.classList.remove('open');
+        if (lastFocus && lastFocus.focus) { lastFocus.focus(); }
+        lastFocus = null;
+    }
+
+    // Keep Tab inside the dialog while it is open. Without this, tabbing walks
+    // out into the roster behind it, which is still visible but not reachable.
+    sheet.addEventListener('keydown', function (e) {
+        if (e.key !== 'Tab') { return; }
+        var focusable = sheet.querySelectorAll('a[href], button:not([disabled])');
+        if (!focusable.length) { return; }
+        var first = focusable[0], last = focusable[focusable.length - 1];
+        if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+        else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+    });
+
+    sheet.addEventListener('click', function (e) { if (e.target === sheet) { closeSheet(); } });
+    document.addEventListener('keydown', function (e) {
+        if (e.key === 'Escape') { closeSheet(); }
+    });
+
+    /* ---------------------------------------------------------------
+       Play-by-play mode
+       --------------------------------------------------------------- */
+
+    function lineFor(side) {
+        var id = String(side.team.team_id);
+        state.line[id] = state.line[id] || [];
+        return state.line[id];
+    }
+
+    function toggleNum(side, playerId) {
+        var line = lineFor(side);
+        var at = line.indexOf(playerId);
+        if (at === -1) { line.push(playerId); } else { line.splice(at, 1); }
+        pushLine(side.team.team_id, line);
+        renderPlay();
+    }
+
+    /* ---------------------------------------------------------------
+       Sharing the line between two commentators
+
+       The room is a GAME plus a CODE. The code is a namespace, not a
+       credential — see docs/COMMENTATOR.md section 6 for why that is the right gate
+       here and would be the wrong one for anything that reaches air.
+       --------------------------------------------------------------- */
+
+    var CODE_KEY = 'uo-lines-code-' + CONFIG.gameId;
+    var lastLocalWrite = 0;
+
+    function storedCode() {
+        try { return window.localStorage.getItem(CODE_KEY) || ''; } catch (e) { return ''; }
+    }
+
+    function rememberCode(code) {
+        try { window.localStorage.setItem(CODE_KEY, code); } catch (e) { /* private mode */ }
+    }
+
+    /**
+     * The code persists per game, and is only generated once.
+     *
+     * Regenerating on every load would be worse than useless: a commentator who
+     * reloaded mid-game would silently leave the room and stop seeing their
+     * partner's changes, with nothing on screen to say so.
+     */
+    var syncCode = storedCode();
+    if (!syncCode) {
+        syncCode = CONFIG.suggestedCode;
+        rememberCode(syncCode);
+    }
+
+    function pushLine(teamId, players) {
+        if (!teamId) { return; }
+        lastLocalWrite = Date.now();
+        fetch(CONFIG.linesUrl, {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                game: CONFIG.gameId, code: syncCode,
+                team: teamId, players: players
+            })
+        }).catch(function () { /* sharing is best-effort; the local pick still stands */ });
+    }
+
+    function pullLines() {
+        if (!CONFIG.gameId || !syncCode) { return; }
+        // A local edit wins for a moment, so a poll in flight cannot undo the
+        // tap that was just made.
+        if (Date.now() - lastLocalWrite < 1500) { return; }
+
+        fetch(CONFIG.linesUrl + '&game=' + encodeURIComponent(CONFIG.gameId)
+            + '&code=' + encodeURIComponent(syncCode), { credentials: 'same-origin' })
+            .then(function (r) { return r.ok ? r.json() : null; })
+            .catch(function () { return null; })
+            .then(function (b) {
+                if (!b || !b.teams) { return; }
+                var changed = false;
+                Object.keys(b.teams).forEach(function (teamId) {
+                    var incoming = b.teams[teamId] || [];
+                    var mine = state.line[teamId] || [];
+                    if (incoming.join(',') !== mine.join(',')) {
+                        state.line[teamId] = incoming.slice();
+                        changed = true;
+                    }
+                });
+                if (changed && state.mode === 'play') { renderPlay(); }
+            });
+    }
+
+    function renderSync() {
+        var box = document.getElementById('sync');
+        box.replaceChildren();
+        box.append(el('span', 'muted', 'Sync'));
+
+        var input = document.createElement('input');
+        input.className = 'code';
+        input.value = syncCode;
+        input.size = CONFIG.codeLength;
+        input.maxLength = CONFIG.codeLength;
+        input.spellcheck = false;
+        input.autocapitalize = 'characters';
+        input.title = 'Share this code with the other commentator, or type theirs. '
+            + 'The room is this code plus this game.';
+        input.addEventListener('change', function () {
+            var v = input.value.trim().toUpperCase();
+            if (v.length !== CONFIG.codeLength) { input.value = syncCode; return; }
+            syncCode = v;
+            rememberCode(v);
+            input.value = v;
+            state.line = {};       // a different room is a different selection
+            pullLines();
+            render();
+        });
+        box.append(input);
+    }
+
+    function pickPanel(side) {
+        var panel = el('div', 'panel');
+        var list = rosterByNumber(side);
+        var line = lineFor(side);
+
+        var head = el('div', 'pickhead');
+        head.append(el('strong', null, side.team.name || '—'));
+        var count = el('span', 'count' + (line.length === 7 ? ' ok' : (line.length > 7 ? ' over' : '')),
+            line.length + ' / 7');
+        head.append(count);
+        panel.append(head);
+
+        if (!list.length) {
+            panel.append(el('p', 'muted', 'No roster available.'));
+            return panel;
+        }
+
+        var nums = el('div', 'nums');
+        list.forEach(function (p) {
+            var b = el('button', line.indexOf(p.id) !== -1 ? 'on' : '');
+            b.type = 'button';
+            b.append(document.createTextNode(
+                p.num === null || p.num === undefined ? '–' : String(p.num)));
+            // Surname under the number: the number is what is on the shirt, the
+            // name is what gets said.
+            b.append(el('small', null, p.name.split(' ').slice(-1)[0]));
+            b.addEventListener('click', function () { toggleNum(side, p.id); });
+            nums.append(b);
+        });
+        panel.append(nums);
+        return panel;
+    }
+
+    function onFieldPanel(side, cls) {
+        var wrap = el('div', 'side' + (cls ? ' ' + cls : ''));
+        wrap.append(el('h3', null, side.team.name || '—'));
+        var line = lineFor(side);
+        var byId = {};
+        rosterByNumber(side).forEach(function (p) { byId[p.id] = p; });
+
+        if (!line.length) {
+            wrap.append(el('div', 'empty', 'Nobody selected — pick a line first.'));
+            return wrap;
+        }
+        var row = el('div', 'line');
+        line.map(function (id) { return byId[id]; }).filter(Boolean)
+            .sort(function (a, b) { return (a.num || 0) - (b.num || 0); })
+            .forEach(function (p) {
+                var d = el('div', 'p');
+                if (p.num !== null && p.num !== undefined) { d.append(el('span', null, p.num)); }
+                d.append(document.createTextNode(p.name));
+                row.append(d);
+            });
+        wrap.append(row);
+        return wrap;
+    }
+
+    function renderPlay() {
+        body.replaceChildren();
+        var s = sides();
+        body.append(teamStatsRow());
+
+        if (state.step === 1) {
+            var bar = el('div', 'pickhead');
+            bar.append(el('strong', null, 'Who is on for this point?'));
+            var go = el('button', 'barbtn primary', 'Start point →');
+            go.type = 'button';
+            go.addEventListener('click', function () { state.step = 2; renderPlay(); });
+            bar.append(go);
+            var clear = el('button', 'barbtn', 'Clear both');
+            clear.type = 'button';
+            clear.addEventListener('click', function () { state.line = {}; renderPlay(); });
+            bar.append(clear);
+            body.append(bar);
+
+            var cols = el('div', 'cols');
+            s.forEach(function (side) { cols.append(pickPanel(side)); });
+            body.append(cols);
+        } else {
+            var top = el('div', 'pickhead');
+            top.append(el('strong', null, 'On the field'));
+            var edit = el('button', 'barbtn', '← Change line');
+            edit.type = 'button';
+            edit.addEventListener('click', function () { state.step = 1; renderPlay(); });
+            top.append(edit);
+            body.append(top);
+
+            var field = el('div', 'onfield');
+            field.append(onFieldPanel(s[0]));
+            field.append(onFieldPanel(s[1], 'away'));
+            body.append(field);
+        }
+    }
+
+    /* ---------------------------------------------------------------
+       Modes and refresh
+       --------------------------------------------------------------- */
+
+    function render() {
+        renderTop();
+        document.getElementById('tabPrep').setAttribute('aria-pressed', state.mode === 'prep' ? 'true' : 'false');
+        document.getElementById('tabPlay').setAttribute('aria-pressed', state.mode === 'play' ? 'true' : 'false');
+        document.getElementById('tabPrep').className = state.mode === 'prep' ? 'on' : '';
+        document.getElementById('tabPlay').className = state.mode === 'play' ? 'on' : '';
+        renderSync();
+        if (state.mode === 'play') { renderPlay(); } else { renderPrep(); }
+    }
+
+    function setMode(m) {
+        state.mode = m;
+        var u = new URL(window.location.href);
+        u.searchParams.set('mode', m);
+        window.history.replaceState({}, '', u);
+        render();
+    }
+
+    document.getElementById('tabPrep').addEventListener('click', function () { setMode('prep'); });
+    document.getElementById('tabPlay').addEventListener('click', function () { setMode('play'); });
+
+    /**
+     * A score means the point is over, so the line is stale.
+     *
+     * Returning to the picker rather than wiping the selection: the next line
+     * usually shares players with the last one, so the previous picks stay
+     * selected and re-picking is a few taps rather than seven. That also makes
+     * the automatic reset safe — nothing a commentator typed is destroyed, only
+     * the mode changes.
+     */
+    function watchScore() {
+        var r = state.payload.game_result || {};
+        var key = (r.homescore || 0) + ':' + (r.visitorscore || 0);
+        if (state.lastScore !== null && key !== state.lastScore && state.mode === 'play') {
+            state.step = 1;
+        }
+        state.lastScore = key;
+    }
+
+    function fail(message) {
+        body.replaceChildren();
+        var box = el('div', 'err');
+        box.append(el('strong', null, 'Could not load the game.'), el('p', null, message));
+        body.append(box);
+    }
+
+    function refresh() {
+        return load().then(function () { watchScore(); render(); });
+    }
+
+    /**
+     * With no game, this is the landing page: pick one.
+     *
+     * Live games first, because that is what a commentator arriving at a field
+     * is almost always after.
+     */
+    function renderPicker() {
+        document.getElementById('title').textContent = 'Commentator';
+        document.querySelector('.tabs').style.display = 'none';
+
+        fetch(CONFIG.api + '&entity=games', { credentials: 'same-origin' })
+            .then(readJson)
+            .then(function (b) {
+                var games = (b.games || []).slice().sort(function (x, y) {
+                    var rank = function (g) {
+                        return Number(g.isongoing) === 1 ? 0
+                            : (g.status === 'completed' ? 2 : 1);
+                    };
+                    return rank(x) - rank(y)
+                        || String(x.time || '').localeCompare(String(y.time || ''));
+                });
+
+                body.replaceChildren();
+                if (!games.length) {
+                    body.append(el('p', 'muted', 'No games in this event yet.'));
+                    return;
+                }
+
+                var panel = el('div', 'panel');
+                panel.append(el('h2', null, 'Choose a game'));
+                var table = el('table', 'roster');
+                var tb = el('tbody');
+                games.forEach(function (g) {
+                    var tr = el('tr');
+                    var live = Number(g.isongoing) === 1;
+
+                    var who = el('td', 'who');
+                    who.append(link(CONFIG.base + '/c/' + g.game_id,
+                        g.gamename || ('Game ' + g.game_id)));
+                    tr.append(who);
+
+                    var st = el('td');
+                    st.style.textAlign = 'left';
+                    st.append(el('span', 'badge ' + (live ? 'live' : (g.status === 'completed' ? 'done' : 'soon')),
+                        live ? 'Live' : (g.status === 'completed' ? 'Final' : 'Scheduled')));
+                    tr.append(st);
+
+                    var sc = el('td', null,
+                        g.homescore === null || g.homescore === undefined
+                            ? '·' : g.homescore + '–' + g.visitorscore);
+                    tr.append(sc);
+
+                    var when = el('td');
+                    when.style.textAlign = 'right';
+                    when.className = 'muted';
+                    when.textContent = String(g.time || '').slice(0, 16).replace('T', ' ');
+                    tr.append(when);
+
+                    tb.append(tr);
+                });
+                table.append(tb);
+                panel.append(table);
+                body.append(panel);
+            })
+            .catch(function (e) { fail(e.message); });
+    }
+
+    if (!CONFIG.gameId) {
+        renderPicker();
+    } else {
+        refresh().catch(function (e) { fail(e.message); });
+        // The partner's picks, and a lighter cadence than the game data because
+        // a line changes far more often than a score.
+        pullLines();
+        setInterval(pullLines, 2000);
+        // A commentator can be a few seconds behind; no need for the overlay's
+        // tighter cadence.
+        setInterval(function () { refresh().catch(function () {}); }, 10000);
+    }
+}());
+</script>
+</body>
+</html>
