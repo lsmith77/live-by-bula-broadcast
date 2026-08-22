@@ -1,0 +1,15 @@
+# Everything in this directory is either an include (*.php) or a browser asset
+# (*.css, *.js). The includes are never pages: deny them directly so they cannot
+# be requested on their own, the way live/api.php and the overlay pages already
+# refuse a non-routed request.
+#
+# Assets are deliberately left reachable — the overlay pages load them by URL.
+
+<FilesMatch "\.php$">
+    <IfModule mod_authz_core.c>
+        Require all denied
+    </IfModule>
+    <IfModule !mod_authz_core.c>
+        Deny from all
+    </IfModule>
+</FilesMatch>

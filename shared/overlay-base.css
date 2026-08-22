@@ -1,0 +1,777 @@
+/**
+ * Live! by BULA video overlays — base styles
+ *
+ * A broadcast lower-third "bug", not a scoreboard card. The distinction drives
+ * every number below: a card is symmetric and centre-weighted and sits in the
+ * middle of the frame; a bug is a thin strip that hugs an edge and reads left to
+ * right, because the director needs the rest of the frame for the game.
+ *
+ * A broadcast bug runs around 25:1 width to height. The card this replaced was
+ * 800x181, about 4.4:1. Area was never the problem — 800x181 is 6.98% of a
+ * 1920x1080 frame, inside the 5-10% broadcast norm — the distribution was. So
+ * this trades height for width at roughly constant area.
+ *
+ * Target: 1400x96, about 14.6:1, 6.5% of frame.
+ *
+ * @version 3.0.0
+ */
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+:root {
+    /* One knob for the whole bug: every size below is derived from it, so the
+       compact variant is a single override rather than a parallel stylesheet. */
+    --bug-height: 96px;
+    --bug-bg: rgba(11, 15, 20, 0.88);
+    --bug-radius: 4px;
+
+    /* Set per team from the kit colour, with a neutral that reads as deliberate
+       rather than broken when a team has no kit and no pool colour. */
+    --kit: #2a3340;
+    --kit-fg: #fff;
+
+    --accent: #4ade80;
+}
+
+body {
+    /* Transparent for a switcher that composites alpha; ?bg= paints a solid
+       colour underneath for one that can only chroma-key. */
+    background-color: transparent;
+
+    /* A condensed face is load-bearing, not cosmetic: it is what lets a name
+       like "Mosquitos Klosterneuburg" sit on one line at broadcast weight. The
+       previous two-line wrap is most of what made the old card tall.
+
+       No webfont ships with the overlays, so this degrades through the
+       condensed faces actually present on the target machines.
+
+       Measured on macOS with headless Chrome, "MOSQUITOS KLOSTERNEUBURG" at
+       34px/700, canvas measureText:
+
+           sans-serif (no condensing)   551px
+           Arial Narrow                 452px   <- resolves, and is the one
+                                                   also present on Windows
+           Avenir Next Condensed        418px   (macOS only)
+           PT Sans Narrow               385px   (macOS only)
+           Roboto Condensed             ABSENT
+           Archivo Narrow               ABSENT
+           Oswald / Barlow Condensed    ABSENT
+
+       Two conclusions worth recording, because both are easy to assume wrong:
+       the Google faces are NOT available without shipping a webfont, and
+       `font-stretch: condensed` is INERT here — it measured 551px, identical to
+       normal, because it only selects among widths a family actually provides
+       and the system sans has none. It is therefore not set; the family list is
+       doing all the work.
+
+       Arial Narrow still cannot fit the longest real names at 34px, so
+       fitName() in scoreboard.php steps the size down per name. That is the
+       safety net for a switcher whose installed fonts we cannot predict. */
+    font-family: 'Roboto Condensed', 'Archivo Narrow', 'Helvetica Neue Condensed',
+                 'Arial Narrow', 'Avenir Next Condensed', -apple-system,
+                 blinkmacsystemfont, 'Segoe UI', roboto, 'Helvetica Neue', arial,
+                 sans-serif;
+
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    overflow: hidden;
+}
+
+.overlay-container {
+    position: fixed;
+    display: flex;
+    width: 100%;
+    height: 100%;
+
+    /* Title-safe inset. A bug flush to the frame edge gets clipped by overscan
+       on some displays and by a switcher's own safe-area crop. */
+    padding: 54px 60px;
+}
+
+/* ---------------------------------------------------------------------------
+   The bug
+   --------------------------------------------------------------------------- */
+
+.scoreboard {
+    display: flex;
+    flex-direction: column;
+
+    /* Width follows content up to the cap rather than being fixed, so a game
+       between two short names does not sit in a half-empty strip. The cap is
+       1520 rather than the 1400 target because the longest real names need it.
+       That is 79% of frame width, which is within normal bug proportions. */
+    width: max-content;
+    max-width: 1520px;
+}
+
+.bug {
+    display: flex;
+    align-items: stretch;
+    height: var(--bug-height);
+    background: var(--bug-bg);
+    border-radius: var(--bug-radius);
+
+    /* The kit fills run to the edge of the strip; without this they square off
+       the rounded corners. */
+    overflow: hidden;
+    box-shadow: 0 6px 24px rgb(0 0 0 / 45%);
+}
+
+/* Each side owns its logo, its name block and its own score. Attaching the
+   score to the team rather than centring a shared pair is the single biggest
+   structural change from the card: name and number become one eye movement,
+   and there is no separator glyph to parse between them. */
+.side {
+    display: flex;
+    flex: 1 1 0;
+    align-items: stretch;
+    min-width: 0;
+}
+
+.side.away {
+    flex-direction: row-reverse;
+}
+
+/* ---------------------------------------------------------------------------
+   Team identity
+
+   The kit colour fills the name block instead of sitting in an 8px bar at the
+   outer edge — the least-read position on the strip, and thin enough that a
+   dark kit needed an inset highlight just to survive. As a fill it is read
+   before anything else, and a team with no kit simply gets a neutral block,
+   which looks intentional in a way two identical slivers did not.
+   --------------------------------------------------------------------------- */
+
+.team-block {
+    position: relative;
+    display: flex;
+    flex: 1 1 auto;
+
+    /* Generous: the seed sits directly against a much larger name, and at 20px
+       of type against 34px a small gap reads as a collision. */
+    gap: 18px;
+    align-items: center;
+    min-width: 0;
+    padding: 0 20px;
+    background: var(--kit);
+    color: var(--kit-fg);
+}
+
+.side.away .team-block {
+    flex-direction: row-reverse;
+}
+
+.team-ident {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    min-width: 0;
+}
+
+.side.home .team-ident {
+    align-items: flex-end;
+}
+
+.side.away .team-ident {
+    align-items: flex-start;
+}
+
+.team-name {
+    /* Block, not inline: fitName() measures scrollWidth against clientWidth, and
+       both are unreliable on an inline box. */
+    display: block;
+    max-width: 420px;
+    overflow: hidden;
+    font-size: 34px;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    text-overflow: ellipsis;
+    text-transform: uppercase;
+
+    /* One line, always. A clipped tail is a smaller failure than a strip that
+       doubles in height because one club has a long name. */
+    white-space: nowrap;
+}
+
+/* Seed rather than a win-loss record: a record of 1-0 on day one carries almost
+   no information, while a seed is meaningful all week and costs one glyph. */
+/* Explicit margin rather than relying on the parent's `gap`: the name is a
+   block that shrinks to its text, and the resulting gap measured far tighter
+   than the declared one — "1MOSQUITOS" with no visible separation. */
+.seed {
+    flex-shrink: 0;
+    margin: 0 6px;
+    font-size: 23px;
+    font-weight: 600;
+    opacity: 0.6;
+    font-variant-numeric: tabular-nums;
+}
+
+.seed.hide {
+    display: none;
+}
+
+/* Timeouts remaining, as ticks under the name: countable at a glance without
+   reading a number, and they cost almost no height. `currentColor` so they
+   inherit whatever contrast foreground the kit fill resolved to. */
+.timeouts {
+    display: flex;
+    gap: 4px;
+}
+
+.timeout-dot {
+    width: 18px;
+    height: 4px;
+    background: currentcolor;
+    border-radius: 2px;
+    opacity: 0.28;
+}
+
+.timeout-dot.available {
+    opacity: 0.9;
+}
+
+.timeouts.hide {
+    display: none;
+}
+
+/* ---------------------------------------------------------------------------
+   Break-chance callout
+
+   A tab that rises above the bar over the team it refers to. At bug scale a
+   sentence inside the strip is unreadable, whereas a tab that appears and
+   disappears is legible at a glance and costs the strip no height.
+
+   It sits in flow above the bug rather than being absolutely positioned, so
+   with the container bottom-anchored the bar stays put and the tab grows
+   upward. When neither side is flagged the row collapses entirely, so the bug
+   does not float above a gap.
+   --------------------------------------------------------------------------- */
+
+.callout-row {
+    display: flex;
+    height: 34px;
+}
+
+.callout-row.hide {
+    display: none;
+}
+
+.callout-cell {
+    display: flex;
+    flex: 1;
+    align-items: flex-end;
+
+    /* Roughly clear of the logo plate, so the tab sits over the name rather
+       than over the badge. */
+    padding: 0 0 0 96px;
+}
+
+.callout-cell.away {
+    justify-content: flex-end;
+    padding: 0 96px 0 0;
+}
+
+/* The tab sits ABOVE the bug, so its background composites straight over video
+   rather than over the panel. Every variant is therefore solid: a translucent
+   tab would have no guaranteed contrast against whatever is behind it. */
+.callout {
+    padding: 5px 22px;
+    background: #2b3440;
+    border-radius: var(--bug-radius) var(--bug-radius) 0 0;
+    color: #fff;
+    font-size: 19px;
+    font-weight: 700;
+    letter-spacing: 0.22em;
+    line-height: 1.2;
+    text-transform: uppercase;
+    transform-origin: bottom center;
+}
+
+/**
+ * Standing context — who is on defence this point.
+ *
+ * Present for the whole point, so it must not look like an alert. It is smaller
+ * and lighter than an outcome tab and carries no saturated colour, leaving red
+ * and green to mean "something just happened".
+ *
+ * The size and weight difference is doing real work: it separates standing
+ * context from an event without relying on hue, which a red-vs-neutral pair
+ * alone would (dark red and dark neutral are close in luminance, 1.97:1).
+ */
+.callout.standing {
+    padding: 4px 16px;
+    font-size: 15px;
+    font-weight: 600;
+    letter-spacing: 0.18em;
+    opacity: 0.92;
+}
+
+.callout.hide {
+    display: none;
+}
+
+/* The tab is retriggered by JS rather than relying on display:none -> block,
+   which does not restart an animation on its own. */
+.callout.enter {
+    animation: callout-in 0.34s cubic-bezier(0.2, 0.9, 0.3, 1.2);
+}
+
+@keyframes callout-in {
+    from { transform: translateY(8px) scale(0.92); opacity: 0; }
+    60%  { transform: translateY(0) scale(1.05); opacity: 1; }
+    to   { transform: translateY(0) scale(1); opacity: 1; }
+}
+
+/**
+ * Point outcome, shown briefly over the scoring team once a goal lands.
+ *
+ * Green for a hold and red for a break — but red/green is the worst possible
+ * pair for colour vision deficiency, which affects roughly 8% of men, so hue
+ * alone cannot be what separates them. Measured with headless Chrome, using
+ * relative luminance and a deuteranope simulation:
+ *
+ *   solid green #16a34a vs solid red #d92435
+ *       normal vision      1.50:1      <- two near-identical blocks
+ *       deuteranope        1.18:1      <- indistinguishable
+ *
+ *   light green #d1fae5 vs dark red #b91c1c   (what is used here)
+ *       normal vision      5.70:1
+ *       deuteranope        4.79:1      <- still obvious
+ *
+ * So the hues are the ones asked for, but the separation is carried by
+ * LIGHTNESS: hold is a light block with dark text, break is a dark block with
+ * white text. That reads without colour perception at all, and survives a
+ * washed-out projector or a heavily compressed stream.
+ *
+ * The label is still the primary carrier — WCAG 1.4.1 — with colour only
+ * reinforcing it. Text contrast: hold 8.57:1, break 6.47:1, both well past AA.
+ */
+.callout.hold {
+    background: #d1fae5;
+    color: #064e3b;
+}
+
+.callout.brk {
+    background: #b91c1c;
+    color: #fff;
+}
+
+/* ---------------------------------------------------------------------------
+   Score
+   --------------------------------------------------------------------------- */
+
+.score {
+    display: flex;
+    flex-shrink: 0;
+    align-items: center;
+    justify-content: center;
+
+    /* Fixed so the strip does not reflow going from 9 to 10. */
+    min-width: 88px;
+    background: rgb(255 255 255 / 6%);
+    color: #fff;
+    font-size: 58px;
+    font-weight: 800;
+    line-height: 1;
+    font-variant-numeric: tabular-nums;
+}
+
+/**
+ * Goal flash.
+ *
+ * Deliberately a DISCRETE state change, with no transition and no keyframes.
+ * A browser source on switcher hardware may repaint at a low or uneven frame
+ * rate, and an interpolated 300ms pop becomes three visible steps — worse than
+ * no effect at all. With an instant swap there are no in-between frames to
+ * drop: at any frame rate the state is either on screen or it is not.
+ *
+ * `transform` rather than `font-size` because transform does not affect layout,
+ * so the number growing cannot shove the clock or the team blocks sideways.
+ * Scale is bounded so a two-digit score stays inside its 88px cell.
+ *
+ * The colour matches the callout tab for the same point, so the score and the
+ * tab read as one event rather than two. Lightness carries it as it does there:
+ * a hold inverts to a light cell, a break to a dark red one.
+ */
+.score.flash {
+    background: rgb(255 255 255 / 18%);
+    transform: scale(1.12);
+}
+
+.score.flash.hold {
+    background: #d1fae5;
+    color: #064e3b;
+}
+
+.score.flash.brk {
+    background: #b91c1c;
+    color: #fff;
+}
+
+/* ---------------------------------------------------------------------------
+   Centre: clock and segment
+
+   Game time is a primary number on any broadcast bug. The old card had no time
+   at all and spent a row on the string "Live" instead — running digits are the
+   liveness signal, so the clock replaces that label rather than joining it.
+   --------------------------------------------------------------------------- */
+
+.centre {
+    display: flex;
+    flex-direction: column;
+    flex-shrink: 0;
+    align-items: center;
+    justify-content: center;
+    min-width: 168px;
+    padding: 0 16px;
+    background: rgb(0 0 0 / 35%);
+    color: #fff;
+}
+
+.clock {
+    font-size: 44px;
+    font-weight: 800;
+    line-height: 1;
+    font-variant-numeric: tabular-nums;
+}
+
+/* A paused clock that looks identical to a running one is a lie the operator
+   cannot see. */
+.clock.paused {
+    opacity: 0.55;
+}
+
+.segment {
+    margin-top: 5px;
+    font-size: 15px;
+    letter-spacing: 0.14em;
+    opacity: 0.65;
+    text-transform: uppercase;
+}
+
+.segment.hide,
+.clock.hide {
+    display: none;
+}
+
+/**
+ * Cap state.
+ *
+ * Timekeeper already has a convention for this and it is worth matching rather
+ * than inventing a second one: its game-clock area turns yellow on reaching the
+ * halftime cap and red on the time cap (docs/timekeeper.md:99-101).
+ *
+ * UltiOrganizer has no soft/hard cap distinction to represent — every cap sets
+ * a new point cap and play continues to it — so these two states are the whole
+ * vocabulary.
+ */
+/* Both are solid rather than translucent: over a translucent panel the effective
+   colour depends on whatever is behind the bug, so the contrast could not be
+   guaranteed. Measured composited, the previous 82%-alpha amber came out at
+   4.12:1 against white — fine for the 44px clock, which counts as large text,
+   but short of AA for the 15px cap label.
+   Amber therefore takes dark text instead of white, which also keeps it clearly
+   LIGHTER than the time-cap red. That matters: darkening the amber far enough
+   to carry white text put it within 1.09:1 of the red, leaving hue as the only
+   difference between the two cap states. */
+.centre.cap-half {
+    background: #f0b429;
+    color: #231a04;
+}
+
+/* The same red as a confirmed BREAK — one red for the whole "this is serious"
+   family, rather than three near-misses. */
+.centre.cap-time {
+    background: #b91c1c;
+    color: #fff;
+}
+
+.centre.cap-half .segment,
+.centre.cap-time .segment {
+    opacity: 0.92;
+}
+
+/* No clock (not started, or the scorekeeper never ran one): the centre carries
+   the status word on its own, at a size that does not leave a hole. */
+.centre.status-only .segment {
+    margin-top: 0;
+    font-size: 26px;
+    letter-spacing: 0.1em;
+    opacity: 0.85;
+}
+
+/* ---------------------------------------------------------------------------
+   Logos
+
+   Real club marks are monochrome on transparency and come in both polarities —
+   the two fixtures are a dark square crest and a light 220x80 wordmark. Height
+   is pinned and width follows the artwork so a wordmark is not squashed into a
+   square, and the plate is chosen per logo from its own luminance.
+   --------------------------------------------------------------------------- */
+
+.team-logo:not(.placeholder) {
+    flex-shrink: 0;
+    width: auto;
+    min-width: 64px;
+    max-width: 120px;
+    height: var(--bug-height);
+    padding: 12px;
+    object-fit: contain;
+    object-position: center;
+    background: rgb(255 255 255 / 10%);
+}
+
+.team-logo.placeholder {
+    display: flex;
+    flex-shrink: 0;
+    align-items: center;
+    justify-content: center;
+    width: 64px;
+    height: var(--bug-height);
+    background: rgb(255 255 255 / 12%);
+    color: rgb(255 255 255 / 50%);
+    font-size: 28px;
+    font-weight: 700;
+}
+
+.team-logo.plate-light {
+    background: #f8fafc;
+}
+
+.team-logo.plate-dark {
+    background: #0b1220;
+}
+
+.plate-none .team-logo:not(.placeholder) {
+    padding: 6px;
+    background: transparent;
+}
+
+.plate-light .team-logo:not(.placeholder) {
+    background: #f8fafc;
+}
+
+.plate-dark .team-logo:not(.placeholder) {
+    background: #0b1220;
+}
+
+/* ---------------------------------------------------------------------------
+   Context ribbon
+
+   Event and round, on their own strip below the bug rather than inline in the
+   centre column where they competed with the score. Detachable with ?ribbon=0,
+   because one reference carries a ribbon and the other deliberately does not.
+   --------------------------------------------------------------------------- */
+
+.ribbon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 28px;
+    margin-top: 2px;
+    padding: 0 18px;
+    overflow: hidden;
+    background: rgb(11 15 20 / 80%);
+    border-radius: 0 0 var(--bug-radius) var(--bug-radius);
+    color: rgb(255 255 255 / 70%);
+    font-size: 15px;
+    letter-spacing: 0.18em;
+    text-overflow: ellipsis;
+    text-transform: uppercase;
+    white-space: nowrap;
+}
+
+.ribbon.hide {
+    display: none;
+}
+
+/* ---------------------------------------------------------------------------
+   Compact variant
+
+   A small bug for replays and busy shots. One height override drives the rest;
+   this is the only place abbreviated team names are used.
+   --------------------------------------------------------------------------- */
+
+.scoreboard.compact {
+    --bug-height: 56px;
+
+    max-width: 820px;
+}
+
+.scoreboard.compact .team-name {
+    max-width: 190px;
+    font-size: 21px;
+}
+
+.scoreboard.compact .score {
+    min-width: 56px;
+    font-size: 34px;
+}
+
+/* The compact bug hides the segment label, so with no clock running the centre
+   would reserve width for nothing and leave a gap between the two scores. It
+   collapses instead, and only takes space when there is a clock to show. */
+.scoreboard.compact .centre {
+    min-width: 0;
+    padding: 0;
+}
+
+.scoreboard.compact .centre:has(.clock:not(.hide)) {
+    min-width: 92px;
+    padding: 0 10px;
+}
+
+.scoreboard.compact .clock {
+    font-size: 26px;
+}
+
+.scoreboard.compact .team-block {
+    padding: 0 12px;
+}
+
+.scoreboard.compact .team-logo:not(.placeholder) {
+    min-width: 44px;
+    max-width: 72px;
+    padding: 7px;
+}
+
+.scoreboard.compact .team-logo.placeholder {
+    width: 44px;
+    font-size: 19px;
+}
+
+.scoreboard.compact .seed,
+.scoreboard.compact .timeouts,
+.scoreboard.compact .segment,
+.scoreboard.compact .ribbon,
+.scoreboard.compact .callout-row {
+    display: none;
+}
+
+/* ---------------------------------------------------------------------------
+   Operator chrome — never on air
+
+   The connection pill hides itself as soon as the first payload lands, and the
+   error panel only replaces the bug once retrying has been abandoned.
+   --------------------------------------------------------------------------- */
+
+.connection-status {
+    position: fixed;
+    top: 10px;
+    right: 10px;
+    z-index: 1000;
+    display: flex;
+    gap: 6px;
+    align-items: center;
+    padding: 8px 12px;
+    background: rgb(0 0 0 / 70%);
+    border-radius: 6px;
+    color: #fff;
+    font-size: 12px;
+}
+
+.connection-indicator {
+    width: 8px;
+    height: 8px;
+    background: #ef4444;
+    border-radius: 50%;
+}
+
+.connection-indicator.connected {
+    background: var(--accent);
+}
+
+.connection-status.hide {
+    display: none;
+}
+
+.error-display {
+    max-width: 500px;
+    padding: 24px 32px;
+    background: rgb(239 68 68 / 95%);
+    border-radius: 12px;
+    color: #fff;
+    text-align: center;
+}
+
+.error-display h3 {
+    margin-bottom: 8px;
+    font-size: 20px;
+}
+
+.error-display p {
+    font-size: 14px;
+    opacity: 0.9;
+}
+
+/* Demo caption. Development only — it says what the current frame is meant to
+   be showing, so a walk-through can be checked rather than guessed at. */
+.demo-label {
+    position: fixed;
+    top: 28px;
+    left: 50%;
+    padding: 10px 20px;
+    transform: translateX(-50%);
+    background: rgb(0 0 0 / 72%);
+    border-radius: 6px;
+    color: #fff;
+    font-size: 20px;
+    letter-spacing: 0.04em;
+    white-space: nowrap;
+}
+
+.demo-label.hide {
+    display: none;
+}
+
+.loading {
+    padding: 20px 28px;
+    background: var(--bug-bg);
+    border-radius: var(--bug-radius);
+    color: rgb(255 255 255 / 70%);
+    font-size: 18px;
+}
+
+/* ---------------------------------------------------------------------------
+   Positioning
+
+   A bug belongs in a corner, so the default is bottom-left rather than the
+   card's top-centre.
+   --------------------------------------------------------------------------- */
+
+.overlay-container.top-left {
+    align-items: flex-start;
+    justify-content: flex-start;
+}
+
+.overlay-container.top-center {
+    align-items: flex-start;
+    justify-content: center;
+}
+
+.overlay-container.top-right {
+    align-items: flex-start;
+    justify-content: flex-end;
+}
+
+.overlay-container.bottom-left {
+    align-items: flex-end;
+    justify-content: flex-start;
+}
+
+.overlay-container.bottom-center {
+    align-items: flex-end;
+    justify-content: center;
+}
+
+.overlay-container.bottom-right {
+    align-items: flex-end;
+    justify-content: flex-end;
+}

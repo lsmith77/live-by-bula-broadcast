@@ -1,0 +1,443 @@
+/**
+ * Stage — the full-frame surface that hosts cards in fixed slots.
+ *
+ * Loaded alongside overlay-base.css, which supplies the design tokens and the
+ * scoreboard itself. This file only positions cards; it never styles their
+ * insides, because a card must look the same whether it is mounted here or
+ * opened on its own URL.
+ *
+ * @version 1.0.0
+ */
+
+/* The window. The canvas inside it is always 1920x1080; this just clips. */
+.stage-body {
+    width: 100vw;
+    height: 100vh;
+    margin: 0;
+    overflow: hidden;
+}
+
+/**
+ * The authored frame, at a fixed 1920x1080 whatever the viewport is.
+ *
+ * Fixed because a broadcast graphic must not reflow with the source resolution.
+ * The stage scales this to fit (see fitCanvas), so the same markup is exact on a
+ * switcher and previewable in an ordinary browser window — where, before the
+ * scaling, everything bottom-anchored fell below the fold with no way to scroll
+ * to it and the page looked blank.
+ */
+.stage-canvas {
+    position: relative;
+    width: 1920px;
+    height: 1080px;
+    transform-origin: top left;
+}
+
+/**
+ * Nine positions on a fixed grid rather than free placement.
+ *
+ * Drag-and-drop would need a coordinate system, a persistence format for it, and
+ * an operator with a mouse and time to aim. Fixed slots need one click, cannot
+ * produce an off-frame graphic, and read identically on every switcher.
+ *
+ * The rows are sized so the middle band stays clear: that is where the play is,
+ * and a card parked across it is the one thing a director cannot cut around.
+ */
+.stage {
+    display: grid;
+    width: 100%;
+    height: 100%;
+
+    /* title-safe inset */
+    padding: 54px 60px;
+
+    /* The bands are reserved, not merely content-sized. A framed card is taken
+       out of flow (it pins itself to the frame), so the grid would otherwise
+       size its row to zero and let the centre row grow underneath it. The stage
+       measures the scoreboard and sets --band-bottom; the default is a
+       reasonable reserve for before that happens. */
+    grid-template-rows: minmax(var(--band-top, 0px), auto) 1fr minmax(var(--band-bottom, 200px), auto);
+    grid-template-columns: 1fr auto 1fr;
+    gap: 24px;
+}
+
+.slot {
+    display: flex;
+    min-width: 0;
+    min-height: 0;
+
+    /* Slots are invisible until something is mounted and armed. `visibility`
+       rather than `display` so a slot keeps its grid cell and mounting a card
+       cannot reflow its neighbours. */
+    visibility: hidden;
+}
+
+.slot.shown {
+    visibility: visible;
+}
+
+/**
+ * One card's container inside a slot.
+ *
+ * Several cards can be CONFIGURED into the same space so an operator can flip
+ * between them, but only one is ever on air there — the store enforces that. All
+ * of them mount, so each is armed and ready; the hidden ones simply are not
+ * revealed. They are stacked in the same place rather than laid out in sequence,
+ * because they are alternatives, not a list.
+ */
+/* `display: none`, NOT `visibility: hidden`: a hidden-but-laid-out card still
+   occupies space, so several alternatives parked in one slot would sit in a row
+   and the visible one's position would depend on the widths of its invisible
+   siblings — the card appears to jump as the operator switches between them.
+   Taking them out of layout entirely pins every alternative to the same place.
+
+   This does not undo arming: the card stays mounted, its data fetched and its
+   images already decoded (see teamLogo). Revealing it is a layout, never a
+   fetch. */
+.slot > .mount {
+    display: none;
+}
+
+.slot > .mount.shown {
+    display: flex;
+}
+
+.slot[data-slot='upper-left']   { grid-area: 1 / 1; align-items: flex-start; justify-content: flex-start; }
+.slot[data-slot='upper-center'] { grid-area: 1 / 2; align-items: flex-start; justify-content: center; }
+.slot[data-slot='upper-right']  { grid-area: 1 / 3; align-items: flex-start; justify-content: flex-end; }
+
+/* Center spans the whole middle row rather than one cell. Nothing else can
+   occupy that band anyway — the upper and lower rows are where graphics belong,
+   and a card placed mid-frame is already a deliberate interruption — so giving
+   it a third of the width only forced wide content to wrap for no reason. */
+.slot[data-slot='center']       { grid-area: 2 / 1 / 3 / 4; align-items: center; justify-content: center; }
+
+.slot[data-slot='lower-left']   { grid-area: 3 / 1; align-items: flex-end; justify-content: flex-start; }
+.slot[data-slot='lower-center'] { grid-area: 3 / 2; align-items: flex-end; justify-content: center; }
+.slot[data-slot='lower-right']  { grid-area: 3 / 3; align-items: flex-end; justify-content: flex-end; }
+
+/**
+ * The scoreboard's companion strip.
+ *
+ * Positioned relative to the scoreboard rather than to the frame: the stage adds
+ * `anchor-upper|lower` and `anchor-left|center|right` to match wherever the bug
+ * is, and this places the companion on the far side of it.
+ *
+ * `--bug-block` is how much vertical room the scoreboard occupies — its 96px bar
+ * plus the 28px ribbon and the gap between them, rounded up. If the bug's height
+ * changes, this is the one number to change with it.
+ */
+.slot.with-scoreboard {
+    /* Default only. The stage overwrites this with the scoreboard's measured
+       height as soon as the frame has painted — see measureBug(). */
+    --bug-block: 174px;
+
+    position: fixed;
+    z-index: 5;
+}
+
+.slot.with-scoreboard.anchor-lower {
+    bottom: calc(54px + var(--bug-block));
+}
+
+.slot.with-scoreboard.anchor-upper {
+    top: calc(54px + var(--bug-block));
+}
+
+.slot.with-scoreboard.anchor-left {
+    left: 60px;
+    justify-content: flex-start;
+}
+
+.slot.with-scoreboard.anchor-right {
+    right: 60px;
+    justify-content: flex-end;
+}
+
+.slot.with-scoreboard.anchor-center {
+    left: 50%;
+    transform: translateX(-50%);
+    justify-content: center;
+}
+
+/* A takeover covers the whole frame and sits above the grid. The store already
+   guarantees nothing else is visible alongside it; this only handles the
+   geometry. */
+.slot.fullscreen {
+    position: fixed;
+    inset: 0;
+    z-index: 10;
+    align-items: center;
+    justify-content: center;
+}
+
+/**
+ * A framed card is an existing overlay page mounted in place.
+ *
+ * It must be transparent and borderless so the page inside composites over the
+ * video exactly as it would on its own URL. `pointer-events: none` because
+ * nothing on a broadcast surface is clickable, and a stray iframe focus ring on
+ * a switcher would go to air.
+ */
+.card-frame {
+    width: 1920px;
+    height: 1080px;
+    border: 0;
+    background: transparent;
+    pointer-events: none;
+}
+
+/* A framed overlay positions itself inside its own 1920x1080 viewport, so the
+   slot cannot also position it — it is pinned to the frame instead. */
+.slot:has(.card-frame) {
+    position: fixed;
+    inset: 0;
+    align-items: stretch;
+    justify-content: stretch;
+    padding: 0;
+}
+
+/* ---------------------------------------------------------------------------
+   Inline cards
+
+   Rendered by the stage rather than framed. They share the scoreboard's visual
+   language deliberately — same panel colour, same radius, same condensed type —
+   so a stage with several cards up reads as one graphics package.
+   --------------------------------------------------------------------------- */
+
+.card {
+    background: var(--bug-bg);
+    border-radius: var(--bug-radius);
+    box-shadow: 0 6px 24px rgb(0 0 0 / 45%);
+    color: #fff;
+}
+
+.statcard {
+    padding: 18px 26px 16px;
+}
+
+/* One column per team, side by side, so the card reads as a comparison. This is
+   why the card is restricted to the centre band and full frame: six rows across
+   two teams will not fit a corner slot. */
+.statcols {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 34px;
+}
+
+.statcol {
+    min-width: 0;
+}
+
+/* A crest wherever a team is named, so the card is identifiable at a glance
+   rather than by reading. */
+.teamlogo {
+    width: auto;
+    max-width: 44px;
+    height: 30px;
+    object-fit: contain;
+    flex-shrink: 0;
+}
+
+.lastplay-team .teamlogo {
+    height: 22px;
+    max-width: 34px;
+}
+
+.statcol-team {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    margin-bottom: 8px;
+    padding-bottom: 6px;
+    border-bottom: 2px solid rgb(255 255 255 / 18%);
+    font-size: 24px;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+}
+
+.statcol-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.statcard-head {
+    margin-bottom: 12px;
+    color: rgb(255 255 255 / 65%);
+    font-size: 17px;
+    font-weight: 700;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+}
+
+.statrow {
+    display: flex;
+    gap: 14px;
+    align-items: baseline;
+    padding: 7px 0;
+    border-top: 1px solid rgb(255 255 255 / 10%);
+}
+
+.statrow:first-of-type {
+    border-top: 0;
+}
+
+.statrow-num {
+    min-width: 30px;
+    color: rgb(255 255 255 / 55%);
+    font-size: 20px;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+}
+
+.statrow-name {
+    flex: 1;
+    overflow: hidden;
+    font-size: 26px;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    text-overflow: ellipsis;
+    text-transform: uppercase;
+    white-space: nowrap;
+}
+
+.statrow-team {
+    color: rgb(255 255 255 / 55%);
+    font-size: 17px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+}
+
+/* The label rides under the number as a caption, so a column needs no separate
+   header row and the card stays short. */
+.statrow-val {
+    position: relative;
+    min-width: 44px;
+    padding-bottom: 11px;
+    color: rgb(255 255 255 / 75%);
+    font-size: 22px;
+    font-weight: 700;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+}
+
+.statrow-val.strong {
+    color: #fff;
+}
+
+/* ---------------------------------------------------------------------------
+   Last play — one-line strips naming who scored and who threw it.
+
+   Two separate cards sharing this styling, so an operator can show either or
+   both. Deliberately one line: they sit directly against the bug, so anything
+   taller would compete with it rather than annotate it.
+   --------------------------------------------------------------------------- */
+
+.lastplay {
+    display: flex;
+    gap: 22px;
+    align-items: baseline;
+    padding: 9px 18px;
+}
+
+/* Each name keeps its label tight against it, so a two-part strip reads as two
+   facts rather than one run-on line. */
+.lastplay-part {
+    display: inline-flex;
+    gap: 10px;
+    align-items: baseline;
+}
+
+.lastplay-tag {
+    color: rgb(255 255 255 / 45%);
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+}
+
+.lastplay-num {
+    color: rgb(255 255 255 / 60%);
+    font-size: 17px;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+}
+
+.lastplay-name {
+    color: #fff;
+    font-size: 22px;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+}
+
+/* The matching designation, shown only when a source actually supplies it. */
+.statrow-matching {
+    padding: 1px 6px;
+    border: 1px solid rgb(255 255 255 / 25%);
+    border-radius: 3px;
+    color: rgb(255 255 255 / 70%);
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+}
+
+.lastplay-team {
+    display: inline-flex;
+    gap: 8px;
+    align-items: center;
+    color: rgb(255 255 255 / 50%);
+    font-size: 14px;
+    font-weight: 600;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+}
+
+.statrow-val::after {
+    position: absolute;
+    right: 0;
+    bottom: 0;
+    color: rgb(255 255 255 / 45%);
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.1em;
+    content: attr(data-label);
+}
+
+/* ---------------------------------------------------------------------------
+   Tournament logo
+
+   Persistent branding rather than a card: it coexists with whatever occupies
+   its corner instead of competing for the position. The stage measures the
+   corner and sets the offset, so this only fixes the side and the size.
+   --------------------------------------------------------------------------- */
+
+.tourney-logo {
+    position: absolute;
+    z-index: 6;
+    display: none;
+    max-width: 340px;
+    padding: 10px 14px;
+    background: var(--bug-bg);
+    border-radius: var(--bug-radius);
+    box-shadow: 0 6px 24px rgb(0 0 0 / 45%);
+}
+
+.tourney-logo.shown {
+    display: block;
+}
+
+.tourney-logo img {
+    display: block;
+    width: auto;
+    max-width: 100%;
+    height: 52px;
+    object-fit: contain;
+}
+
+.tourney-logo.top-left     { top: 54px; left: 60px; }
+.tourney-logo.top-right    { top: 54px; right: 60px; }
+.tourney-logo.bottom-left  { bottom: 54px; left: 60px; }
+.tourney-logo.bottom-right { bottom: 54px; right: 60px; }
