@@ -1,0 +1,81 @@
+# Short overlay URLs, for typing on a video switcher's on-screen keyboard.
+#
+#   /live/overlays/702            ->  scoreboard for game 702
+#   /live/overlays/702/green      ->  ... on a green chroma-key background
+#   /live/overlays/               ->  the picker page
+#
+# These are internal rewrites onto UltiOrganizer's front controller, so the
+# overlay still arrives through ?view= with the database, session and Live!'s
+# event-publication boundary already established. Nothing here bypasses the
+# guard that makes a direct request to live/overlays/*.php return 404.
+#
+# Scoped to this directory, so it survives a Live! upgrade (which unzips over
+# live/ without deleting files it does not ship) and diverges from neither
+# UltiOrganizer nor Live! by BULA.
+#
+# Requires mod_rewrite and AllowOverride All. The dev image
+# (docs/dev/Dockerfile.app) enables both.
+
+# Operator state in conf/ is served by its endpoints, not by Apache — with one
+# deliberate exception. The stage polls conf/show.json as a STATIC file about
+# once a second, and routing that through PHP for every stage on every field is
+# the one place the poll budget genuinely matters (see docs/STUDIO.md section 6).
+#
+# Everything else in conf/ has a PHP front door that owns its rules: team colours
+# through colors.php, line rooms through lines.php. Serving those files directly
+# bypasses nothing today — lines.php asks for the same game and code the filename
+# carries — but it does mean the directory is public by default, so any file a
+# later feature drops in there is exposed before anyone thinks about it. Default
+# closed, open one file by name.
+#
+# This lives here rather than in conf/.htaccess because conf/ is gitignored:
+# a rule inside it would exist only on the machine that created it.
+<IfModule mod_authz_core.c>
+    <FilesMatch "^show\.json$">
+        Require all granted
+    </FilesMatch>
+</IfModule>
+
+RedirectMatch 404 ^/live/overlays/conf/(?!show\.json$).*$
+
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+
+    # RewriteBase is the URL path of this directory. Change it if Live! is
+    # installed under a URL prefix, e.g. /scores/live/overlays/.
+    RewriteBase /live/overlays/
+
+    # Never rewrite a request for a real file: the CSS and JS under shared/
+    # must keep being served directly.
+    RewriteCond %{REQUEST_FILENAME} -f
+    RewriteRule ^ - [L]
+
+    # /live/overlays/stage -> the full-frame stage, one URL per broadcast.
+    # Before the numeric rules because "stage" is a name, not a game id.
+    RewriteRule ^stage/([0-9A-Fa-f]{6}|green|blue|magenta|black)/?$ \
+        /index.php?view=live/overlays/stage&bg=$1 [L,QSA]
+
+    RewriteRule ^stage/?$ /index.php?view=live/overlays/stage [L,QSA]
+
+    # /live/overlays/702/overlay -> a stage pinned to game 702
+    RewriteRule ^([0-9]+)/overlay/([0-9A-Fa-f]{6}|green|blue|magenta|black)/?$ \
+        /index.php?view=live/overlays/stage&game=$1&bg=$2 [L,QSA]
+
+    RewriteRule ^([0-9]+)/overlay/?$ \
+        /index.php?view=live/overlays/stage&game=$1 [L,QSA]
+
+    # /live/overlays/702/green -> chroma-key background
+    RewriteRule ^([0-9]+)/([0-9A-Fa-f]{6}|green|blue|magenta|black)/?$ \
+        /index.php?view=live/overlays/scoreboard&game=$1&bg=$2 [L,QSA]
+
+    # /live/overlays/702 -> transparent background
+    RewriteRule ^([0-9]+)/?$ \
+        /index.php?view=live/overlays/scoreboard&game=$1 [L,QSA]
+
+    # /live/overlays/702/talk -> the commentator page for that game
+    RewriteRule ^([0-9]+)/talk/?$ \
+        /index.php?view=live/overlays/commentator&game=$1 [L,QSA]
+
+    # /live/overlays/ -> picker
+    RewriteRule ^$ /index.php?view=live/overlays/index [L,QSA]
+</IfModule>
