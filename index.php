@@ -1,0 +1,1013 @@
+<?php
+/**
+ * Live! by BULA video overlays — Studio.
+ *
+ *   /index.php?view=live/overlays/index      (also /s/)
+ *
+ * The operator's page: lists the event's games with ready-to-paste browser-source
+ * URLs, and — for a logged-in Live! admin — controls what the stage is showing
+ * and which kit each team is wearing. Not an overlay itself.
+ *
+ * **Public, read-only, by design.** Everything needed to point a switcher at a
+ * game is visible without logging in: the game list, the field, and the URLs.
+ * None of it is secret, and someone setting up a camera at a field should not
+ * need an admin password to find a URL — least of all in auto mode, where there
+ * is no operator at all. Logging in adds the controls; it does not unlock the
+ * information.
+ *
+ * The lists are fetched in the browser rather than server-side. That keeps the
+ * page free of any Live! bootstrap knowledge, and means it reads the event
+ * through exactly the same routed endpoint the overlays do — if a game is listed
+ * here, an overlay for it will work.
+ */
+
+if (!defined('UO_ROUTED_VIEW')) {
+    http_response_code(404);
+    exit;
+}
+
+require_once __DIR__ . '/../conf/LocalConfig.php';
+
+$base = rtrim(defined('UO_URL_PREFIX') ? UO_URL_PREFIX : '/', '/');
+$json = static fn ($v): string => json_encode($v, JSON_UNESCAPED_SLASHES | JSON_HEX_TAG | JSON_HEX_AMP);
+?>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Video overlays</title>
+<style>
+    :root { color-scheme: dark; }
+    body {
+        margin: 0; padding: 2rem;
+        font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+        background: #0f172a; color: #e2e8f0;
+    }
+    h1 { font-size: 1.4rem; margin: 0 0 .25rem; }
+    p.lede { margin: 0 0 2rem; color: #94a3b8; }
+    table { border-collapse: collapse; width: 100%; max-width: 1100px; }
+    th, td { text-align: left; padding: .6rem .75rem; border-bottom: 1px solid #1e293b; }
+    th { color: #94a3b8; font-weight: 600; font-size: .8rem; text-transform: uppercase; letter-spacing: .04em; }
+    tbody tr:hover td { background: #16213a; }
+    .badge { display: inline-block; padding: .1rem .5rem; border-radius: 999px; font-size: .75rem; font-weight: 600; }
+    .badge.live { background: #14532d; color: #4ade80; }
+    .badge.done { background: #1e293b; color: #94a3b8; }
+    .badge.soon { background: #1e3a5f; color: #7dd3fc; }
+    .score { font-variant-numeric: tabular-nums; font-weight: 700; }
+    a.url { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .8rem;
+            color: #7dd3fc; word-break: break-all; }
+    .panel { max-width: 1100px; margin-top: 2rem; padding: 1rem 1.25rem; background: #16213a;
+             border-left: 3px solid #38bdf8; border-radius: 4px; color: #cbd5e1; }
+    .panel code { background: #0f172a; padding: .1rem .35rem; border-radius: 3px; }
+    .err { max-width: 1100px; padding: 1rem 1.25rem; background: #3f1d1d;
+           border-left: 3px solid #ef4444; border-radius: 4px; }
+    .muted { color: #94a3b8; }
+    a.action { color: #a5b4fc; text-decoration: none; font-size: .85rem; white-space: nowrap; }
+    a.action:hover { text-decoration: underline; }
+
+    h2 { font-size: 1.05rem; margin: 2.5rem 0 .25rem; }
+
+    /* Kit colour sits against the team it belongs to, on the matchup line.
+       The hex value lives inside the native picker, which already offers hex
+       entry — a separate text field duplicated it and cost width. */
+    .matchup { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap;
+               margin-top: .25rem; }
+    .matchup .vs { color: #475569; font-size: .75rem; }
+    .kitside { display: inline-flex; align-items: center; gap: .35rem; }
+    .kitteam { color: #cbd5e1; font-size: .8rem; max-width: 13rem; overflow: hidden;
+               text-overflow: ellipsis; white-space: nowrap; }
+    .kitswatch { width: 22px; height: 22px; padding: 0; border: 1px solid #475569;
+                 border-radius: 4px; background: none; cursor: pointer; flex-shrink: 0; }
+    .kitswatch:disabled { cursor: not-allowed; opacity: .6; }
+    /* Unset must not look like a chosen grey. */
+    .kitswatch.unset { border-style: dashed; border-color: #334155; opacity: .45; }
+    .kitclear { background: none; border: 0; color: #64748b; cursor: pointer;
+                font-size: .9rem; line-height: 1; padding: 0 .1rem; }
+    .kitclear:hover { color: #f87171; }
+
+    /* Header: identity and the login affordance. Someone arriving read-only
+       needs to know that is why the controls are inert, and where to go. */
+    .topbar { display: flex; align-items: baseline; gap: 1rem; max-width: 1100px;
+              flex-wrap: wrap; }
+    .topbar h1 { flex: 1; }
+    .who { font-size: .85rem; color: #94a3b8; }
+    .who .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%;
+                background: #475569; margin-right: .4rem; vertical-align: middle; }
+    .who.admin .dot { background: #4ade80; }
+    a.btn { display: inline-block; background: #1d4ed8; color: #fff; text-decoration: none;
+            font-weight: 600; font-size: .85rem; padding: .45rem 1rem; border-radius: 4px; }
+    a.btn:hover { background: #2563eb; }
+    a.btn.ghost { background: none; border: 1px solid #334155; color: #94a3b8; }
+    a.btn.ghost:hover { background: none; border-color: #475569; color: #e2e8f0; }
+
+    td.where { color: #94a3b8; font-size: .85rem; white-space: nowrap; }
+    td.where strong { color: #cbd5e1; font-weight: 600; }
+    td.when { color: #94a3b8; font-size: .85rem; white-space: nowrap; }
+
+    /* Stage controls — one row per piece of content.
+       Placement is setup and stays small; the on-air switch is the live action
+       and is deliberately the largest thing in the row. */
+    .stagebar { display: flex; flex-wrap: wrap; align-items: baseline; gap: .75rem;
+                max-width: 1100px; margin-bottom: .75rem; }
+    .cardlist { max-width: 1100px; }
+    .cardrow { display: flex; align-items: center; gap: 1rem; padding: .7rem .75rem;
+               border: 1px solid #1e293b; border-radius: 6px; margin-bottom: .5rem;
+               background: #0f1a30; }
+    .cardrow.live { border-color: #4ade80; background: #10231c; }
+    .cardname { flex: 1; font-weight: 600; }
+
+    /* Warned in advance: this row is what the hovered control would take off
+       air. Amber rather than red — it is a consequence, not an error. */
+    .cardrow.losing { border-color: #fbbf24; background: #2a2312; }
+    .cardrow.losing .cardname::after {
+        content: ' — will be turned off';
+        color: #fbbf24; font-weight: 500; font-size: .82rem;
+    }
+    /* The pointer says it too, before anything is read. */
+    .displaces:not(:disabled) { cursor: alias; }
+
+    /* A 3x3 map of the frame. Spatial, because the thing being chosen is a
+       position; a list of words like "lower-left" makes the reader translate. */
+    .picker { display: grid; grid-template-columns: repeat(3, 20px);
+              grid-auto-rows: 14px; gap: 3px; flex-shrink: 0; }
+    .picker .cell { padding: 0; border: 1px solid #334155; border-radius: 2px;
+                    background: #0b1220; cursor: pointer; }
+    .picker .cell:hover:not(:disabled) { border-color: #64748b; }
+    .picker .cell.span { grid-column: 1 / -1; }
+    .picker .cell.here { background: #38bdf8; border-color: #7dd3fc; }
+    .picker .cell.taken { background: #334155; }
+    .picker .cell.unfit { background: #0b1220; border-style: dashed; border-color: #1e293b; }
+    .picker .cell:disabled { cursor: not-allowed; opacity: .55; }
+
+    .fullbtn { background: none; border: 1px solid #334155; color: #94a3b8;
+               border-radius: 4px; padding: .3rem .6rem; font-size: .75rem; cursor: pointer;
+               white-space: nowrap; }
+    .fullbtn.here { border-color: #38bdf8; color: #7dd3fc; }
+    .fullbtn:disabled { opacity: .4; cursor: not-allowed; }
+
+    .switch { min-width: 6.5rem; padding: .6rem 1rem; border: 0; border-radius: 5px;
+              background: #334155; color: #cbd5e1; font: inherit; font-weight: 700;
+              font-size: .9rem; letter-spacing: .04em; cursor: pointer; }
+    /* #16a34a under white is 3.3:1 — below AA for 14.4px bold. #15803d is 5.02:1
+       and still reads unmistakably as live. The label carries the state in words
+       too ("ON AIR" / "Off"), so it never rests on colour alone. */
+    .switch.on { background: #15803d; color: #fff; }
+    .switch:disabled { opacity: .4; cursor: not-allowed; }
+
+    .undo { background: none; border: 1px solid #334155; color: #94a3b8; border-radius: 4px;
+            padding: .35rem .7rem; font-size: .8rem; cursor: pointer; }
+    .undo:disabled { opacity: .35; cursor: not-allowed; }
+    /* The panic button: red-edged so it reads as the one control that changes
+       everything, but not a filled red block that invites a stray click. */
+    .undo.clearall { border-color: #7f1d1d; color: #fca5a5; }
+    .undo.clearall:not(:disabled):hover { background: #450a0a; border-color: #b91c1c; color: #fecaca; }
+    .flash { font-size: .85rem; color: #fbbf24; opacity: 0; transition: opacity .2s; }
+    .flash.on { opacity: 1; }
+</style>
+</head>
+<body>
+
+<div class="topbar">
+    <h1>Studio</h1>
+    <span class="who" id="who"><span class="dot"></span>Checking…</span>
+    <span id="authAction"></span>
+</div>
+<p class="lede">Browser-source URLs for a video switcher (OBS, Magewell Director Mini, Yolobox).</p>
+
+<h2 style="margin-top:1.5rem">Stage</h2>
+<p class="muted" style="margin-bottom:1rem">
+    Pick the game you are covering, point the switcher at the URL below once, and change what
+    is on screen from this page. Several games can run at the same time — one stage URL each,
+    one switcher each. The game list further down gives single-graphic scoreboard URLs instead,
+    for a switcher that wants one fixed overlay and no control.
+</p>
+<div id="stagePanel"><p class="muted">Loading stage state…</p></div>
+
+<h2>Games</h2>
+<div id="games"><p class="muted">Loading games…</p></div>
+
+
+<div class="panel">
+    <strong>Short URLs</strong> — short enough to type on a switcher's on-screen keyboard:
+    <ul>
+        <li><code>/s/stage</code> — the stage: one URL for the whole broadcast, contents
+            controlled from this page. Usually the only one you need.</li>
+        <li><code>/s/702</code> — scoreboard for game 702, transparent background. A fixed
+            single graphic, for a switcher that wants one source per game instead.</li>
+        <li><code>/s/702/green</code> — on a chroma-key background. Also <code>blue</code>,
+            <code>magenta</code>, <code>black</code>, or any six-digit hex
+            (<code>/s/702/FF00FF</code>). Only needed if your switcher cannot key on alpha.</li>
+        <li><code>/s/</code> — this page</li>
+    </ul>
+    <code>/live/overlays/702</code> and <code>/live/overlays/702/green</code> do the same thing and
+    keep working even if the root shortcut is removed.
+
+    <p><strong>Full parameters</strong> — on the long form
+    (<code>?view=live/overlays/scoreboard&amp;game=702</code>):</p>
+    <ul>
+        <li><code>position</code> — <code>top-left</code>, <code>top-center</code> (default),
+            <code>top-right</code>, <code>bottom-left</code>, <code>bottom-center</code>,
+            <code>bottom-right</code></li>
+        <li><code>homecolor</code>, <code>awaycolor</code> — six-digit hex, overriding the pool colour
+            (<code>&amp;homecolor=FF0000</code>)</li>
+        <li><code>interval</code> — minimum poll interval in ms (default 5000). The overlay also honours
+            the API's own cache expiry, so a finished game stops being re-fetched.</li>
+        <li><code>bg</code> — page background, as <code>/s/&lt;id&gt;/&lt;colour&gt;</code> above.</li>
+    </ul>
+    Set the browser source to <strong>1920&times;1080</strong> with a transparent background.
+</div>
+
+<script>
+(function () {
+    'use strict';
+
+    var BASE = <?= $json($base) ?>;
+    var API = BASE + '/index.php?view=live/api';
+    var container = document.getElementById('games');
+
+    function el(tag, className, text) {
+        var node = document.createElement(tag);
+        if (className) node.className = className;
+        if (text !== undefined) node.textContent = text;
+        return node;
+    }
+
+    function fail(title, detail) {
+        container.replaceChildren();
+        var box = el('div', 'err');
+        box.append(el('strong', null, title));
+        if (detail) box.append(el('p', null, detail));
+        container.append(box);
+    }
+
+    function classify(game) {
+        if (Number(game.isongoing) === 1) return ['live', 'Live'];
+        if (game.status === 'completed') return ['done', 'Final'];
+        return ['soon', 'Scheduled'];
+    }
+
+    // Live games first, then upcoming, then finished — the order an operator wants.
+    function rank(game) {
+        return Number(game.isongoing) === 1 ? 0 : (game.status === 'completed' ? 2 : 1);
+    }
+
+    function renderGames(games) {
+        if (!games.length) {
+            fail('No games in this event yet.');
+            return;
+        }
+
+        games.sort(function (a, b) {
+            return rank(a) - rank(b) || String(a.time || '').localeCompare(String(b.time || ''));
+        });
+
+        var table = el('table');
+        var head = el('thead');
+        var headRow = el('tr');
+        ['Game', 'Where', 'When', 'Status', 'Score', 'Overlay URL', 'Enter scores']
+            .forEach(function (label) {
+                headRow.append(el('th', null, label));
+            });
+        head.append(headRow);
+        table.append(head);
+
+        var body = el('tbody');
+        games.forEach(function (game) {
+            var id = Number(game.game_id);
+            if (!id) return;
+
+            var state = classify(game);
+            // Short form, for typing on a switcher's on-screen keyboard. Served
+            // by the rewrite in the repo-root .htaccess; live/overlays/<id> is
+            // the self-contained fallback if that block is ever removed.
+            var url = window.location.origin + BASE + '/s/' + id;
+
+            var row = el('tr');
+
+            // Round *and* teams. The round name alone ("Semi-final") does not
+            // identify a game to someone walking the site with six pitches in
+            // play, and it is what the kit colours below refer to.
+            var nameCell = el('td');
+            nameCell.append(el('div', null, game.gamename || ('Game ' + id)));
+            var matchup = el('div', 'matchup');
+            matchup.append(teamWithKit(game, 'home', game.hometeam));
+            matchup.append(el('span', 'vs', 'v'));
+            matchup.append(teamWithKit(game, 'visitor', game.visitorteam));
+            nameCell.append(matchup);
+            row.append(nameCell);
+
+            // Which field, so an operator walking the site can match a row to
+            // the pitch in front of them. The games list carries only a
+            // reservation id; entity=reference resolves it for the whole event
+            // in one fetch rather than one per game.
+            var res = reservations[String(game.reservation)] || null;
+            var whereCell = el('td', 'where');
+            if (res) {
+                whereCell.append(el('strong', null,
+                    res.fieldname ? 'Field ' + res.fieldname : (res.name || '')));
+                if (res.fieldname && res.name) {
+                    whereCell.append(document.createTextNode(' · ' + res.name));
+                }
+            } else {
+                whereCell.append(document.createTextNode('—'));
+            }
+            row.append(whereCell);
+
+            // Date dropped when every game is on the same day, which is the
+            // common case within a tournament and pure noise on every row.
+            var when = String(game.time || '');
+            row.append(el('td', 'when', when
+                ? (singleDay ? when.slice(11, 16) : when.slice(0, 16).replace('T', ' '))
+                : '—'));
+
+            var statusCell = el('td');
+            statusCell.append(el('span', 'badge ' + state[0], state[1]));
+            row.append(statusCell);
+
+            var hasScore = game.homescore !== undefined && game.homescore !== null;
+            row.append(el('td', 'score',
+                hasScore ? game.homescore + '–' + game.visitorscore : '—'));
+
+
+            var link = el('a', 'url', url);
+            link.href = url;
+            link.target = '_blank';
+            link.rel = 'noopener';
+            var urlCell = el('td');
+            urlCell.append(link);
+            row.append(urlCell);
+
+            // Where the score is actually entered. Scorekeeper has its own login;
+            // an unauthenticated click lands on its login page, not an error.
+            var keeper = el('a', 'action', 'Scorekeeper ↗');
+            keeper.href = BASE + '/scorekeeper/?view=addscoresheet&game=' + id;
+            keeper.target = '_blank';
+            keeper.rel = 'noopener';
+            var keeperCell = el('td');
+            keeperCell.append(keeper);
+            row.append(keeperCell);
+
+            body.append(row);
+        });
+        table.append(body);
+
+        container.replaceChildren(table);
+    }
+
+    // Shared response handling: the API is JSON for every outcome except the
+    // maintenance splash, which is HTML and must not be parsed.
+    function readJson(response) {
+        if (response.status === 503) {
+            throw new Error('Live! is in maintenance mode.');
+        }
+        return response.json().then(function (body) {
+            if (!response.ok || typeof body.error === 'string') {
+                // An event that is not published externally answers 403 here,
+                // and overlays are gated by that same boundary.
+                throw new Error(body.error || ('HTTP ' + response.status));
+            }
+            return body;
+        });
+    }
+
+    fetch(API + '&entity=games', { credentials: 'same-origin' })
+        .then(readJson)
+        .then(function (body) { renderGames(body.games || []); })
+        .catch(function (error) {
+            fail('The Live! API did not return games.', error.message);
+        });
+
+    // ---- kit colours -------------------------------------------------------
+    //
+    // Entered per game, on the game's own row, by an operator looking at the
+    // jerseys minutes before the pull.
+
+    var COLORS_URL = BASE + '/index.php?view=live/overlays/colors';
+
+    var state = { games: {}, admin: false, writable: false };
+    var teamIndex = {};
+    var gamesList = [];
+    var reservations = {};
+    var singleDay = false;
+
+    // -- stage / show state ---------------------------------------------------
+
+    var SHOW_URL = BASE + '/index.php?view=live/overlays/show';
+    var stagePanel = document.getElementById('stagePanel');
+    var show = { rev: 0, game: null, cards: [], admin: false, writable: false,
+                 slots: [], knownCards: [] };
+
+    function showCanEdit() { return show.admin && show.writable; }
+
+    /** This card's entry in the show state, placed or not. */
+    function entryFor(cardId) {
+        var found = null;
+        (show.cards || []).forEach(function (c) { if (c.id === cardId) { found = c; } });
+        return found;
+    }
+
+    /** Whether a card fits a position, per the store's own declaration. */
+    function fitsIn(cardId, slot) {
+        var allowed = (show.cardSlots || {})[cardId];
+        return Array.isArray(allowed) ? allowed.indexOf(slot) !== -1 : true;
+    }
+
+    /** Which card is currently ON AIR in a slot, ignoring `except`. */
+    function onAirIn(slot, except) {
+        var found = null;
+        (show.cards || []).forEach(function (c) {
+            if (c.slot === slot && c.visible && c.id !== except) { found = c.id; }
+        });
+        return found;
+    }
+
+    /** How many cards are configured into a slot, ignoring `except`. */
+    function sharing(slot, except) {
+        return (show.cards || []).filter(function (c) {
+            return c.slot === slot && c.id !== except;
+        }).length;
+    }
+
+    function saveShow(next) {
+        return fetch(SHOW_URL, {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(next)
+        }).then(function (r) {
+            return r.json().then(function (body) {
+                if (!r.ok) {
+                    // 409 means somebody else moved it. Reload and show theirs
+                    // rather than clobbering it with a stale view.
+                    if (r.status === 409 && body.state) {
+                        show = Object.assign(show, body.state);
+                        renderStage();
+                    }
+                    throw new Error(body.error || ('HTTP ' + r.status));
+                }
+                show = body;
+                renderStage();
+                return body;
+            });
+        });
+    }
+
+    /**
+     * Put a card in a space, or take it out of one.
+     *
+     * Placement is NOT exclusive: several cards may be configured into the same
+     * space, which is how an operator prepares alternatives and flips between
+     * them mid-game. Nothing is displaced here — the exclusivity lives on the
+     * on-air switch instead.
+     */
+    function place(cardId, slot) {
+        var entry = entryFor(cardId);
+
+        // A card that is on air stays on air when it is moved. Dropping it off
+        // air because the operator repositioned it would be a second, unasked-for
+        // action — and mid-broadcast it reads as the graphic having failed.
+        var staysOnAir = Boolean(entry && entry.visible);
+
+        // Moving something live into a space that is already live displaces the
+        // occupant, exactly as switching one on there would. Allowed, because it
+        // is usually what was meant, but never silent.
+        var replaced = (slot && staysOnAir) ? onAirIn(slot, cardId) : null;
+
+        var cards = (show.cards || [])
+            .filter(function (c) { return c.id !== cardId; })
+            .map(function (c) {
+                return c.id === replaced
+                    ? { id: c.id, slot: c.slot, visible: false, params: c.params || {} }
+                    : c;
+            });
+
+        if (slot) {
+            cards.push({
+                id: cardId,
+                slot: slot,
+                visible: staysOnAir,
+                params: (entry && entry.params) || {}
+            });
+        }
+
+        pushUndo();
+        saveShow({ rev: show.rev, game: show.game, logo: show.logo, cards: cards })
+            .then(function () {
+                if (replaced) { flash(labelOf(replaced) + ' went off air — same position.'); }
+            })
+            .catch(function (e) { alert(e.message); });
+    }
+
+    /**
+     * The live action: put a card on air, or take it off.
+     *
+     * Visibility IS exclusive per space — two cards in one position would draw
+     * over each other — so switching one on switches off whatever was there.
+     * That is the flip an operator wants, done in one click rather than two.
+     */
+    function toggle(cardId) {
+        var entry = entryFor(cardId);
+        if (!entry) { return; }
+        var turningOn = !entry.visible;
+        var replaced = turningOn ? onAirIn(entry.slot, cardId) : null;
+
+        var cards = (show.cards || []).map(function (c) {
+            if (c.id === cardId) {
+                return { id: c.id, slot: c.slot, visible: turningOn, params: c.params || {} };
+            }
+            // Anything sharing the space steps aside — still placed and armed,
+            // just no longer on air.
+            if (turningOn && c.slot === entry.slot) {
+                return { id: c.id, slot: c.slot, visible: false, params: c.params || {} };
+            }
+            return c;
+        });
+
+        pushUndo();
+        saveShow({ rev: show.rev, game: show.game, logo: show.logo, cards: cards })
+            .then(function () {
+                if (replaced) { flash(labelOf(replaced) + ' went off air — same position.'); }
+            })
+            .catch(function (e) { alert(e.message); });
+    }
+
+    /**
+     * Clear the frame: everything off air, nothing moved.
+     *
+     * The one action an operator needs to reach without thinking — a graphic is
+     * wrong, or the director calls for a clean picture, and the fix has to be
+     * one click rather than one click per card. Placement is deliberately left
+     * alone: the cards stay set up and preloaded, so putting the stage back is
+     * as fast as switching them on again, and undo restores the whole frame.
+     */
+    function allOffAir() {
+        var cards = (show.cards || []).map(function (c) {
+            return { id: c.id, slot: c.slot, visible: false, params: c.params || {} };
+        });
+        var count = (show.cards || []).filter(function (c) { return c.visible; }).length;
+        if (!count) { return; }
+
+        pushUndo();
+        saveShow({ rev: show.rev, game: show.game, logo: show.logo, cards: cards })
+            .then(function () {
+                flash(count === 1
+                    ? 'Stage cleared — 1 card off air.'
+                    : 'Stage cleared — ' + count + ' cards off air.');
+            })
+            .catch(function (e) { alert(e.message); });
+    }
+
+    // One level of undo, which is all this needs: the mistakes worth reversing
+    // are "I just displaced something" and "I switched off the wrong card", and
+    // both are the immediately preceding action.
+    var undoState = null;
+
+    function pushUndo() {
+        undoState = { game: show.game, logo: show.logo, cards: JSON.parse(JSON.stringify(show.cards || [])) };
+    }
+
+    function undo() {
+        if (!undoState) { return; }
+        var restore = undoState;
+        undoState = null;
+        saveShow({ rev: show.rev, game: restore.game, logo: show.logo, cards: restore.cards })
+            .catch(function (e) { alert(e.message); });
+    }
+
+    /**
+     * Flag, on hover, which cards a click is about to take off air.
+     *
+     * Blocking the click would be the wrong trade: displacing something is often
+     * exactly what the operator intends, and a disabled control gives them no
+     * route to it. Showing the consequence in advance keeps the action available
+     * while removing the surprise — the warning lands on the card that would
+     * lose, which is where an operator is looking for it.
+     */
+    function warnOnHover(node, victimIds) {
+        var ids = Array.isArray(victimIds) ? victimIds : [victimIds];
+        if (!ids.length) { return; }
+
+        var mark = function (on) {
+            ids.forEach(function (v) {
+                var row = document.querySelector('.cardrow[data-card="' + v + '"]');
+                if (row) { row.classList.toggle('losing', on); }
+            });
+        };
+        node.classList.add('displaces');
+        node.addEventListener('mouseenter', function () { mark(true); });
+        node.addEventListener('mouseleave', function () { mark(false); });
+        // Keyboard users get the same warning; a tab-through should not be a
+        // worse experience than a hover.
+        node.addEventListener('focus', function () { mark(true); });
+        node.addEventListener('blur', function () { mark(false); });
+    }
+
+    function labelOf(cardId) {
+        return ({
+            scoreboard: 'Scoreboard',
+            topplayers: 'Top scorers',
+            lastgoal: 'Last goal — scorer',
+            lastassist: 'Last goal — assist',
+            lastplay: 'Last goal — scorer + assist'
+        })[cardId] || cardId;
+    }
+
+    var flashTimer = null;
+
+    function flash(message) {
+        var node = document.getElementById('stageFlash');
+        if (!node) { return; }
+        node.textContent = message;
+        node.className = 'flash on';
+        if (flashTimer) { clearTimeout(flashTimer); }
+        flashTimer = setTimeout(function () { node.className = 'flash'; }, 6000);
+    }
+
+    function setStageGame(gameId) {
+        saveShow({ rev: show.rev, game: gameId ? Number(gameId) : null, cards: show.cards || [] })
+            .catch(function (e) { alert(e.message); });
+    }
+
+    function renderStage() {
+        stagePanel.replaceChildren();
+
+        // Pick a game, get its URL. Nothing else: every stage is pinned to one
+        // game, so listing every game's URL at once was noise — the operator
+        // wants the one they are covering.
+        var origin = window.location.origin + BASE;
+
+        var gameBar = el('div', 'stagebar');
+        gameBar.append(el('span', 'muted', 'Game:'));
+        var sel = document.createElement('select');
+        sel.disabled = !showCanEdit();
+        var none = document.createElement('option');
+        none.value = '';
+        none.textContent = '— none —';
+        sel.append(none);
+        gamesList.forEach(function (g) {
+            var o = document.createElement('option');
+            o.value = g.game_id;
+            var res = reservations[String(g.reservation)];
+            o.textContent = (g.gamename || ('Game ' + g.game_id))
+                + (res && res.fieldname ? ' · Field ' + res.fieldname : '')
+                + (Number(g.isongoing) === 1 ? ' · LIVE' : '');
+            if (Number(show.game) === Number(g.game_id)) { o.selected = true; }
+            sel.append(o);
+        });
+        sel.addEventListener('change', function () { setStageGame(sel.value); });
+        gameBar.append(sel);
+        stagePanel.append(gameBar);
+
+        // The one URL a switcher needs for this game.
+        var urlBar = el('div', 'stagebar');
+        urlBar.append(el('span', 'muted', 'Stage URL:'));
+        if (show.game) {
+            var u = origin + '/s/' + show.game + '/overlay';
+            var a = el('a', 'url', u);
+            a.href = u;
+            a.target = '_blank';
+            a.rel = 'noopener';
+            a.title = 'Point the switcher here — a stage pinned to this game';
+            urlBar.append(a);
+        } else {
+            urlBar.append(el('span', 'muted', 'select a game first'));
+        }
+        stagePanel.append(urlBar);
+
+        // Set once for the event, not per URL. The image itself is Live!'s
+        // TV_SCREEN_LOGO_PATH, which is installation-wide — see docs/STUDIO.md for
+        // the per-tournament data ask.
+        var logoBar = el('div', 'stagebar');
+        logoBar.append(el('span', 'muted', 'Tournament logo:'));
+        var logoSel = document.createElement('select');
+        logoSel.disabled = !showCanEdit();
+        [['', 'off']].concat((show.logoCorners || []).map(function (c) {
+            return [c, c.replace('-', ' ')];
+        })).forEach(function (pair) {
+            var o = document.createElement('option');
+            o.value = pair[0];
+            o.textContent = pair[1];
+            if ((show.logo || '') === pair[0]) { o.selected = true; }
+            logoSel.append(o);
+        });
+        logoSel.addEventListener('change', function () {
+            pushUndo();
+            saveShow({ rev: show.rev, game: show.game, logo: logoSel.value,
+                       cards: show.cards || [] })
+                .catch(function (e) { alert(e.message); });
+        });
+        logoBar.append(logoSel);
+        logoBar.append(el('span', 'muted', 'keeps clear of anything in the same corner'));
+        stagePanel.append(logoBar);
+
+        /* One row per piece of content, not per position.
+         *
+         * The two decisions have very different frequencies: where a card lives
+         * is settled once during setup, whether it is on air is pressed many
+         * times during a game. So they get very different weights — a small
+         * spatial picker for placement, a large unmistakable switch for on/off.
+         *
+         * Placement doubles as arming: a placed card is mounted and preloaded by
+         * the stage even while switched off, so turning it on is instant. */
+        var list = el('div', 'cardlist');
+
+        (show.knownCards || []).forEach(function (id) {
+            var entry = entryFor(id);
+            var placed = entry ? entry.slot : null;
+            var on = Boolean(entry && entry.visible);
+
+            var row = el('div', 'cardrow' + (on ? ' live' : ''));
+            row.dataset.card = id;
+            row.append(el('div', 'cardname', labelOf(id)));
+
+            // A 3x3 map of the frame plus a full-frame option. Spatial, because
+            // the thing being chosen is a position — a dropdown of words like
+            // "lower-left" makes the reader translate.
+            var picker = el('div', 'picker');
+            ['upper-left', 'upper-center', 'upper-right',
+             'center', 'center', 'center',
+             'lower-left', 'lower-center', 'lower-right'].forEach(function (slot, i) {
+                // The middle row is one wide cell, matching the stage layout.
+                if (slot === 'center' && i !== 4) { return; }
+                // A card is only offered positions it physically fits — the
+                // store rejects the rest anyway, so offering them would just
+                // produce a silent no-op.
+                var fits = fitsIn(id, slot);
+                var b = el('button', 'cell'
+                    + (placed === slot ? ' here' : '')
+                    + (fits ? '' : ' unfit')
+                    + (fits && onAirIn(slot, id) ? ' taken' : '')
+                    + (slot === 'center' ? ' span' : ''));
+                b.type = 'button';
+                b.disabled = !showCanEdit() || !fits;
+
+                // Sharing a position costs nothing — several cards live there
+                // and the operator flips between them — so this only reports it.
+                var shared = fits ? sharing(slot, id) : 0;
+                b.title = !fits
+                    ? slot.replace('-', ' ') + ' — too small for this card'
+                    : slot.replace('-', ' ')
+                        + (shared ? ' — shared with ' + shared + ' other card'
+                            + (shared > 1 ? 's' : '') : '');
+                b.addEventListener('click', function () {
+                    place(id, placed === slot ? null : slot);
+                });
+                picker.append(b);
+            });
+            row.append(picker);
+
+            // Two positions that are not cells on the frame grid, so they get
+            // their own buttons rather than being squeezed into the map.
+            [['fullscreen', 'Full frame', 'Takeover — hides everything else while on'],
+             ['with-scoreboard', 'With scoreboard',
+              'Rides with the scoreboard, flipping above or below it so the two never overlap']
+            ].forEach(function (spec) {
+                if (!fitsIn(id, spec[0])) { return; }
+                var b = el('button', 'fullbtn' + (placed === spec[0] ? ' here' : ''));
+                b.type = 'button';
+                b.disabled = !showCanEdit();
+                b.textContent = spec[1];
+                b.title = spec[2];
+                b.addEventListener('click', function () {
+                    place(id, placed === spec[0] ? null : spec[0]);
+                });
+                row.append(b);
+            });
+
+            var sw = el('button', 'switch' + (on ? ' on' : ''));
+            sw.type = 'button';
+            sw.disabled = !showCanEdit() || !placed;
+            sw.textContent = on ? 'ON AIR' : 'Off';
+            sw.title = placed ? '' : 'Give it a position first';
+
+            // Switching ON takes the position from whatever holds it, and a
+            // full-frame card blanks the lot. Both are worth knowing before the
+            // click rather than after, so the warning lands on the rows that
+            // would go dark.
+            if (!on && placed) {
+                var victims = placed === 'fullscreen'
+                    ? (show.cards || []).filter(function (c) {
+                        return c.id !== id && c.visible;
+                    }).map(function (c) { return c.id; })
+                    : [onAirIn(placed, id)].filter(Boolean);
+
+                if (victims.length) {
+                    sw.title = placed === 'fullscreen'
+                        ? 'Takeover — this will clear everything else'
+                        : 'Takes this position from ' + labelOf(victims[0]);
+                    warnOnHover(sw, victims);
+                }
+            }
+
+            sw.addEventListener('click', function () { toggle(id); });
+            row.append(sw);
+
+            list.append(row);
+        });
+        stagePanel.append(list);
+
+        var bottom = el('div', 'stagebar');
+        var liveCount = (show.cards || []).filter(function (c) { return c.visible; }).length;
+        var clearBtn = el('button', 'undo clearall');
+        clearBtn.type = 'button';
+        clearBtn.textContent = '⏻ All off air';
+        clearBtn.disabled = !showCanEdit() || !liveCount;
+        clearBtn.title = liveCount
+            ? 'Takes all ' + liveCount + ' on-air card' + (liveCount === 1 ? '' : 's')
+              + ' off air. Positions are kept.'
+            : 'Nothing is on air.';
+        clearBtn.addEventListener('click', allOffAir);
+        if (liveCount) {
+            warnOnHover(clearBtn, (show.cards || [])
+                .filter(function (c) { return c.visible; })
+                .map(function (c) { return c.id; }));
+        }
+        bottom.append(clearBtn);
+
+        var undoBtn = el('button', 'undo');
+        undoBtn.type = 'button';
+        undoBtn.textContent = '↶ Undo';
+        undoBtn.disabled = !showCanEdit() || !undoState;
+        undoBtn.addEventListener('click', undo);
+        bottom.append(undoBtn);
+        var flashNode = el('span', 'flash');
+        flashNode.id = 'stageFlash';
+        // The sole report that something went off air. Announced, not just shown:
+        // an operator watching the program monitor is not looking at this bar.
+        flashNode.setAttribute('role', 'status');
+        flashNode.setAttribute('aria-live', 'polite');
+        bottom.append(flashNode);
+        stagePanel.append(bottom);
+
+        var note = el('p', 'muted');
+        note.style.marginTop = '.5rem';
+        note.textContent = showCanEdit()
+            ? 'Position is setup; the switch is the live action. A placed card is preloaded even while off, so switching it on is instant.'
+            : (show.admin
+                ? 'live/overlays/conf/ is not writable by the web server, so the stage cannot be changed.'
+                : 'Read-only. With nothing configured the stage runs in auto mode: scoreboard only.');
+        stagePanel.append(note);
+    }
+
+    // -- who am I -------------------------------------------------------------
+
+    function renderAuth() {
+        var who = document.getElementById('who');
+        var action = document.getElementById('authAction');
+        who.className = 'who' + (state.admin ? ' admin' : '');
+        who.replaceChildren(el('span', 'dot'),
+            document.createTextNode(state.admin ? 'Logged in as Live! admin' : 'Read-only'));
+
+        action.replaceChildren();
+        var link = el('a', 'btn' + (state.admin ? ' ghost' : ''),
+            state.admin ? 'Live! admin ↗' : 'Log in to control');
+        link.href = BASE + '/index.php?view=live/admin';
+        link.target = '_blank';
+        link.rel = 'noopener';
+        action.append(link);
+    }
+
+    function hexOf(input) { return input.value.replace(/^#/, '').toUpperCase(); }
+
+    function post(body) {
+        return fetch(COLORS_URL, {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body)
+        }).then(readJson);
+    }
+
+    function absorb(body) {
+        state.games = body.games || {};
+        state.admin = Boolean(body.admin);
+        state.writable = Boolean(body.writable);
+    }
+
+    /** Both conditions matter: an admin still cannot save if conf/ is read-only. */
+    function canEdit() { return state.admin && state.writable; }
+
+    // -- per-game kit colours -------------------------------------------------
+    //
+    // A colour picker and a hex field per side, nothing more. The operator is
+    // standing at the field looking at the jerseys minutes before the pull, so
+    // reading a colour off a shirt and entering it is the whole task; prepared
+    // palettes were more machinery than that job needs.
+    //
+    // The scoreboard uses them only once BOTH sides are set — one real kit
+    // beside a placeholder reads as that team's colour, which is worse than
+    // showing neither.
+
+    /** Enough of a team name to identify it in a narrow cell. */
+    function shortName(name) {
+        return name.length > 18 ? name.slice(0, 17) + '…' : name;
+    }
+
+    function saveKit(gameId, side, value) {
+        var body = { game: gameId };
+        body[side] = value;   // null clears
+        post(body).then(function (b) { absorb(b); renderAll(); })
+                  .catch(function (e) { alert(e.message); });
+    }
+
+    /**
+     * A team's name with its kit swatch attached.
+     *
+     * The swatch sits against the team it belongs to rather than in a separate
+     * column: an operator matching jerseys to a screen should not have to work
+     * out which of two anonymous swatches is which side.
+     *
+     * The hex value lives inside the native colour picker, which already offers
+     * hex entry — a second text field alongside was duplicating that and costing
+     * width the row does not have.
+     */
+    function teamWithKit(game, side, teamId) {
+        var pick = state.games[String(game.game_id)] || {};
+        var current = pick[side] || null;
+        var teamName = teamIndex[String(teamId)] || ('Team ' + teamId);
+
+        var wrap = el('span', 'kitside');
+
+        var swatch = document.createElement('input');
+        swatch.type = 'color';
+        swatch.className = 'kitswatch' + (current ? '' : ' unset');
+        swatch.value = '#' + (current || '888888');
+        swatch.disabled = !canEdit();
+        swatch.title = current
+            ? teamName + ' — wearing #' + current + ' (click to change)'
+            : teamName + ' — no kit set';
+        swatch.addEventListener('change', function () {
+            saveKit(game.game_id, side, hexOf(swatch));
+        });
+        wrap.append(swatch);
+
+        wrap.append(el('span', 'kitteam', teamName));
+
+        // Clearing needs its own affordance: a colour input always holds a
+        // value, so there is no way to express "unset" through it.
+        if (current && canEdit()) {
+            var clear = el('button', 'kitclear', '×');
+            clear.type = 'button';
+            clear.title = 'Clear ' + teamName + "'s kit";
+            clear.addEventListener('click', function () {
+                saveKit(game.game_id, side, null);
+            });
+            wrap.append(clear);
+        }
+
+        return wrap;
+    }
+
+    function renderAll() {
+        renderAuth();
+        renderStage();
+        renderGames(gamesList);
+    }
+
+    Promise.all([
+        fetch(API + '&entity=games', { credentials: 'same-origin' }).then(readJson),
+        fetch(API + '&entity=teams', { credentials: 'same-origin' }).then(readJson),
+        fetch(COLORS_URL, { credentials: 'same-origin' }).then(readJson),
+        // Fields live here, keyed by the reservation id each game carries. One
+        // fetch for the whole event beats one game-detail fetch per row.
+        fetch(API + '&entity=reference', { credentials: 'same-origin' }).then(readJson),
+        fetch(SHOW_URL, { credentials: 'same-origin' }).then(readJson)
+    ])
+        .then(function (results) {
+            gamesList = results[0].games || [];
+            // entity=teams returns an object keyed by team id, not an array.
+            var raw = results[1].teams || results[1];
+            Object.keys(raw).forEach(function (id) {
+                teamIndex[String(raw[id].team_id || id)] = raw[id].name || ('Team ' + id);
+            });
+            absorb(results[2]);
+
+            (results[3].reservations || []).forEach(function (r) {
+                reservations[String(r.id)] = r;
+            });
+
+            // Show only the time when the whole event is on one day.
+            var days = {};
+            gamesList.forEach(function (g) {
+                if (g.time) { days[String(g.time).slice(0, 10)] = true; }
+            });
+            singleDay = Object.keys(days).length <= 1;
+
+            show = results[4];
+            renderAll();
+        })
+        .catch(function (error) {
+            fail('The Live! API did not return games.', error.message);
+            stagePanel.replaceChildren();
+            var box = el('div', 'err');
+            box.append(el('strong', null, 'Stage controls unavailable.'),
+                       el('p', null, error.message));
+            stagePanel.append(box);
+        });
+
+}());
+</script>
+
+</body>
+</html>
