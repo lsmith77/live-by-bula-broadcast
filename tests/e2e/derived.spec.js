@@ -15,6 +15,9 @@ const {
   writeShow, withShowRestored,
 } = require('./helpers');
 
+/** The mixed fixture game — the only one that can exercise gender ratio. */
+const MIXED_GAME = 703;
+
 /**
  * The live score of a game, as the possession store keys it.
  *
@@ -29,6 +32,22 @@ async function scoreKey(page, gameId = GAME_ID) {
     const d = await r.json();
     return `${d.game_result.homescore}-${d.game_result.visitorscore}`;
   }, gameId);
+}
+
+/**
+ * Set the first point's ratio, restoring it afterwards.
+ *
+ * It lives with the game rather than in a browser or on a card, so a test has to
+ * write it where the surfaces read it.
+ */
+async function withRatio(page, ratio, body) {
+  const before = await readPossession(page);
+  try {
+    await writePossession(page, { game: MIXED_GAME, ratio1: ratio });
+    await body();
+  } finally {
+    await writePossession(page, { game: MIXED_GAME, ratio1: before.ratio1 || '' });
+  }
 }
 
 /** Put the possession log into a known state, and restore it afterwards. */
@@ -187,9 +206,6 @@ test.describe('following a field', () => {
   });
 });
 
-/** The mixed fixture game — the only one that can exercise gender ratio. */
-const MIXED_GAME = 703;
-
 test.describe('the score progression card', () => {
   test.beforeEach(async ({ page }) => { await loginAsAdmin(page, test); });
 
@@ -214,43 +230,75 @@ test.describe('the score progression card', () => {
 
   test('tints each step by its ratio, following ABBA', async ({ page }) => {
     await withShowRestored(page, async () => {
-      await writeShow(page, [
-        { id: 'progression', slot: 'center', visible: true, params: { ratio1: '4M/3F' } },
-      ], { game: MIXED_GAME });
+      await withRatio(page, '4MMP/3FMP', async () => {
+        await writeShow(page, [
+          { id: 'progression', slot: 'center', visible: true, params: {} },
+        ], { game: MIXED_GAME });
 
-      await page.goto(`/s/${MIXED_GAME}/overlay`);
-      await expect(page.locator('.progcard')).toBeVisible({ timeout: 15000 });
+        await page.goto(`/s/${MIXED_GAME}/overlay`);
+        await expect(page.locator('.progcard')).toBeVisible({ timeout: 15000 });
 
-      const pattern = await page.evaluate(() =>
-        [...document.querySelectorAll('.progstep')]
-          .map((s) => (s.classList.contains('ratio-a') ? 'A'
-            : s.classList.contains('ratio-b') ? 'B' : '-')).join(''));
-      // Points 1, 4, 5, 8, 9 repeat the first point's ratio.
-      expect(pattern).toBe('ABBAABBAA');
+        const pattern = await page.evaluate(() =>
+          [...document.querySelectorAll('.progstep')]
+            .map((s) => (s.classList.contains('ratio-a') ? 'A'
+              : s.classList.contains('ratio-b') ? 'B' : '-')).join(''));
+        // Points 1, 4, 5, 8, 9 repeat the first point's ratio.
+        expect(pattern).toBe('ABBAABBAA');
 
-      await expect(page.locator('.proglegitem')).toHaveCount(2);
+        await expect(page.locator('.proglegitem')).toHaveCount(2);
+        await expect(page.locator('.proglegitem').first()).toContainText('MMP');
+      });
+    });
+  });
+
+  test('separates the two ratios by more than colour', async ({ page }) => {
+    // Colour alone cannot carry this: measured, every light-on-dark pair that
+    // stays visible against the card becomes near-identical in luminance under
+    // a deuteranope simulation. The dash is what actually distinguishes them,
+    // and it survives colour blindness, greyscale and print.
+    await withShowRestored(page, async () => {
+      await withRatio(page, '4MMP/3FMP', async () => {
+        await writeShow(page, [
+          { id: 'progression', slot: 'center', visible: true, params: {} },
+        ], { game: MIXED_GAME });
+
+        await page.goto(`/s/${MIXED_GAME}/overlay`);
+        await expect(page.locator('.progcard')).toBeVisible({ timeout: 15000 });
+
+        const dashes = await page.evaluate(() => ({
+          a: getComputedStyle(document.querySelector('.progstep.ratio-a')).strokeDasharray,
+          b: getComputedStyle(document.querySelector('.progstep.ratio-b')).strokeDasharray,
+        }));
+        expect(dashes.a).not.toBe(dashes.b);
+        expect(dashes.b).not.toBe('none');
+      });
     });
   });
 
   test('omits the ratio entirely when nobody has named the first point', async ({ page }) => {
     // The pattern is derivable; which ratio "A" actually is, is not recorded
     // anywhere. Tinting without it would be inventing the labels.
+    //
+    // Clears the ratio explicitly rather than assuming it is unset -- read as
+    // it was, this passed only because no earlier test had set one.
     await withShowRestored(page, async () => {
-      await writeShow(page, [
-        { id: 'progression', slot: 'center', visible: true, params: {} },
-      ], { game: MIXED_GAME });
+      await withRatio(page, '', async () => {
+        await writeShow(page, [
+          { id: 'progression', slot: 'center', visible: true, params: {} },
+        ], { game: MIXED_GAME });
 
-      await page.goto(`/s/${MIXED_GAME}/overlay`);
-      await expect(page.locator('.progcard')).toBeVisible({ timeout: 15000 });
-      await expect(page.locator('.proglegitem')).toHaveCount(0);
-      await expect(page.locator('.progstep.ratio-a')).toHaveCount(0);
+        await page.goto(`/s/${MIXED_GAME}/overlay`);
+        await expect(page.locator('.progcard')).toBeVisible({ timeout: 15000 });
+        await expect(page.locator('.proglegitem')).toHaveCount(0);
+        await expect(page.locator('.progstep.ratio-a')).toHaveCount(0);
+      });
     });
   });
 
   test('shows no ratio dimension for a division that is not mixed', async ({ page }) => {
     await withShowRestored(page, async () => {
       await writeShow(page, [
-        { id: 'progression', slot: 'center', visible: true, params: { ratio1: '4M/3F' } },
+        { id: 'progression', slot: 'center', visible: true, params: {} },
       ], { game: GAME_ID });
 
       await page.goto(`/s/${GAME_ID}/overlay`);
@@ -275,35 +323,40 @@ test.describe('gender ratio', () => {
   });
 
   test('splits scoring by ratio, and only once enough is played', async ({ page }) => {
+    await loginAsAdmin(page, test);
     await page.goto(`/c/${MIXED_GAME}`);
-    await page.evaluate(() => localStorage.setItem('uo-abba-first-703', '4M/3F'));
-    await page.goto(`/c/${MIXED_GAME}`);
-    await page.locator('#tabPlay').click();
 
-    const panel = page.locator('.abba');
-    await expect(panel).toBeVisible({ timeout: 10000 });
+    await withRatio(page, '4MMP/3FMP', async () => {
+      await page.goto(`/c/${MIXED_GAME}`);
+      await page.locator('#tabPlay').click();
 
-    // 9 goals, alternating from the home team. A points are 1, 4, 5, 8, 9 ->
-    // home 3 away 2; B points are 2, 3, 6, 7 -> 2 all.
-    const rows = panel.locator('.abbasplitrow');
-    await expect(rows).toHaveCount(2);
-    await expect(rows.nth(0)).toContainText('4M/3F');
-    await expect(rows.nth(0).locator('.sc')).toHaveText('3 – 2');
-    await expect(rows.nth(1)).toContainText('3M/4F');
-    await expect(rows.nth(1).locator('.sc')).toHaveText('2 – 2');
+      const panel = page.locator('.abba');
+      await expect(panel).toBeVisible({ timeout: 10000 });
+
+      // 9 goals, alternating from the home team. A points are 1, 4, 5, 8, 9 ->
+      // home 3 away 2; B points are 2, 3, 6, 7 -> 2 all.
+      const rows = panel.locator('.abbasplitrow');
+      await expect(rows).toHaveCount(2);
+      await expect(rows.nth(0)).toContainText('4MMP/3FMP');
+      await expect(rows.nth(0).locator('.sc')).toHaveText('3 – 2');
+      await expect(rows.nth(1)).toContainText('3MMP/4FMP');
+      await expect(rows.nth(1).locator('.sc')).toHaveText('2 – 2');
+    });
   });
 
   test('asks for the first point rather than guessing it', async ({ page }) => {
+    await loginAsAdmin(page, test);
     await page.goto(`/c/${MIXED_GAME}`);
-    await page.evaluate(() => localStorage.removeItem('uo-abba-first-703'));
-    await page.goto(`/c/${MIXED_GAME}`);
-    await page.locator('#tabPlay').click();
+    await withRatio(page, '', async () => {
+      await page.goto(`/c/${MIXED_GAME}`);
+      await page.locator('#tabPlay').click();
 
-    const panel = page.locator('.abba');
-    await expect(panel).toBeVisible({ timeout: 10000 });
-    // No ratio named anywhere until somebody sets it.
-    await expect(panel).toContainText('Ratio on point 1');
-    await expect(panel.locator('.abbasplitrow')).toHaveCount(0);
+      const panel = page.locator('.abba');
+      await expect(panel).toBeVisible({ timeout: 10000 });
+      // No ratio named anywhere until somebody sets it.
+      await expect(panel).toContainText('Ratio on point 1');
+      await expect(panel.locator('.abbasplitrow')).toHaveCount(0);
+    });
   });
 
   test('is silent in a division that is not mixed', async ({ page }) => {
