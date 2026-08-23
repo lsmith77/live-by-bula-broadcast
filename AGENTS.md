@@ -95,6 +95,10 @@ Not a nicety here, for two reasons specific to this project.
 
 **A test, because the failure mode is on air.** These surfaces are watched live by people who cannot refresh, and the characteristic bug is not a crash but a graphic quietly asserting something untrue — a tab outliving its point, a rate without its denominator, a field-following overlay silently showing the wrong game. Those look completely normal in a screenshot. `tests/e2e/derived.spec.js` is the model: it asserts as hard on what a feature *refuses* to claim as on what it shows.
 
+**Put a derivation in `shared/` and test it there.** Anything that decides what goes on air from data — the possession log, the field lookup, the stoppage window — is a pure function, and a pure function tested directly is worth more than the same logic tested through a page. Testing the stoppage window through the browser meant moving the game clock and losing to Live!'s 30-second payload cache: one run asked for a moment 20 seconds into a timeout and was served one 131 seconds in, measuring the previous clock while appearing to measure this one. Moved into `shared/stoppage.js` and tested directly, the same suite immediately found a real bug — the window picked the event with the greatest timestamp rather than the last one that had happened, which put a timeout on a post-production frame eighteen minutes before it was called. Keep one browser test for the wiring; test the logic where it lives.
+
+Modules in `shared/` publish to `window` **and** `module.exports`, because they are loaded both ways. Do not rely on top-level `this`: it is `module.exports` under plain CommonJS but `undefined` under the loader Playwright uses, and it fails at import rather than at use.
+
 Where a test genuinely cannot be written — it needs hardware, or data no fixture has — say so in the pull request and in the doc, and write the check that *can* run. "Untestable" is a claim to justify, not a default.
 
 ## Verification
