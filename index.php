@@ -29,6 +29,21 @@ if (!defined('UO_ROUTED_VIEW')) {
 require_once __DIR__ . '/../conf/LocalConfig.php';
 
 $base = rtrim(defined('UO_URL_PREFIX') ? UO_URL_PREFIX : '/', '/');
+
+/**
+ * Asset URL stamped with the file's modification time.
+ *
+ * Same reasoning as the overlays: nothing sends a Cache-Control header for these
+ * files, so a browser caches them heuristically and can hold a stale copy
+ * indefinitely. Here that would mean an operator's controls silently running
+ * last week's logic.
+ */
+$assetUrl = static function (string $relative) use ($base): string {
+    $relative = ltrim($relative, '/');
+    $path = __DIR__ . '/' . $relative;
+    $version = is_file($path) ? (string) filemtime($path) : '0';
+    return $base . '/live/overlays/' . $relative . '?v=' . $version;
+};
 $json = static fn ($v): string => json_encode($v, JSON_UNESCAPED_SLASHES | JSON_HEX_TAG | JSON_HEX_AMP);
 ?>
 <!DOCTYPE html>
@@ -139,6 +154,12 @@ $json = static fn ($v): string => json_encode($v, JSON_UNESCAPED_SLASHES | JSON_
     .picker .cell.taken { background: #334155; }
     .picker .cell.unfit { background: #0b1220; border-style: dashed; border-color: #1e293b; }
     .picker .cell:disabled { cursor: not-allowed; opacity: .55; }
+
+    .autobtn { background: none; border: 1px dashed #475569; color: #94a3b8; font: inherit;
+               font-size: .78rem; padding: .35rem .7rem; border-radius: 4px; cursor: pointer;
+               white-space: nowrap; }
+    .autobtn.on { border-style: solid; border-color: #38bdf8; color: #7dd3fc; background: #0b2536; }
+    .autobtn:disabled { opacity: .4; cursor: not-allowed; }
 
     .fullbtn { background: none; border: 1px solid #334155; color: #94a3b8;
                border-radius: 4px; padding: .3rem .6rem; font-size: .75rem; cursor: pointer;
@@ -558,6 +579,38 @@ $json = static fn ($v): string => json_encode($v, JSON_UNESCAPED_SLASHES | JSON_
             .catch(function (e) { alert(e.message); });
     }
 
+    /**
+     * Cards that can run themselves.
+     *
+     * Only the last-play family, because only they are ABOUT an event. A
+     * scoreboard has something to say continuously and a stat card has
+     * something to say whenever anyone looks; a "last goal" card is worth
+     * exactly the few seconds after a goal and is clutter for the rest of the
+     * point. That is the test for adding another one here.
+     */
+    var AUTO_CARDS = ['lastgoal', 'lastassist', 'lastplay'];
+
+    function canAuto(cardId) { return AUTO_CARDS.indexOf(cardId) !== -1; }
+
+    function setAuto(cardId, on) {
+        var cards = (show.cards || []).map(function (c) {
+            if (c.id !== cardId) { return c; }
+            var params = {};
+            Object.keys(c.params || {}).forEach(function (k) { params[k] = c.params[k]; });
+            if (on) { params.auto = true; } else { delete params.auto; }
+            return { id: c.id, slot: c.slot, visible: c.visible, params: params };
+        });
+
+        pushUndo();
+        saveShow({ rev: show.rev, game: show.game, logo: show.logo, cards: cards })
+            .then(function () {
+                flash(on
+                    ? labelOf(cardId) + ' is on auto — 15s after each goal.'
+                    : labelOf(cardId) + ' is back to manual.');
+            })
+            .catch(function (e) { alert(e.message); });
+    }
+
     // One level of undo, which is all this needs: the mistakes worth reversing
     // are "I just displaced something" and "I switched off the wrong card", and
     // both are the immediately preceding action.
@@ -774,6 +827,24 @@ $json = static fn ($v): string => json_encode($v, JSON_UNESCAPED_SLASHES | JSON_
                 });
                 row.append(b);
             });
+
+            // Auto sits beside the switch rather than replacing it, because it
+            // does not replace it: the card is still switched on, still owns its
+            // position, and auto only decides whether it is painting right now.
+            if (canAuto(id)) {
+                var auto = Boolean(entry && entry.params && entry.params.auto);
+                var ab = el('button', 'autobtn' + (auto ? ' on' : ''));
+                ab.type = 'button';
+                ab.disabled = !showCanEdit() || !placed;
+                ab.textContent = auto ? 'Auto 15s' : 'Auto';
+                ab.title = !placed
+                    ? 'Give it a position first'
+                    : (auto
+                        ? 'On air but silent, appearing for 15s after each goal. Click for manual.'
+                        : 'Show it for 15s after each goal instead of leaving it up.');
+                ab.addEventListener('click', function () { setAuto(id, !auto); });
+                row.append(ab);
+            }
 
             var sw = el('button', 'switch' + (on ? ' on' : ''));
             sw.type = 'button';
