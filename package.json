@@ -3,9 +3,9 @@
   "private": true,
   "description": "Broadcast overlays for Live! by BULA \u2014 development tooling only; the project itself has no build step.",
   "scripts": {
-    "test": "playwright test --project=overlays",
-    "test:ui": "playwright test --project=overlays --ui",
-    "shots": "playwright test --project=shots"
+    "test": "playwright test --config tests/playwright.config.js --project=overlays",
+    "test:ui": "playwright test --config tests/playwright.config.js --project=overlays --ui",
+    "shots": "playwright test --config tests/playwright.config.js --project=shots"
   },
   "devDependencies": {
     "@playwright/test": "^1.50.0"

@@ -18,6 +18,8 @@ Reports, per image:
   - contrast of the lightest ink against the background
 """
 
+# Needs Pillow, which is not declared anywhere: this is an occasional design
+# tool rather than part of the suite. `pip install Pillow` if the import fails.
 import sys
 from collections import Counter
 

@@ -20,6 +20,12 @@ const { defineConfig, devices } = require('@playwright/test');
  * is exactly the thing that has been wrong before — see docs/PLAN.md on the
  * field names the January code invented.
  *
+ * Lives in tests/ rather than at the repo root, which is where Playwright looks
+ * by default. The root of this repository is runtime code -- a routed view's
+ * path is its URL -- so tooling is kept out of it, the same way docs, fixtures
+ * and this suite are. The cost is that `npx playwright test` on its own no
+ * longer finds the config; use `npm test`, which passes it.
+ *
  *   BASE_URL     where UltiOrganizer is served     (default http://localhost:8080)
  *   ADMIN_PASS   Live! admin password, for the tests that change what is on air
  *   GAME_ID      the fixture's live game           (default 702)
@@ -27,7 +33,9 @@ const { defineConfig, devices } = require('@playwright/test');
 const BASE_URL = process.env.BASE_URL || 'http://localhost:8080';
 
 module.exports = defineConfig({
-  testDir: './tests/e2e',
+  // Relative to THIS file, not the repo root -- Playwright resolves testDir
+  // against the config's own location.
+  testDir: './e2e',
   // A broadcast overlay is a shared, stateful surface: two tests writing show
   // state at once would fight over conf/show.json and neither result would mean
   // anything. Correctness here is worth more than wall-clock.

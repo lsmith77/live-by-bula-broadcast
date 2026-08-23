@@ -154,7 +154,7 @@ Nothing here is an overlay setting — every one of them belongs to UltiOrganize
 
 [`../tests/selftest.php`](../tests/selftest.php) is the switcher diagnostic described above — a routed page, because it has to be loadable by the device it is diagnosing.
 
-[`../tests/describe-scoreboard.py`](../tests/describe-scoreboard.py) measures rendered screenshots, for checking a layout against what it is supposed to be rather than against how it looks.
+[`../tools/describe-scoreboard.py`](../tools/describe-scoreboard.py) measures rendered screenshots, for checking a layout against what it is supposed to be rather than against how it looks.
 
 There is no automated suite for the overlays. The repository's own harness (`ktolonen/ultiorganizer-tests`) covers UltiOrganizer, not this directory. Verification here has been by measurement — `getBoundingClientRect` through headless Chrome, and payloads compared before and after a change — which is worth continuing, because on a 1920×1080 canvas viewed on a laptop, eyeballing is not evidence.
 
