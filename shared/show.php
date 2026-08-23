@@ -70,8 +70,6 @@ final class Show
             'upper-left', 'upper-center', 'upper-right',
             'lower-left', 'lower-center', 'lower-right',
         ],
-        // Six rows across two teams. Needs the width of the whole frame.
-        'topplayers' => ['center', 'fullscreen'],
         // One-line strips. They ride with the scoreboard by default, and are
         // small enough for a corner too — which is how two of them can be on air
         // at once, since a slot shows only one.
@@ -79,6 +77,23 @@ final class Show
         'lastassist' => ['with-scoreboard', 'upper-left', 'upper-center', 'upper-right'],
         // The pair on one line, so it needs more width than the single strips.
         'lastplay' => ['with-scoreboard', 'upper-center'],
+
+        // Everything below here wants the middle of the frame or the whole of
+        // it, and appears for a few seconds at a time. Order is not decoration:
+        // this list IS the order of the control page, so the cards that share
+        // the frame with each other — the bug and the strips that ride with it —
+        // are grouped where an operator coordinating positions is looking, and
+        // the ones that take the frame on their own sit below, where they need
+        // no coordinating at all.
+
+        // Six rows across two teams. Needs the width of the whole frame.
+        'topplayers' => ['center', 'fullscreen'],
+        // Team-versus-team summaries for the three moments that are not a goal.
+        // A takeover is exactly right for two of them: before the pull and after
+        // the final point there is nothing else worth covering.
+        'pregame' => ['center', 'fullscreen'],
+        'halftime' => ['center', 'fullscreen'],
+        'postgame' => ['center', 'fullscreen'],
     ];
 
     /**

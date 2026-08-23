@@ -633,6 +633,11 @@ $json = static fn ($v): string => json_encode($v, JSON_UNESCAPED_SLASHES | JSON_
         lastassist: ['off', 'goal'],
         lastplay: ['off', 'goal'],
         topplayers: ['off', 'halftime', 'final', 'pregame'],
+        // Each of these has exactly one moment. Offering the others would only
+        // be a way to put a half-time card on air at full time.
+        pregame: ['off', 'pregame'],
+        halftime: ['off', 'halftime'],
+        postgame: ['off', 'final'],
     };
 
     function autoChoices(cardId) { return AUTO_FOR[cardId] || null; }
@@ -721,7 +726,10 @@ $json = static fn ($v): string => json_encode($v, JSON_UNESCAPED_SLASHES | JSON_
             topplayers: 'Top scorers',
             lastgoal: 'Last goal — scorer',
             lastassist: 'Last goal — assist',
-            lastplay: 'Last goal — scorer + assist'
+            lastplay: 'Last goal — scorer + assist',
+            pregame: 'Pre-game',
+            halftime: 'Half time',
+            postgame: 'Full time'
         })[cardId] || cardId;
     }
 

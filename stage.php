@@ -368,6 +368,140 @@ $json = static fn ($v): string => json_encode($v, JSON_UNESCAPED_SLASHES | JSON_
         return picked.slice(0, n);
     }
 
+    /**
+     * A team-versus-team summary, framed for one moment in the game.
+     *
+     * Records and seeds come from entity=teams; breaks are derived here because
+     * the API does not carry them (classifyPoints, the same function the
+     * scoreboard uses, so the two can never disagree about what a break was).
+     *
+     * Breaks rather than holds: every point is one or the other, so they sum to
+     * the score and holds carry no information breaks do not. `unresolved` is
+     * shown whenever it is non-zero rather than folded into either column --
+     * quietly counting an unknown point as a hold would be inventing a fact.
+     */
+    function summaryCard(when) {
+        var TITLES = { pre: 'Coming up', half: 'Half time', final: 'Full time' };
+
+        return {
+            kind: 'inline',
+            arm: function (payload) {
+                var teams = payload.teams || {};
+                var info = payload.game_info || {};
+                var result = payload.game_result || {};
+                var sides = [teams.hometeam, teams.visitorteam].filter(Boolean);
+                if (sides.length !== 2) { return Promise.resolve(null); }
+
+                var points = (typeof classifyPoints === 'function')
+                    ? classifyPoints(payload.goals || [], payload.gameevents || [])
+                    : null;
+
+                return Promise.all(sides.map(function (s) {
+                    return fetch(CONFIG.apiBase + '&entity=teams&id=' + encodeURIComponent(s.team_id),
+                        { credentials: 'same-origin' })
+                        .then(function (r) { return r.ok ? r.json() : null; })
+                        .catch(function () { return null; });
+                })).then(function (full) {
+                    return Promise.all(sides.map(function (s, i) {
+                        return teamLogo(full[i] || s);
+                    })).then(function (logos) {
+                        return {
+                            when: when,
+                            title: TITLES[when] || '',
+                            context: [info.poolname, info.gamename,
+                                info.fieldname ? 'Field ' + info.fieldname : null]
+                                .filter(Boolean).join(' \u00b7 '),
+                            score: when === 'pre'
+                                ? null
+                                : [Number(result.homescore) || 0, Number(result.visitorscore) || 0],
+                            unresolved: points ? Number(points.unresolved) || 0 : 0,
+                            sides: sides.map(function (s, i) {
+                                var f = full[i] || {};
+                                var st = f.stats || {};
+                                var key = i === 0 ? 'home' : 'visitor';
+                                return {
+                                    name: s.name || (i === 0 ? info.hometeamname : info.visitorteamname) || '',
+                                    seed: s.seed || null,
+                                    logo: logos[i],
+                                    record: (s.wins !== undefined ? s.wins : (st.wins || 0))
+                                        + '-' + (s.losses !== undefined ? s.losses : (st.losses || 0)),
+                                    breaks: points ? Number(points[key] && points[key].breaks) || 0 : 0
+                                };
+                            })
+                        };
+                    });
+                });
+            },
+            render: function (node, data) {
+                node.replaceChildren();
+                var card = document.createElement('div');
+                card.className = 'card summarycard ' + data.when;
+
+                var head = document.createElement('div');
+                head.className = 'statcard-head';
+                head.textContent = data.title;
+                card.appendChild(head);
+
+                var row = document.createElement('div');
+                row.className = 'summaryrow';
+
+                data.sides.forEach(function (side, i) {
+                    if (i === 1) {
+                        var mid = document.createElement('div');
+                        mid.className = 'summarymid';
+                        if (data.score) {
+                            var sc = document.createElement('div');
+                            sc.className = 'summaryscore';
+                            sc.textContent = data.score[0] + ' \u2013 ' + data.score[1];
+                            mid.appendChild(sc);
+                        } else {
+                            var v = document.createElement('div');
+                            v.className = 'summaryv';
+                            v.textContent = 'v';
+                            mid.appendChild(v);
+                        }
+                        row.appendChild(mid);
+                    }
+
+                    var col = document.createElement('div');
+                    col.className = 'summaryside' + (i === 1 ? ' away' : '');
+
+                    var crest = logoNode(side.logo);
+                    if (crest) { col.appendChild(crest); }
+
+                    var name = document.createElement('div');
+                    name.className = 'summaryname';
+                    name.textContent = side.name;
+                    col.appendChild(name);
+
+                    var meta = document.createElement('div');
+                    meta.className = 'summarymeta';
+                    var bits = [];
+                    if (side.seed) { bits.push('Seed ' + side.seed); }
+                    bits.push(side.record);
+                    // Breaks are the number that decides ultimate games, and they
+                    // only exist once points have been played.
+                    if (data.when !== 'pre') { bits.push(side.breaks + ' brk'); }
+                    meta.textContent = bits.join(' \u00b7 ');
+                    col.appendChild(meta);
+
+                    row.appendChild(col);
+                });
+
+                card.appendChild(row);
+
+                var foot = document.createElement('div');
+                foot.className = 'summaryfoot';
+                foot.textContent = data.unresolved
+                    ? data.context + ' \u00b7 ' + data.unresolved + ' unresolved'
+                    : data.context;
+                card.appendChild(foot);
+
+                node.appendChild(card);
+            }
+        };
+    }
+
     var CARDS = {
         scoreboard: {
             kind: 'frame',
@@ -541,6 +675,22 @@ $json = static fn ($v): string => json_encode($v, JSON_UNESCAPED_SLASHES | JSON_
             }
         },
 
+        /**
+         * The three moments a game has that are not a goal.
+         *
+         * One card, three framings, because they are the same question asked at
+         * different times: who are these teams, and what has happened so far.
+         * Splitting them into three renderers would have meant three places to
+         * fix a layout and three chances for them to disagree.
+         *
+         * Each pairs with the matching auto trigger, so an operator sets the
+         * position once and the card finds its own moment -- which is also what
+         * makes them usable in post-production, where there is nobody to press
+         * anything at all.
+         */
+        pregame: summaryCard('pre'),
+        halftime: summaryCard('half'),
+        postgame: summaryCard('final'),
     };
 
     /* ---------------------------------------------------------------------

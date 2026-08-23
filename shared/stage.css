@@ -441,3 +441,79 @@
 .tourney-logo.top-right    { top: 54px; right: 60px; }
 .tourney-logo.bottom-left  { bottom: 54px; left: 60px; }
 .tourney-logo.bottom-right { bottom: 54px; right: 60px; }
+
+/* ---- pre-game / half-time / full-time summary -------------------------
+   One layout, three framings. Sized to read from the back of a room on a
+   programme monitor, which is a different problem from the bug: the bug is
+   glanced at continuously, this is looked at once for a few seconds. */
+.summarycard {
+    padding: 28px 40px 22px;
+    min-width: 900px;
+}
+.summaryrow {
+    display: grid;
+    /* minmax(0, 1fr), not 1fr: a plain 1fr will not shrink below the intrinsic
+       width of its content, and the team name is nowrap -- so a long name grows
+       the column until it touches the score instead of ellipsising. */
+    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+    align-items: center;
+    gap: 44px;
+    margin-top: 14px;
+}
+.summaryside {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 6px;
+    min-width: 0;
+}
+/* The away side mirrors so both teams sit against the outer edges, the same
+   arrangement the commentator header uses and for the same reason. */
+.summaryside.away {
+    align-items: flex-end;
+    text-align: right;
+}
+.summaryside .teamlogo {
+    width: 64px;
+    height: 64px;
+}
+.summaryname {
+    font-size: 38px;
+    font-weight: 800;
+    letter-spacing: -0.01em;
+    line-height: 1.1;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 100%;
+}
+.summarymeta {
+    font-size: 19px;
+    font-weight: 600;
+    color: rgb(255 255 255 / 62%);
+    letter-spacing: 0.04em;
+}
+.summarymid {
+    text-align: center;
+}
+.summaryscore {
+    font-size: 64px;
+    font-weight: 800;
+    font-variant-numeric: tabular-nums;
+    line-height: 1;
+}
+.summaryv {
+    font-size: 28px;
+    font-weight: 700;
+    color: rgb(255 255 255 / 45%);
+}
+.summaryfoot {
+    margin-top: 18px;
+    padding-top: 12px;
+    border-top: 1px solid rgb(255 255 255 / 12%);
+    font-size: 17px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: rgb(255 255 255 / 55%);
+}
