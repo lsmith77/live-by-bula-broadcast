@@ -56,7 +56,7 @@ A card is a self-contained renderer with a fixed contract: given the game payloa
 |---|---|---|
 | `scoreboard` | already built | none — it is the bug we have |
 | `topplayers` | `entity=teams` → `players[].total` | low — a sort, nothing to derive (§3.1) |
-| `halfsummary` | `goals` + the `half_cap` event, both already in the payload | low |
+| `pregame` / `halftime` / `postgame` | `goals` + `classifyPoints()` + `entity=teams` | **built** — one renderer, three framings (§9.3) |
 | `player` | `hometeam_scoreboard` / `visitorteam_scoreboard` | low — goals/assists yes, blocks conditional (§3.1) |
 | `gamestats` | `classifyPoints()` | low — breaks yes, turnovers impossible (§3.2) |
 | `embed` | an iframe of an existing Live! page | low *if* framing works — unverified, see §7 |
@@ -448,7 +448,20 @@ Explicitly **not** in the MVP: `player`, `halfsummary`, `bracket`, `spirit`, `em
 
 The last-play cards are *about an event*. A scoreboard has something to say continuously and a stat card has something to say whenever anyone looks, but "last goal" is worth exactly the few seconds after a goal and is clutter for the rest of the point. Leaving it up permanently is wrong; asking an operator to click it on and off every point is worse, and in auto mode there is no operator at all.
 
-So `params.auto` on `lastgoal`, `lastassist` or `lastplay` makes the card show itself for **15 seconds** after each goal. Long enough to read two names off a screen while still watching the game, short enough to be gone before the next pull.
+So `params.auto` makes a card show itself at the moment it is about. There are four such moments, and they are not all the same shape:
+
+| trigger | shape | default | cards |
+|---|---|---|---|
+| `goal` | event — a window opens and shuts | 15s | the last-play family |
+| `halftime` | event, on the `half_cap` | 30s | `halftime`, `topplayers` |
+| `final` | event, when the game stops being live | 45s | `postgame`, `topplayers` |
+| `pregame` | **state** — true until the first pull | none | `pregame`, `topplayers` |
+
+`for: null` is what separates the two shapes, and getting it wrong is not subtle: a pre-game card with a duration would vanish fifteen seconds in and leave the frame empty until the game started. Stored as `{"on": "halftime", "for": 30}`; the older `auto: true` still means fifteen seconds after each goal, so nothing already configured has to be rewritten.
+
+Each card is offered only the moments that suit it. A last-goal card is about a goal and is clutter for the rest of the point; the summary cards have exactly one moment each, and offering them the others would only be a way to put a half-time card on air at full time.
+
+Fifteen seconds for a goal is long enough to read two names off a screen while still watching the game, short enough to be gone before the next pull.
 
 **Auto is a mode of being on air, not an alternative to it.** The card is still switched ON AIR, which is what reserves the slot and keeps the store's one-visible-per-slot rule meaningful; auto only decides whether an on-air card is currently painting. "On air" keeps meaning *this card owns this position*, and auto adds *and it speaks only when there is something to say*. Anything else would need the exclusivity rules rewritten so that a card flickering into view could displace a neighbour without an operator touching anything.
 
@@ -468,6 +481,30 @@ Both live in the bar under the card list, and both exist because the per-card sw
 - **⏻ All off air.** A graphic is wrong, or the director calls for a clean picture, and the fix has to be one click rather than one click per card. It clears *visibility only* — placement is left alone, so every card stays set up and preloaded (§2.6) and putting the stage back is as fast as switching them on again. Undo restores the whole frame, which is what makes the button safe to reach for without thinking.
 
   It is disabled when nothing is on air, so it never reads as available when it would do nothing, and it gets the same hover treatment as a displacing click (§2.7): the cards it is about to take off air are flagged before the click, not after.
+
+### 9.3 The three cards that are not about a goal
+
+`pregame`, `halftime` and `postgame` are **one renderer with three framings**, because they are the same question asked at different times: who are these teams, and what has happened so far. Three separate renderers would have meant three places to fix a layout and three chances for them to disagree.
+
+Each shows both sides with crest, seed and record, the score once there is one, and breaks per team. Breaks rather than holds, for the reason in §3.2 — every point is one or the other, so they sum to the score and holds carry no information breaks do not. They come from `classifyPoints()`, the same function the scoreboard uses, so the two can never disagree about what a break was, and `unresolved` is shown whenever it is non-zero rather than quietly counted as a hold.
+
+**Card order on the control page is the store's `CARDS` order, and that is load-bearing.** The scoreboard and the strips that ride with it share the frame and need positioning relative to each other, so they are grouped at the top where an operator coordinating positions is looking. Everything that takes the middle of the frame or the whole of it sits below, because it has nothing to coordinate with. Reshuffling that list for tidiness would undo the grouping.
+
+### 9.4 Deterministic rendering, for a game nobody switched
+
+    ?at=<clock seconds>&goals=<count>&phase=pre|live|final
+
+The scoreboard fetches its payload once, renders a single frame of the state it was handed, and stops — no polling, no timers, nothing that makes two runs differ. This is what lets a game recorded without a switcher get the same overlay added afterwards, frame by frame.
+
+**It is deliberately dumb, and that is the design.** It does not work out which goals have happened by the time given. In post-production that question is not the overlay's to answer: a recording is aligned to the game by anchors an operator supplies, and plenty of tournaments record no goal times at all (`hide_time_on_scoresheet`, §3.1). Keeping the alignment entirely outside means the overlay renders identically whether the answer came from UltiOrganizer's timestamps or from somebody scrubbing a video — and there is exactly one renderer, so a post-produced overlay cannot drift from the live one.
+
+The whole mode is "hand `render()` a truncated payload". One trap found by measuring rather than reading: `render()` recomputes a server skew from `meta.generated_timestamp`, so a three-second-stale cache made `at=600` draw 9:57. Offline there is no "now" to be skewed against, so that field is stripped.
+
+### 9.5 The stage configuration as a file
+
+Export and import sit in the stage bar. Three jobs, and the third is why it earns its place: carrying a setup from one field to the next, keeping a known-good arrangement in a repository rather than in an operator's memory, and **being the input to post-production**. The card set and auto timings a broadcast used live are the ones its recording should get, so authoring them twice would only be a way to make them differ.
+
+The document omits `rev`, which belongs to one store, and `game`, because a layout is reusable and a game id is not — so importing never moves the stage to another game. Imports go to the store like any other write, and the store drops what it does not recognise, so a file that has been on a USB stick cannot produce a frame the control page could not have produced.
 
 ## 10. Gaps and upstream asks
 
@@ -552,6 +589,12 @@ Two further considerations:
 
 - A turnover count is a *negative* stat about a named, identifiable amateur athlete on a public graphic. That deserves a deliberate decision rather than shipping because the field exists.
 - **Whichever level is built needs a capture policy (§4) from the start.** Blocks are the cautionary example: the data has existed for years, but because nothing declares whether a given event records it, a zero cannot be distinguished from an absence and the stat cannot safely be aggregated. Repeating that with possession would waste the whole feature.
+
+**Not built, and deliberately so: an export of the possession log.** The log the Studio keeps is a genuinely interesting dataset — it is the only record anywhere of when the disc changed hands — and there are real uses for it beyond a live tab: adding accurate break-chance graphics to a recording in post-production, and analysis that has nothing to do with broadcast at all. A JSON export would take an afternoon.
+
+The reason to resist it is that an export would make the wrong home permanent. Once people build against a file the overlays emit, that file becomes the interface, and the case for putting possession where it belongs — in UltiOrganizer, captured by the scorekeeper, persisted alongside every other game fact — gets quietly weaker every time someone works around its absence. The log here is scoped to a broadcast, ephemeral by design, and authoritative for nothing; an export would invite it to be treated as none of those things.
+
+So the note stands as a want, not a task: **possession data should land in UO, not in an overlay-side export.** If the upstream log arrives, the export is unnecessary. If it does not, and the demand for the data turns out to be real and recurring, that demand is the argument for the upstream feature rather than a reason to route around it. Worth revisiting only if post-production or analysis needs it before UltiOrganizer does — and even then as a documented stopgap with an expiry, not an interface.
 
 ### 10.5 Feature request: record gender matching (FMP/MMP) on the roster
 

@@ -96,6 +96,12 @@ Its long middle section — **"What the data actually supports"** — is the mos
 
 **Go here for:** whether a card can be built, what a slot may contain, why a control is not disabled, and the list of upstream asks.
 
+### [`POSTPRODUCTION.md`](POSTPRODUCTION.md) — adding an overlay after the fact
+
+Most games are recorded by somebody with a camera and no switcher. This is how that footage gets the same scoreboard afterwards: the alignment problem between a video's timeline and a game's, what UltiOrganizer can and cannot tell you about when a goal happened, and why a fit that is more than twenty seconds out should refuse to render rather than produce something subtly wrong.
+
+**Go here for:** the anchor model, the residual thresholds, and the parts that are designed but not yet built.
+
 ### [`COMMENTATOR.md`](COMMENTATOR.md) — the second screen
 
 The information surface for the people calling the game. Prep mode (rosters, team stats, player detail) and play-by-play mode (line selection, who is on the field), plus line sharing between two commentators.

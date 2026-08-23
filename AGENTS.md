@@ -35,6 +35,7 @@ Runtime code sits at the top level, because a routed view's path *is* its URL �
 
 - **Routing:** every page checks `UO_ROUTED_VIEW` and 404s otherwise, so a direct request to a `.php` file returns nothing.
 - **Two polls, deliberately different.** Show state is a *static* `conf/show.json` at ~1s, because an operator's click must feel instant. Game data follows `meta.expires_timestamp` (30s for a live game). Do not route show state through PHP and do not poll the API faster — the cache life is the server telling you when it will have news.
+- **One renderer, never two.** The scoreboard's `?at=<seconds>&goals=<n>&phase=…` draws a single deterministic frame for post-production; it works by handing the existing `render()` a truncated payload, not by reimplementing anything. Alignment between a video and a game lives outside the overlay entirely — some tournaments record no goal times at all, so the caller decides which goals have happened and the overlay just draws it.
 - **Arm, then show.** A card fetches, loads and decodes everything it needs *before* it is revealed. `img.decode()`, not `onload`. A card that appears while an asset is still loading pops in half-drawn, on air.
 - **Placement is non-exclusive; visibility is exclusive per slot.** Several cards may be *placed* in one position, armed and waiting; at most one may be *on air*. Switching one on takes the slot from the other.
 - **The store is the authority, not the UI.** `shared/show.php` drops unknown cards, cards in slots they do not fit, second-visible-in-a-slot, and anything under a fullscreen takeover. Never enforce a rule only in `index.php`.
@@ -100,5 +101,6 @@ Fixtures: `fixtures/dev-fixture.sql` (idempotent — two 28-player squads, one f
 - `docs/PLAN.md` — platform, request flow, payload field names, the scoreboard itself.
 - `docs/STUDIO.md` — the stage, slots, cards, show state, and the full account of what the data supports.
 - `docs/COMMENTATOR.md` — the second screen, line sharing, and the naming/pronunciation questions.
+- `docs/POSTPRODUCTION.md` — adding an overlay to a game that was recorded without a switcher: alignment, anchors, and what is not solved.
 
 Keep them in sync with the code. When a doc and the code disagree, the doc is a bug — this project's docs are load-bearing, because most of what they record is *why* something is the way it is, which the code cannot say.

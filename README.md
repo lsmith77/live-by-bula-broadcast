@@ -43,6 +43,7 @@ Everything reads through Live!'s public JSON API. No overlay touches the databas
 | Backgrounds | Transparent by default; `?bg=green\|blue\|magenta\|black\|<hex>` for switchers that cannot key alpha |
 | `?demo=1` | Walks every display state from one real payload — scheduled, live, hold, break, timeout, cap, paused, final |
 | `?reload=<s>` | Meta-refresh fallback for a browser source that rasterises once and never runs timers |
+| `?at=…` | Renders one deterministic frame of a stated instant and stops — the basis for adding an overlay to a game that was recorded without a switcher |
 
 ### Studio — the operator's page at `/s/`
 
@@ -54,7 +55,8 @@ Everything reads through Live!'s public JSON API. No overlay touches the databas
 | Position picker | A 3×3 map of the frame, plus Full frame and With scoreboard |
 | On air | One switch per card. Several cards may be *placed* in a position; one may be *on air* |
 | Displacement warning | Hovering a control that would take something off air flags the card that would lose, before the click. Nothing is ever disabled for conflict |
-| Auto mode | Last-goal cards show themselves for 15s after each goal, then hide |
+| Auto mode | A card shows itself at the moment it is about: 15s after a goal, 30s at the halftime cap, 45s at full time, or continuously until the first pull. Each card is offered only the moments that suit it |
+| Config file | Export the whole arrangement and import it on another field — or feed it to post-production, so a recording gets the same overlay the broadcast used |
 | All off air | Clears the frame in one click, keeping every position and preload intact |
 | Undo | One level — the mistakes worth reversing are always the last action |
 | Tournament logo | `TV_SCREEN_LOGO_PATH` in a chosen corner, kept clear of whatever else is there |
@@ -67,7 +69,7 @@ Everything reads through Live!'s public JSON API. No overlay touches the databas
 |---|---|
 | Single browser source | One URL for the whole broadcast, pinned to one game, so several fields can run side by side |
 | Slots | Nine positions plus a full-frame takeover and a companion slot that rides with the scoreboard |
-| Cards | Scoreboard, last goal, last assist, last goal + assist, top players (4 per team, at least one FMP and one MMP in mixed) |
+| Cards | Scoreboard, last goal, last assist, last goal + assist, top players (4 per team, at least one FMP and one MMP in mixed), and pre-game / half-time / full-time summaries with records, seeds and breaks |
 | Arm then show | Every card loads and decodes before it is revealed, so nothing pops in half-drawn on air |
 | Auto mode | With no configuration at all, the stage runs the scoreboard and nothing else |
 
@@ -102,6 +104,8 @@ Note that Live! by BULA has its own prerequisite: its [Terms of Use](https://git
 ## Install
 
 Unzip or clone into `live/overlays/` — beside Live!'s own code, the same way Live! is installed beside UltiOrganizer's — and make `conf/` writable by the web server. There is no build step.
+
+Recorded a game without a switcher? [docs/POSTPRODUCTION.md](docs/POSTPRODUCTION.md) covers adding the same overlay afterwards.
 
 Full instructions, URLs, and the reasoning behind the design: **[docs/README.md](docs/README.md)**.
 
