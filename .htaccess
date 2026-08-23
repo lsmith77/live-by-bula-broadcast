@@ -58,6 +58,14 @@ RedirectMatch 404 ^/live/overlays/conf/(?!(show|possession)\.json$).*$
 
     RewriteRule ^stage/?$ /index.php?view=live/overlays/stage [L,QSA]
 
+    # /live/overlays/field/1/overlay -> a stage that FOLLOWS field 1 all day.
+    # Before the numeric rules: "field" is a name, not a game id.
+    RewriteRule ^field/([^/]+)/overlay/?$ \
+        /index.php?view=live/overlays/stage&field=$1 [L,QSA,B]
+
+    RewriteRule ^field/([^/]+)/?$ \
+        /index.php?view=live/overlays/scoreboard&field=$1 [L,QSA,B]
+
     # /live/overlays/702/overlay -> a stage pinned to game 702
     RewriteRule ^([0-9]+)/overlay/([0-9A-Fa-f]{6}|green|blue|magenta|black)/?$ \
         /index.php?view=live/overlays/stage&game=$1&bg=$2 [L,QSA]
