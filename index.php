@@ -675,6 +675,90 @@ $json = static fn ($v): string => json_encode($v, JSON_UNESCAPED_SLASHES | JSON_
             .catch(function (e) { alert(e.message); });
     }
 
+    /* ---------------------------------------------------------------
+       Export and import
+       --------------------------------------------------------------- */
+
+    /**
+     * A stage configuration as a file.
+     *
+     * Three jobs, and the third is the reason it earns its place. It carries a
+     * setup from one field to the next without rebuilding it by hand; it makes a
+     * known-good arrangement something you can keep in a repository rather than
+     * in an operator's memory; and it is the input to post-production, where a
+     * game recorded without a switcher gets the same overlay added afterwards.
+     * The card set and the auto timings a broadcast used live ARE the ones the
+     * recording should get, so authoring them twice would only be a way to make
+     * them differ.
+     *
+     * Deliberately NOT included: `rev`, which belongs to one store and would be
+     * meaningless elsewhere, and `game`, because a layout is reusable and a game
+     * id is not. Importing therefore never moves the stage to another game.
+     */
+    var CONFIG_VERSION = 1;
+
+    function exportConfig() {
+        var doc = {
+            kind: 'live-by-bula-broadcast/stage',
+            version: CONFIG_VERSION,
+            logo: show.logo || '',
+            cards: (show.cards || []).map(function (c) {
+                return { id: c.id, slot: c.slot, visible: Boolean(c.visible),
+                         params: c.params && Object.keys(c.params).length ? c.params : {} };
+            }),
+        };
+        var text = JSON.stringify(doc, null, 2) + '\n';
+        var blob = new Blob([text], { type: 'application/json' });
+        var a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = 'stage-config.json';
+        document.body.append(a);
+        a.click();
+        a.remove();
+        setTimeout(function () { URL.revokeObjectURL(a.href); }, 1000);
+        flash('Exported ' + doc.cards.length + ' cards.');
+    }
+
+    /**
+     * Read a configuration back.
+     *
+     * Nothing here is trusted: the file has been on a USB stick and through
+     * somebody's downloads folder. It is sent to the store like any other write,
+     * and the store drops what it does not recognise -- unknown cards, positions
+     * a card does not fit, a second visible card in one slot. So a corrupt or
+     * hostile file cannot produce a frame the UI could not have produced.
+     */
+    function importConfig(file) {
+        var reader = new FileReader();
+        reader.onload = function () {
+            var doc;
+            try { doc = JSON.parse(String(reader.result)); } catch (e) {
+                alert('That is not a JSON file.');
+                return;
+            }
+            if (!doc || doc.kind !== 'live-by-bula-broadcast/stage' || !Array.isArray(doc.cards)) {
+                alert('That is not a stage configuration.');
+                return;
+            }
+            if (Number(doc.version) > CONFIG_VERSION) {
+                alert('That file was written by a newer version than this one.');
+                return;
+            }
+            pushUndo();
+            saveShow({ rev: show.rev, game: show.game, logo: doc.logo || show.logo,
+                       cards: doc.cards })
+                .then(function (state) {
+                    var kept = (state.cards || []).length;
+                    flash(kept === doc.cards.length
+                        ? 'Imported ' + kept + ' cards.'
+                        : 'Imported ' + kept + ' of ' + doc.cards.length
+                          + ' cards; the rest were not valid here.');
+                })
+                .catch(function (e) { alert(e.message); });
+        };
+        reader.readAsText(file);
+    }
+
     // One level of undo, which is all this needs: the mistakes worth reversing
     // are "I just displaced something" and "I switched off the wrong card", and
     // both are the immediately preceding action.
@@ -1151,6 +1235,31 @@ $json = static fn ($v): string => json_encode($v, JSON_UNESCAPED_SLASHES | JSON_
                 .map(function (c) { return c.id; }));
         }
         bottom.append(clearBtn);
+
+        var exportBtn = el('button', 'undo');
+        exportBtn.type = 'button';
+        exportBtn.textContent = '⇩ Export';
+        exportBtn.title = 'Save this arrangement as a file — to reuse on another field, '
+            + 'or to add the same overlay to a recording afterwards.';
+        exportBtn.disabled = !(show.cards || []).length;
+        exportBtn.addEventListener('click', exportConfig);
+        bottom.append(exportBtn);
+
+        var importBtn = el('button', 'undo');
+        importBtn.type = 'button';
+        importBtn.textContent = '⇧ Import';
+        importBtn.title = 'Load a saved arrangement. Anything invalid here is dropped.';
+        importBtn.disabled = !showCanEdit();
+        var picker = document.createElement('input');
+        picker.type = 'file';
+        picker.accept = 'application/json,.json';
+        picker.style.display = 'none';
+        picker.addEventListener('change', function () {
+            if (picker.files && picker.files[0]) { importConfig(picker.files[0]); }
+            picker.value = '';
+        });
+        importBtn.addEventListener('click', function () { picker.click(); });
+        bottom.append(importBtn, picker);
 
         var undoBtn = el('button', 'undo');
         undoBtn.type = 'button';
