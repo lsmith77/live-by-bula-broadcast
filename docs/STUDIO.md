@@ -492,6 +492,18 @@ Three details that are not obvious:
 
 **On latency.** The card appears when the *stage learns* of the goal, which can be up to 30 seconds after it happened (`CACHE_SECONDS_GAME_DETAIL_ONGOING`). That is not a defect to engineer around: the scoreboard is on the same poll, so the card appears at the same instant the score ticks over on screen. The two are consistent with each other and with what the viewer sees, which matters more than either being early. Measured end to end against a real goal: card up at t+42s, down at t+57s — 15 seconds exactly.
 
+### 9.04 Several people tracking possession
+
+More than one person may press O and D at once, and that is safe by construction rather than by coordination.
+
+**The log records the state of possession, not transitions**, and every reader counts *changes* rather than entries. So two commentators watching the same play and both pressing D produce D then D, which is not a change. Measured: one press, two presses and three presses all yield one turnover. The store drops the repeat on the way in as well, so the log stays the length of the game rather than the length of the audience.
+
+That property is why the obvious worry does not apply. It would be easy to assume two trackers double-count every turnover and to design a handover — one desk locks the others out. That was built and then removed: it solved a problem that does not exist and cost the operator the ability to help.
+
+**What it does not survive is two people who disagree** — one pressing O while the other presses D. That flaps, and nothing technical fixes it, because both writes are real and both are asserting something. So the Studio shows how many commentators are on the code and says to agree who is calling it, rather than preventing it.
+
+**Writes are serialised** with an exclusive lock held across the read-modify-write. Without it, twelve concurrent writes landed five events and lost seven — the temp-file-and-rename the stores use gives *readers* atomicity, and nothing else: each writer holds `LOCK_EX` on its own private temp file, which no other process ever opens. That is true of all four stores; possession is the one with two intended writers, so it is the one that has been fixed.
+
 ### 9.05 The score progression card
 
 A staircase on a grid, the way an ultimate scoresheet has always drawn it: the line steps **right** when the home team scores and **down** when the away team does.

@@ -1050,16 +1050,37 @@ $json = static fn ($v): string => json_encode($v, JSON_UNESCAPED_SLASHES | JSON_
         var key = currentScoreKey();
         var d = defenceHasDisc();
 
-        [['o', 'O — offence', false], ['d', 'D — defence', true]].forEach(function (spec) {
+        // Several people may track at once, and that is safe by construction.
+        //
+        // The log records the STATE of possession, not transitions, and every
+        // reader counts changes rather than entries -- so two people both
+        // pressing D is D then D, which is not a change and is already ignored.
+        // Measured: one press, two presses and three presses all yield one
+        // turnover. The store drops the repeat on the way in as well, so the log
+        // does not fill with them.
+        //
+        // What this does NOT survive is two people who disagree, one pressing O
+        // while the other presses D. That flaps, and no locking fixes it because
+        // both writes are real. Hence the count below rather than a lockout: the
+        // operator can see how many people are on the code and sort it out.
+        [['o', 'O \u2014 offence', false], ['d', 'D \u2014 defence', true]].forEach(function (spec) {
             var active = (spec[2] === d);
             var b = el('button', 'poss' + (active ? ' on' : '') + (spec[2] ? ' d' : ''));
             b.type = 'button';
             b.disabled = !showCanEdit() || !key;
+            b.setAttribute('aria-pressed', active ? 'true' : 'false');
             b.textContent = spec[1];
             b.title = 'Keyboard: ' + spec[0].toUpperCase();
             b.addEventListener('click', function () { setDefence(spec[2]); });
             bar.append(b);
         });
+
+        var trackers = Number(possession.connected) || 0;
+        if (possession.code && trackers > 1) {
+            bar.append(el('span', 'muted',
+                trackers + ' commentators are on code ' + possession.code
+                + ' \u2014 agree who is calling possession, or they will contradict each other.'));
+        }
 
         bar.append(el('span', 'muted', key
             ? 'Point at ' + key + ' \u00b7 resets to offence on every goal'

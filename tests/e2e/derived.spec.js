@@ -130,6 +130,64 @@ test.describe('possession-derived numbers', () => {
   });
 });
 
+test.describe('several people tracking possession at once', () => {
+  test.beforeEach(async ({ page }) => { await loginAsAdmin(page, test); });
+
+  test('a press that changes nothing is not recorded', async ({ page }) => {
+    // Two commentators watching the same play both press D. The disc cannot
+    // pass from the defence to the defence, so the second press is somebody
+    // confirming what is already true.
+    await withPossession(page, [], async () => {
+      const sc = await scoreKey(page);
+      const stored = await page.evaluate(async ({ sc, game }) => {
+        await Promise.all(Array.from({ length: 12 }, () => fetch(
+          '/index.php?view=live/overlays/possession',
+          {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ game, score: sc, defence: true }),
+          },
+        )));
+        const r = await fetch('/index.php?view=live/overlays/possession', { credentials: 'same-origin' });
+        return (await r.json()).events.length;
+      }, { sc, game: GAME_ID });
+      expect(stored).toBe(1);
+    });
+  });
+
+  test('real changes are all kept', async ({ page }) => {
+    await withPossession(page, [], async () => {
+      const sc = await scoreKey(page);
+      const stored = await page.evaluate(async ({ sc, game }) => {
+        for (let i = 0; i < 6; i += 1) {
+          // eslint-disable-next-line no-await-in-loop
+          await fetch('/index.php?view=live/overlays/possession', {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ game, score: sc, defence: i % 2 === 0 }),
+          });
+        }
+        const r = await fetch('/index.php?view=live/overlays/possession', { credentials: 'same-origin' });
+        return (await r.json()).events.length;
+      }, { sc, game: GAME_ID });
+      expect(stored).toBe(6);
+    });
+  });
+
+  test('the readers count changes, not presses', () => {
+    // The other half of the same guarantee, and the reason duplicates were
+    // never able to corrupt a count even before the store dropped them.
+    const { turnovers } = require('../../shared/possession.js');
+    const log = (...ds) => ds.map((d) => ({ score: '8-6', d: d ? 1 : 0, t: 1 }));
+    expect(turnovers(log(true), 8, 6)).toBe(1);
+    expect(turnovers(log(true, true, true), 8, 6)).toBe(1);
+    expect(turnovers(log(true, true, false, false), 8, 6)).toBe(2);
+    expect(turnovers(log(true, false, true, false), 8, 6)).toBe(4);
+  });
+});
+
 test.describe('the timeout tab', () => {
   /**
    * The window is unit-tested, not driven through the browser.
