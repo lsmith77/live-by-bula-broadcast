@@ -321,7 +321,7 @@ $json = static fn ($v): string => json_encode($v, JSON_UNESCAPED_SLASHES | JSON_
      * **Nothing supplies this today, and the obvious candidate is not it.**
      * UltiOrganizer models gender ratio only for printed scoresheets
      * (`cust/wfdf/pdfscoresheet.php`, which detects a mixed division by matching
-     * the word "mixed" in its name and prints "4M/3F" style rules); it never
+     * the word "mixed" in its name and prints ratio rules); it never
      * records which players are which. `uo_player_profile.gender` exists, but it
      * is a self-declared F/M/**O** profile field behind a privacy opt-in
      * (`user/playerprofile.php:247-269`) — so it cannot answer for a player who
@@ -417,6 +417,9 @@ $json = static fn ($v): string => json_encode($v, JSON_UNESCAPED_SLASHES | JSON_
                 // Fetched at arm time rather than polled: this card appears at
                 // the half and at the end, so one read when it is about to show
                 // is both fresher than a poller and cheaper than one.
+                // The same read serves both: the log for conversion, and the
+                // first point's ratio, which lives with the game rather than
+                // with this card -- see shared/possession.php.
                 var possessionRead = fetch(CONFIG.possessionUrl + '?_=' + Date.now(),
                     { cache: 'no-store' })
                     .then(function (r) { return r.ok ? r.json() : null; })
@@ -435,6 +438,7 @@ $json = static fn ($v): string => json_encode($v, JSON_UNESCAPED_SLASHES | JSON_
                         ? window.Possession.conversion(declared.events || [],
                             payload.goals || [], startingOffence(payload.gameevents || []))
                         : null;
+
                     return Promise.all(sides.map(function (s, i) {
                         return teamLogo(full[i] || s);
                     })).then(function (logos) {
@@ -769,19 +773,12 @@ $json = static fn ($v): string => json_encode($v, JSON_UNESCAPED_SLASHES | JSON_
 
                 var seriesName = String(info.seriesname || '');
                 var mixed = seriesName.toLowerCase().indexOf('mixed') !== -1;
-                var first = String((params && params.ratio1) || '').trim();
 
                 var seasonType = String((payload.seasoninfo && payload.seasoninfo.type)
                     || 'outdoor').toLowerCase();
                 var pair = (seasonType === 'indoor' || seasonType === 'beach')
-                    ? ['3M/2F', '2M/3F']
-                    : ['4M/3F', '3M/4F'];
-                // Only label ratios if the operator named the first point's. The
-                // pattern is derivable; which actual ratio "A" is, is not
-                // recorded anywhere -- it is circled by hand on the scoresheet.
-                var showRatio = mixed && pair.indexOf(first) !== -1;
-                var other = pair[0] === first ? pair[1] : pair[0];
-
+                    ? ['3MMP/2FMP', '2MMP/3FMP']
+                    : ['4MMP/3FMP', '3MMP/4FMP'];
                 // Walk the goals into steps. Each carries the point number, so
                 // its ratio slot falls out of the ABBA pattern.
                 var steps = [];
@@ -801,18 +798,31 @@ $json = static fn ($v): string => json_encode($v, JSON_UNESCAPED_SLASHES | JSON_
                     });
                 });
 
-                return Promise.resolve({
-                    title: 'Score progression',
-                    context: [info.poolname, info.gamename].filter(Boolean).join(' \u00b7 '),
-                    home: (teams.hometeam && teams.hometeam.name) || info.hometeamname || 'Home',
-                    away: (teams.visitorteam && teams.visitorteam.name) || info.visitorteamname || 'Away',
-                    homeScore: Number(result.homescore) || 0,
-                    awayScore: Number(result.visitorscore) || 0,
-                    steps: steps,
-                    showRatio: showRatio,
-                    ratioA: first,
-                    ratioB: other
-                });
+                // The first point's ratio is a collected fact, not a payload
+                // field -- nothing in UltiOrganizer records it. It is kept with
+                // the game rather than with this card, so the commentator panel
+                // and this graphic cannot disagree about it.
+                return fetch(CONFIG.possessionUrl + '?_=' + Date.now(), { cache: 'no-store' })
+                    .then(function (r) { return r.ok ? r.json() : null; })
+                    .catch(function () { return null; })
+                    .then(function (declared) {
+                        var first = String((declared && declared.ratio1) || '').trim();
+                        var showRatio = mixed && pair.indexOf(first) !== -1;
+                        var other = pair[0] === first ? pair[1] : pair[0];
+
+                        return {
+                            title: 'Score progression',
+                            context: [info.poolname, info.gamename].filter(Boolean).join(' \u00b7 '),
+                            home: (teams.hometeam && teams.hometeam.name) || info.hometeamname || 'Home',
+                            away: (teams.visitorteam && teams.visitorteam.name) || info.visitorteamname || 'Away',
+                            homeScore: Number(result.homescore) || 0,
+                            awayScore: Number(result.visitorscore) || 0,
+                            steps: steps,
+                            showRatio: showRatio,
+                            ratioA: first,
+                            ratioB: other
+                        };
+                    });
             },
             render: function (node, data) {
                 node.replaceChildren();

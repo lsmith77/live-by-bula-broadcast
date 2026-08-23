@@ -549,15 +549,33 @@
     stroke-linecap: square;
 }
 
-/* Ratio tinting, only ever applied when the operator has named the first
-   point's ratio. The two are separated by lightness as well as hue, for the
-   same reason hold and break are (PLAN.md): a deuteranope reading two solid
-   mid-tones sees one colour. */
-.proggrid .progstep.ratio-a { stroke: #7dd3fc; }
-.proggrid .progstep.ratio-b { stroke: #1e3a8a; }
+/* Ratio, carried by DASH first and colour second.
+   
+   The first attempt used a light blue against a dark navy, on the theory that
+   separating by lightness was enough. Measured, that was wrong twice over: the
+   navy came out at 1.86:1 against this card's background -- an invisible line,
+   for everyone -- and under a deuteranope simulation the pair fell to 1.47:1.
+   Every light-on-dark pair tried had the same shape of problem: make both
+   visible against the background and they become equally luminous, so hue is
+   all that is left, and hue is exactly what cannot be relied on.
+   
+   So the ratio is a dash pattern, which survives colour blindness, greyscale,
+   and a monochrome monitor. Both strokes are then free to be bright: 11.53:1
+   and 11.51:1 against the card, holding above 13:1 under deuteranope and
+   protanope simulation. Colour only reinforces what the dash already says --
+   the same rule the hold/break tabs follow. */
+.proggrid .progstep.ratio-a {
+    stroke: #7dd3fc;
+}
 
+.proggrid .progstep.ratio-b {
+    stroke: #fbbf24;
+    stroke-dasharray: 11 7;
+}
+
+/* The current position. White, because amber now means a ratio. */
 .proggrid .proghead {
-    fill: #fbbf24;
+    fill: #f8fafc;
     stroke: #0b0f14;
     stroke-width: 2;
 }
@@ -593,15 +611,22 @@
     gap: 7px;
 }
 
+/* The legend swatch repeats the dash, not just the colour -- otherwise the
+   legend is the one place the non-colour channel is missing, and it is the
+   place a reader goes precisely because they could not tell the lines apart. */
 .progsw {
-    width: 22px;
+    width: 26px;
     height: 6px;
     border-radius: 3px;
     background: #e2e8f0;
 }
 
 .progsw.ratio-a { background: #7dd3fc; }
-.progsw.ratio-b { background: #1e3a8a; }
+
+.progsw.ratio-b {
+    background: none;
+    background-image: linear-gradient(to right, #fbbf24 0 11px, transparent 11px 18px, #fbbf24 18px 26px);
+}
 
 .progctx {
     margin-left: auto;
