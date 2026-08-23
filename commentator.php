@@ -261,6 +261,14 @@ try {
     .abbapt.now { background: var(--accent); border-color: var(--accent); }
     .abbapt.now b, .abbapt.now span { color: var(--accent-ink); }
 
+    .abbasplit { margin: .6rem 0; display: flex; flex-direction: column; gap: .3rem; }
+    .abbasplitrow { display: flex; align-items: baseline; gap: .6rem; padding: .3rem .5rem;
+                    border-radius: 4px; background: var(--panel-alt); }
+    .abbasplitrow b { min-width: 4.2rem; font-weight: 700; }
+    .abbasplitrow .sc { font-size: 1.05rem; font-weight: 800; font-variant-numeric: tabular-nums; }
+    .abbasplitrow .who { font-size: .75rem; color: var(--ink-mute); margin-left: auto;
+                         overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
     /* ---- possession ---- */
     .possbox { margin-top: 1rem; padding: .85rem 1rem; border-radius: 6px;
                background: var(--panel); border: var(--rule-strong) solid var(--line); }
@@ -1110,6 +1118,31 @@ try {
         return ((state.payload && state.payload.goals) || []).length + 1;
     }
 
+    /**
+     * Who is winning which ratio.
+     *
+     * "They have taken five of six on 4M/3F and are level on the other" is a
+     * real line about how a mixed game is actually being won, and it is
+     * derivable from the goal list alone — the ABBA slot of each point falls out
+     * of its number.
+     *
+     * **This game only, and that is a limit rather than an omission.** A
+     * tournament-wide version cannot be built: the first point's ratio is
+     * decided per game and circled on paper, so "A" in one game and "A" in the
+     * next are not necessarily the same ratio and the two cannot be added
+     * together. See docs/COMMENTATOR.md section 6b.
+     */
+    function ratioSplit() {
+        var goals = ((state.payload && state.payload.goals) || []).slice()
+            .sort(function (a, b) { return a.num - b.num; });
+        var out = { A: { home: 0, away: 0 }, B: { home: 0, away: 0 } };
+        goals.forEach(function (g, i) {
+            var slot = abbaSlot(i + 1);
+            if (Number(g.ishomegoal) === 1) { out[slot].home += 1; } else { out[slot].away += 1; }
+        });
+        return out;
+    }
+
     /* ---------------------------------------------------------------
        Possession — tracked here, shown on air
        --------------------------------------------------------------- */
@@ -1490,6 +1523,25 @@ try {
             run.append(cell);
         }
         box.append(run);
+
+        // Which ratio each side is actually winning. Only once there is enough
+        // played to mean anything -- a split over two points is a coin toss with
+        // a label on it.
+        var split = ratioSplit();
+        if ((split.A.home + split.A.away + split.B.home + split.B.away) >= 4) {
+            var s = sides();
+            var tbl = el('div', 'abbasplit');
+            [['A', firstRatio], ['B', other]].forEach(function (pairv) {
+                var slot = split[pairv[0]];
+                var line = el('div', 'abbasplitrow');
+                line.append(el('b', null, pairv[1]));
+                line.append(el('span', 'sc', slot.home + ' \u2013 ' + slot.away));
+                line.append(el('span', 'who',
+                    (s[0].team.name || 'Home') + ' v ' + (s[1].team.name || 'Away')));
+                tbl.append(line);
+            });
+            box.append(tbl);
+        }
 
         var reset = el('button', 'chip', 'point 1 was ' + firstRatio);
         reset.type = 'button';
