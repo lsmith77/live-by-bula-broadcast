@@ -87,7 +87,21 @@ final class Possession
     public static function defaults(): array
     {
         return ['rev' => 0, 'enabled' => false, 'game' => null, 'code' => null,
-                'events' => [], 'touched' => 0];
+                'ratio1' => null, 'events' => [], 'touched' => 0];
+    }
+
+    /**
+     * A gender ratio, as MMP/FMP.
+     *
+     * Always MMP and FMP -- matching male player and matching female player --
+     * never M and F. The categories are about who a player matches up against,
+     * not about who they are, and using the shorter form quietly turns a
+     * matchup rule into a statement about people. UltiOrganizer's printed
+     * scoresheet still says "4M/3F"; this is the same rule stated properly.
+     */
+    public static function isRatio(string $value): bool
+    {
+        return (bool) preg_match('/^[1-9]MMP\/[1-9]FMP$/', $value);
     }
 
     /** A score key. Both readers and writers must agree on this exact shape. */
@@ -110,6 +124,8 @@ final class Possession
             'enabled' => (bool) ($decoded['enabled'] ?? false),
             'game' => isset($decoded['game']) ? (int) $decoded['game'] : null,
             'code' => $this->loadCode(),
+            'ratio1' => isset($decoded['ratio1']) && is_string($decoded['ratio1'])
+                && self::isRatio($decoded['ratio1']) ? $decoded['ratio1'] : null,
             'events' => self::cleanEvents($decoded['events'] ?? []),
             'touched' => (int) ($decoded['touched'] ?? 0),
         ];
@@ -167,6 +183,30 @@ final class Possession
                 't' => time(),
             ];
             $state['events'] = self::cleanEvents($state['events']);
+        }
+
+        /**
+         * The ratio the first point was played at.
+         *
+         * Nowhere in UltiOrganizer: it is circled by hand on the paper
+         * scoresheet and never sent back, and the whole A-B-B-A pattern hangs
+         * off it. It lives HERE rather than on the progression card because it
+         * is a fact about the game, not about one graphic -- the commentator
+         * panel and the card both need it, and asking two people to enter the
+         * same thing is how they end up disagreeing on air.
+         *
+         * Deliberately outside the enabled/disabled cycle that clears events: a
+         * ratio is still true when nobody is tracking possession.
+         */
+        if (array_key_exists('ratio1', $change)) {
+            $raw = trim((string) ($change['ratio1'] ?? ''));
+            if ($raw === '') {
+                $state['ratio1'] = null;
+            } elseif (self::isRatio($raw)) {
+                $state['ratio1'] = $raw;
+            } else {
+                return ['ok' => false, 'error' => 'A ratio looks like "4MMP/3FMP".', 'state' => $state];
+            }
         }
 
         if (array_key_exists('code', $change)) {

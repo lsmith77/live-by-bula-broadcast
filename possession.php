@@ -50,6 +50,7 @@ function respond(Possession $store, bool $isAdmin, ?string $askedCode = null, ?i
         'enabled' => $state['enabled'],
         'game' => $state['game'],
         'events' => $state['events'],
+        'ratio1' => $state['ratio1'],
         'hasCode' => $state['code'] !== null,
         'canTrack' => $askedCode !== null && $store->allowsCode($askedCode, $askedGame),
         'connected' => $store->connectedCount(),
@@ -112,9 +113,12 @@ if (!$isAdmin && !$byCode) {
     exit;
 }
 
+// A code holder may set the ratio as well as possession: they are the one
+// watching the game with the scoresheet in front of them, and it is the same
+// kind of fact -- something true about the game that nothing records.
 $allowed = $isAdmin
-    ? ['enabled', 'game', 'code', 'score', 'defence']
-    : ['score', 'defence'];
+    ? ['enabled', 'game', 'code', 'score', 'defence', 'ratio1']
+    : ['score', 'defence', 'ratio1'];
 
 $change = [];
 foreach ($allowed as $key) {
