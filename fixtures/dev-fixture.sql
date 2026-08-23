@@ -208,3 +208,97 @@ INSERT IGNORE INTO uo_defense (game, num, author, time, iscallahan, iscaught, is
 (702,10,813,1495,0,0,1),
 (702,11,847,1610,0,0,0),
 (702,12,802,1740,0,1,1);
+
+-- ---------------------------------------------------------------------------
+-- A mixed game, for the gender-ratio features.
+--
+-- WFDF's prescribed ratio only applies to mixed divisions, and both the
+-- commentator's ratio panel and the progression card's ratio tinting decide
+-- "is this mixed?" the same way UltiOrganizer's own scoresheet does — the
+-- division name contains "mixed" (cust/wfdf/pdfscoresheet.php:142). The Open
+-- division above therefore cannot exercise either of them.
+--
+-- It sits on field 3 so the field-following tests keep a field to themselves.
+--
+-- Note this fixture deliberately does NOT try to exercise FMP/MMP balancing on
+-- the top-scorers card. That reads `player.matching`, which exists in neither
+-- the schema nor any payload, so no fixture can make it work — see
+-- docs/STUDIO.md section 3 on what the data supports.
+-- ---------------------------------------------------------------------------
+
+-- Re-runnable: every row this block inserts is deleted first, children before
+-- parents. A fixture that only loads once is a fixture nobody reloads.
+DELETE FROM uo_goal WHERE game = 703;
+DELETE FROM uo_game_pool WHERE game = 703;
+DELETE FROM uo_game WHERE game_id = 703;
+DELETE FROM uo_reservation WHERE id = 503;
+DELETE FROM uo_scheduling_name WHERE scheduling_id = 603;
+DELETE FROM uo_player WHERE team IN (304, 305);
+DELETE FROM uo_team_pool WHERE pool = 201;
+DELETE FROM uo_team WHERE team_id IN (304, 305);
+DELETE FROM uo_pool WHERE pool_id = 201;
+DELETE FROM uo_series WHERE series_id = 101;
+
+INSERT INTO uo_series (series_id, name, ordering, season, valid, type, color) VALUES
+  (101, 'Mixed', 'B', 'HRN2026', 1, 'mixed', '8B5CF6');
+
+INSERT INTO uo_pool (
+  pool_id, name, ordering, visible, continuingpool, placementpool, teams, mvgames,
+  timeoutlen, halftime, winningscore, played, timeouts, timeoutsper,
+  timeoutsovertime, timeoutstimecap, betweenpointslen, series, type, color,
+  forfeitscore, forfeitagainst, drawsallowed
+) VALUES
+  (201, 'Mixed Pool', 1, 1, 0, 0, 2, 0, 70, 35, 15, 1, 2, 'half', 1, 'soft', 90, 101, 1, '8B5CF6', 15, 0, 0);
+
+INSERT INTO uo_team (team_id, name, pool, series, valid, abbreviation) VALUES
+  (304, 'Harbour Herons', 201, 101, 1, 'HAR'),
+  (305, 'Valley Vipers',  201, 101, 1, 'VAL');
+
+INSERT INTO uo_team_pool (team, pool, rank, activerank) VALUES
+  (304, 201, 1, 1),
+  (305, 201, 2, 2);
+
+INSERT INTO uo_reservation (
+  id, location, fieldname, reservationgroup, starttime, endtime, season, timeslots, date
+) VALUES
+  (503, 400, '3', 'Harness Invitational 2026', '2026-06-02 10:00:00', '2026-06-02 11:30:00', 'HRN2026', NULL, '2026-06-02 00:00:00');
+
+INSERT INTO uo_scheduling_name (scheduling_id, name) VALUES
+  (603, 'Mixed Semi-final');
+
+INSERT INTO uo_game (
+  game_id, hometeam, visitorteam, homescore, visitorscore, reservation, time, valid,
+  halftime, official, respteam, resppers, isongoing, scheduling_name_home, scheduling_name_visitor,
+  name, timeslot, homedefenses, visitordefenses, hasstarted, islive, liveurl, timer_start,
+  timer_pause_start, timer_paused_duration
+) VALUES
+  (703, 304, 305, 5, 4, 503, '2026-06-02 10:00:00', 1, 35, NULL, 304, NULL, 1, NULL, NULL,
+   603, NULL, 0, 0, 1, 1, NULL, NULL, NULL, 0);
+
+INSERT INTO uo_game_pool (game, pool, timetable) VALUES
+  (703, 201, 1);
+
+INSERT IGNORE INTO uo_player (player_id, firstname, lastname, team, num) VALUES
+  (900, 'Robin',  'Hart',   304, 1),
+  (901, 'Ash',    'Keller', 304, 4),
+  (902, 'Nico',   'Lang',   304, 7),
+  (903, 'Sam',    'Weber',  304, 9),
+  (904, 'Jo',     'Moser',  305, 2),
+  (905, 'Kai',    'Reiter', 305, 5),
+  (906, 'Lee',    'Sommer', 305, 8),
+  (907, 'Max',    'Winter', 305, 11);
+
+-- Nine points, so the ABBA pattern runs through two full cycles and a bit:
+-- points 1, 4, 5, 8, 9 carry the first point's ratio and 2, 3, 6, 7 the other.
+INSERT INTO uo_goal (
+  game, num, assist, scorer, time, homescore, visitorscore, ishomegoal, iscallahan, timestamp
+) VALUES
+  (703,  1, 901, 900,  120, 1, 0, 1, 0, '2026-06-02 10:02:00'),
+  (703,  2, 905, 904,  300, 1, 1, 0, 0, '2026-06-02 10:05:00'),
+  (703,  3, 900, 901,  480, 2, 1, 1, 0, '2026-06-02 10:08:00'),
+  (703,  4, 904, 905,  660, 2, 2, 0, 0, '2026-06-02 10:11:00'),
+  (703,  5, 903, 902,  840, 3, 2, 1, 0, '2026-06-02 10:14:00'),
+  (703,  6, 907, 906, 1020, 3, 3, 0, 0, '2026-06-02 10:17:00'),
+  (703,  7, 902, 903, 1200, 4, 3, 1, 0, '2026-06-02 10:20:00'),
+  (703,  8, 906, 907, 1380, 4, 4, 0, 0, '2026-06-02 10:23:00'),
+  (703,  9, 902, 900, 1560, 5, 4, 1, 0, '2026-06-02 10:26:00');
