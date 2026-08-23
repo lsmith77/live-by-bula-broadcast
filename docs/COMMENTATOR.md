@@ -286,15 +286,15 @@ Mixed divisions only, decided the way UltiOrganizer's own scoresheet decides it 
 
 **The pattern is derivable; the labels are not.** WFDF's prescribed ratio runs A B B A · A B B A over successive points, so points 1, 4, 5, 8, 9, 12 … repeat the first point's ratio and the rest carry the other. That is taken from the same source as the printed sheet (`pdfscoresheet.php:1254`, which marks exactly those points with an asterisk), so a commentator reading this screen and a scorekeeper reading the paper cannot disagree.
 
-What UltiOrganizer does *not* record is which ratio was chosen for point 1 — it is circled by hand on the scoresheet and nothing sends it back. So the panel asks once, remembers it per game, and only then names actual ratios. Until it is set it shows the pattern rather than guessing, because guessing wrong is wrong for the entire game rather than for one point.
+What UltiOrganizer does *not* record is which ratio was chosen for point 1 — it is circled by hand on the scoresheet and nothing sends it back. So the panel asks once and only then names actual ratios. The answer is stored **with the game**, in the possession store, rather than in this browser: the stage's progression card needs the same fact, and a per-browser copy meant the person calling the game and the graphic going out could quietly disagree. Whoever holds the room code can set it, for the same reason they can set possession. Until it is set it shows the pattern rather than guessing, because guessing wrong is wrong for the entire game rather than for one point.
 
-The ratios themselves come from the season type: outdoor is 4M/3F against 3M/4F, indoor and beach 3M/2F against 2M/3F (`pdfscoresheet.php:461-471`). `seasoninfo.type` is in the game payload already.
+The ratios themselves come from the season type: outdoor is 4MMP/3FMP against 3MMP/4FMP, indoor and beach 3MMP/2FMP against 2MMP/3FMP (`pdfscoresheet.php:461-471`). `seasoninfo.type` is in the game payload already.
 
-It shows the current point and the next three, because the useful call is "this one and the next are 4M/3F, then it flips" rather than a single value.
+It shows the current point and the next three, because the useful call is "this one and the next are 4MMP/3FMP, then it flips" rather than a single value.
 
 ### 6c. Which ratio each side is winning
 
-Once four points have been played the ratio panel adds the split: how each team has scored on the first point's ratio against the other one. "They have taken five of six on 4M/3F and are level on the other" is a real line about how a mixed game is being won, and it costs nothing — the ABBA slot of every point falls out of its number, and the goals are already in hand.
+Once four points have been played the ratio panel adds the split: how each team has scored on the first point's ratio against the other one. "They have taken five of six on 4MMP/3FMP and are level on the other" is a real line about how a mixed game is being won, and it costs nothing — the ABBA slot of every point falls out of its number, and the goals are already in hand.
 
 **This game only, and that is a limit rather than an omission.** A pre-game or tournament-wide version would be the more interesting stat and it cannot be built. The first point's ratio is decided per game — the scoresheet prints both options with a box to circle (`cust/wfdf/pdfscoresheet.php:475`) — so "ratio A" in one game and "ratio A" in the next are not necessarily the same ratio. Without the per-game choice recorded somewhere, adding two games' splits together produces a number that looks meaningful and is not.
 

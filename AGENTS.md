@@ -61,6 +61,11 @@ Checked against real payloads, not assumed. `docs/STUDIO.md` §3 is the full acc
 - **CSS:** colours go through the tokens in the `:root` blocks, never inline literals. Adding a hard-coded hex breaks theming.
 - **Markdown: never hard-wrap.** One line per paragraph, list item, and list-item continuation, however long. Blank lines still separate blocks. Hard wraps make a one-word edit reflow a whole paragraph and turn diffs to noise. When unwrapping an existing file, preserve the leading indent of a list-item continuation or it breaks out of the item and restarts the numbering.
 
+## Language
+
+- **Always MMP and FMP, never M and F.** Matching male player and matching female player. The categories describe who a player matches up against, not who they are, and the shortened form quietly turns a matchup rule into a statement about people. UltiOrganizer's own printed scoresheet still says "4M/3F"; write ratios as `4MMP/3FMP`, which is the same rule stated properly. The store validates the format, so the short form is rejected rather than silently accepted.
+- Say what a control switches on, not what one of its outputs is called. "Break chance" named a single graphic while the toggle actually enables possession tracking, which also feeds clean holds, the turnover count and conversion figures.
+
 ## Security
 
 - **`lines.php` is the only unauthenticated write in the project.** The room code is a namespace, not a credential — nothing there reaches a viewer. Everything else that writes is behind `SeasonAccess::isLiveAdminAuthenticated()`.
