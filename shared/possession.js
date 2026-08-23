@@ -70,66 +70,11 @@
         return count;
     }
 
-    /**
-     * Roll the log up against a goal list, for a recap card.
-     *
-     * Walks the goals in order reconstructing the score before each one, so each
-     * point can be asked its own question. Only points the operator was actually
-     * tracking are counted — `tracked` says how many those were, and any figure
-     * here is meaningless without it. A "2 breaks from 3 chances" claim built on
-     * four tracked points out of fourteen is not a statistic, it is a guess with
-     * a denominator, and the card must be able to say so.
-     *
-     * `upTo` limits the walk to the first N goals, which is what the half-time
-     * card wants; omit it for the whole game.
-     */
-    function summarise(events, goals, startingOffence, upTo) {
-        var ordered = (goals || []).slice().sort(function (a, b) { return a.num - b.num; });
-        if (typeof upTo === 'number') { ordered = ordered.slice(0, upTo); }
-
-        var home = 0, visitor = 0;
-        var receiving = startingOffence || null;
-        var out = { points: 0, tracked: 0, breaks: 0, holds: 0, cleanHolds: 0,
-                    breakChances: 0, converted: 0, turnovers: 0 };
-
-        for (var i = 0; i < ordered.length; i += 1) {
-            var g = ordered[i];
-            var key = scoreKey(home, visitor);
-            var scoredBy = Number(g.ishomegoal) === 1 ? 'home' : 'visitor';
-            var touched = defenceTouched(events, home, visitor);
-            var seen = eventsFor(events, key).length > 0;
-
-            out.points += 1;
-            if (seen) {
-                out.tracked += 1;
-                out.turnovers += turnovers(events, home, visitor);
-                if (touched) { out.breakChances += 1; }
-            }
-
-            if (receiving) {
-                if (scoredBy === receiving) {
-                    out.holds += 1;
-                    // Clean only where we were actually watching. An untracked
-                    // point is unknown, not clean.
-                    if (seen && !touched) { out.cleanHolds += 1; }
-                } else {
-                    out.breaks += 1;
-                    if (seen && touched) { out.converted += 1; }
-                }
-                receiving = scoredBy === 'home' ? 'visitor' : 'home';
-            }
-
-            if (scoredBy === 'home') { home += 1; } else { visitor += 1; }
-        }
-        return out;
-    }
-
     root.Possession = {
         scoreKey: scoreKey,
         eventsFor: eventsFor,
         defenceHasDisc: defenceHasDisc,
         defenceTouched: defenceTouched,
-        turnovers: turnovers,
-        summarise: summarise
+        turnovers: turnovers
     };
 }(typeof window !== 'undefined' ? window : this));

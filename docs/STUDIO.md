@@ -499,6 +499,8 @@ Each shows both sides with crest, seed and record, the score once there is one, 
 | Breaks converted, as *n* of *m* | no — the denominator is break chances, which needs possession (§3.4) |
 | Spirit scores, per category, both teams | yes, `entity=spirit`, subject to the visibility rules |
 
+**And whenever any of them lands, the denominator has to travel with the number.** A possession-derived figure is only as good as the points somebody was actually tracking: "two breaks from three chances" built on four tracked points out of fourteen is not a statistic, it is a guess with a denominator attached. A card showing such a number has to be able to say how much of the game it covers, or it should not show it — which is the same rule §4 states for blocks, arrived at from the other direction.
+
 The first two are small additions to the existing card. The third is blocked on the same missing data as everything else about possession. The fourth is a card of its own, and putting spirit numbers on air deserves its own decision rather than arriving as a row in a stats block.
 
 ### 9.4 Deterministic rendering, for a game nobody switched

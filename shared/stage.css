@@ -303,12 +303,6 @@
     white-space: nowrap;
 }
 
-.statrow-team {
-    color: rgb(255 255 255 / 55%);
-    font-size: 17px;
-    font-weight: 600;
-    letter-spacing: 0.08em;
-}
 
 /* The label rides under the number as a caption, so a column needs no separate
    header row and the card stays short. */
