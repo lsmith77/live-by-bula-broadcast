@@ -511,3 +511,100 @@
     text-transform: uppercase;
     color: rgb(255 255 255 / 55%);
 }
+
+/* ---------------------------------------------------------------------------
+   Score progression
+
+   The traditional ultimate scoresheet staircase: right when the home team
+   scores, down when the away team does. The shape is the point -- a horizontal
+   run is a streak, a staircase is trading -- so the grid stays quiet and the
+   path carries all the weight.
+   --------------------------------------------------------------------------- */
+
+.progcard {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    padding: 22px 26px;
+    max-width: 1100px;
+}
+
+/* Height-bounded rather than width-bounded: the grid is as tall as the losing
+   score, so a 15-14 game is nearly square while a 15-3 is a wide ribbon. Letting
+   height drive keeps both inside the centre band. */
+.proggrid {
+    width: 100%;
+    max-height: 460px;
+    overflow: visible;
+}
+
+.proggrid .gridline {
+    stroke: rgb(255 255 255 / 10%);
+    stroke-width: 1;
+}
+
+.proggrid .progstep {
+    stroke: #e2e8f0;
+    stroke-width: 6;
+    stroke-linecap: square;
+}
+
+/* Ratio tinting, only ever applied when the operator has named the first
+   point's ratio. The two are separated by lightness as well as hue, for the
+   same reason hold and break are (PLAN.md): a deuteranope reading two solid
+   mid-tones sees one colour. */
+.proggrid .progstep.ratio-a { stroke: #7dd3fc; }
+.proggrid .progstep.ratio-b { stroke: #1e3a8a; }
+
+.proggrid .proghead {
+    fill: #fbbf24;
+    stroke: #0b0f14;
+    stroke-width: 2;
+}
+
+.progfoot {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 10px 26px;
+}
+
+.progaxis {
+    display: flex;
+    gap: 22px;
+    font-size: 21px;
+    font-weight: 700;
+}
+
+.progteam {
+    font-variant-numeric: tabular-nums;
+}
+
+.proglegend {
+    display: flex;
+    gap: 16px;
+    font-size: 17px;
+    font-weight: 600;
+}
+
+.proglegitem {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+}
+
+.progsw {
+    width: 22px;
+    height: 6px;
+    border-radius: 3px;
+    background: #e2e8f0;
+}
+
+.progsw.ratio-a { background: #7dd3fc; }
+.progsw.ratio-b { background: #1e3a8a; }
+
+.progctx {
+    margin-left: auto;
+    font-size: 17px;
+    color: rgb(226 232 240 / 65%);
+}

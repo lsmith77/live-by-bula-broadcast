@@ -86,6 +86,9 @@ final class Show
         // the ones that take the frame on their own sit below, where they need
         // no coordinating at all.
 
+        // A grid as tall as the losing score and as wide as the winning one.
+        // Wants the middle of the frame like the other analysis cards.
+        'progression' => ['center', 'fullscreen'],
         // Six rows across two teams. Needs the width of the whole frame.
         'topplayers' => ['center', 'fullscreen'],
         // Team-versus-team summaries for the three moments that are not a goal.

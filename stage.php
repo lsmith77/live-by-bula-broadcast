@@ -742,6 +742,180 @@ $json = static fn ($v): string => json_encode($v, JSON_UNESCAPED_SLASHES | JSON_
         pregame: summaryCard('pre'),
         halftime: summaryCard('half'),
         postgame: summaryCard('final'),
+
+        /**
+         * The score progression, as an ultimate scoresheet draws it.
+         *
+         * A staircase on a grid: the line steps RIGHT when the home team scores
+         * and DOWN when the away team does. It is the traditional shape because
+         * it makes the shape of a game visible in a way a running score cannot --
+         * a long horizontal run is a scoring streak, a diagonal is trading
+         * points, and a game that stayed close hugs the diagonal all the way to
+         * the corner. Nobody has to read any numbers to see which happened.
+         *
+         * The gender ratio rides on it when the game is mixed and the operator
+         * has named the first point's ratio: each step is tinted by the ratio
+         * that point was played at, so "they broke three times, all on the same
+         * ratio" is a thing you can see rather than a thing you work out.
+         */
+        progression: {
+            kind: 'inline',
+            arm: function (payload, params) {
+                var info = payload.game_info || {};
+                var result = payload.game_result || {};
+                var teams = payload.teams || {};
+                var goals = (payload.goals || []).slice()
+                    .sort(function (a, b) { return a.num - b.num; });
+
+                var seriesName = String(info.seriesname || '');
+                var mixed = seriesName.toLowerCase().indexOf('mixed') !== -1;
+                var first = String((params && params.ratio1) || '').trim();
+
+                var seasonType = String((payload.seasoninfo && payload.seasoninfo.type)
+                    || 'outdoor').toLowerCase();
+                var pair = (seasonType === 'indoor' || seasonType === 'beach')
+                    ? ['3M/2F', '2M/3F']
+                    : ['4M/3F', '3M/4F'];
+                // Only label ratios if the operator named the first point's. The
+                // pattern is derivable; which actual ratio "A" is, is not
+                // recorded anywhere -- it is circled by hand on the scoresheet.
+                var showRatio = mixed && pair.indexOf(first) !== -1;
+                var other = pair[0] === first ? pair[1] : pair[0];
+
+                // Walk the goals into steps. Each carries the point number, so
+                // its ratio slot falls out of the ABBA pattern.
+                var steps = [];
+                var h = 0, v = 0;
+                goals.forEach(function (g, i) {
+                    var home = Number(g.ishomegoal) === 1;
+                    if (home) { h += 1; } else { v += 1; }
+                    var n = i + 1;
+                    steps.push({
+                        n: n,
+                        home: home,
+                        x: h,
+                        y: v,
+                        // Same rule as the printed sheet: points 1, 4, 5, 8 ...
+                        // repeat the first point's ratio.
+                        slotA: (n % 4 === 0 || (n - 1) % 4 === 0)
+                    });
+                });
+
+                return Promise.resolve({
+                    title: 'Score progression',
+                    context: [info.poolname, info.gamename].filter(Boolean).join(' \u00b7 '),
+                    home: (teams.hometeam && teams.hometeam.name) || info.hometeamname || 'Home',
+                    away: (teams.visitorteam && teams.visitorteam.name) || info.visitorteamname || 'Away',
+                    homeScore: Number(result.homescore) || 0,
+                    awayScore: Number(result.visitorscore) || 0,
+                    steps: steps,
+                    showRatio: showRatio,
+                    ratioA: first,
+                    ratioB: other
+                });
+            },
+            render: function (node, data) {
+                node.replaceChildren();
+                var card = document.createElement('div');
+                card.className = 'card progcard';
+
+                var head = document.createElement('div');
+                head.className = 'statcard-head';
+                head.textContent = data.title;
+                card.appendChild(head);
+
+                var cols = Math.max(data.homeScore, 1);
+                var rows = Math.max(data.awayScore, 1);
+
+                // One cell is 40 units; the viewBox grows with the game and CSS
+                // scales the whole thing down to the slot. So a 15-13 game and a
+                // 3-1 game both fill the card rather than one being a postage
+                // stamp.
+                var C = 40, PAD = 46;
+                var w = cols * C + PAD * 2;
+                var hgt = rows * C + PAD * 2;
+
+                var NS = 'http://www.w3.org/2000/svg';
+                var svg = document.createElementNS(NS, 'svg');
+                svg.setAttribute('viewBox', '0 0 ' + w + ' ' + hgt);
+                svg.setAttribute('class', 'proggrid');
+                svg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
+
+                var mk = function (name, attrs) {
+                    var n = document.createElementNS(NS, name);
+                    Object.keys(attrs).forEach(function (k) { n.setAttribute(k, attrs[k]); });
+                    return n;
+                };
+
+                // Grid.
+                for (var c = 0; c <= cols; c += 1) {
+                    svg.appendChild(mk('line', {
+                        x1: PAD + c * C, y1: PAD, x2: PAD + c * C, y2: PAD + rows * C,
+                        class: 'gridline'
+                    }));
+                }
+                for (var r = 0; r <= rows; r += 1) {
+                    svg.appendChild(mk('line', {
+                        x1: PAD, y1: PAD + r * C, x2: PAD + cols * C, y2: PAD + r * C,
+                        class: 'gridline'
+                    }));
+                }
+
+                // The staircase, one segment per point so each can be tinted.
+                var px = PAD, py = PAD;
+                data.steps.forEach(function (s) {
+                    var nx = PAD + s.x * C;
+                    var ny = PAD + s.y * C;
+                    var cls = 'progstep' + (s.home ? ' home' : ' away');
+                    if (data.showRatio) { cls += s.slotA ? ' ratio-a' : ' ratio-b'; }
+                    svg.appendChild(mk('line', { x1: px, y1: py, x2: nx, y2: ny, class: cls }));
+                    px = nx; py = ny;
+                });
+
+                // Where the game stands now.
+                svg.appendChild(mk('circle', { cx: px, cy: py, r: 7, class: 'proghead' }));
+
+                card.appendChild(svg);
+
+                var foot = document.createElement('div');
+                foot.className = 'progfoot';
+
+                var axis = document.createElement('div');
+                axis.className = 'progaxis';
+                var right = document.createElement('span');
+                right.className = 'progteam home';
+                right.textContent = data.home + ' ' + data.homeScore + ' \u2192';
+                var down = document.createElement('span');
+                down.className = 'progteam away';
+                down.textContent = data.away + ' ' + data.awayScore + ' \u2193';
+                axis.appendChild(right);
+                axis.appendChild(down);
+                foot.appendChild(axis);
+
+                if (data.showRatio) {
+                    var leg = document.createElement('div');
+                    leg.className = 'proglegend';
+                    [[data.ratioA, 'ratio-a'], [data.ratioB, 'ratio-b']].forEach(function (pairv) {
+                        var item = document.createElement('span');
+                        item.className = 'proglegitem';
+                        var sw = document.createElement('i');
+                        sw.className = 'progsw ' + pairv[1];
+                        item.appendChild(sw);
+                        item.appendChild(document.createTextNode(pairv[0]));
+                        leg.appendChild(item);
+                    });
+                    foot.appendChild(leg);
+                }
+
+                var ctx = document.createElement('div');
+                ctx.className = 'progctx';
+                ctx.textContent = data.context;
+                foot.appendChild(ctx);
+
+                card.appendChild(foot);
+                node.appendChild(card);
+            }
+        },
     };
 
     /* ---------------------------------------------------------------------
