@@ -562,6 +562,69 @@ $json = static fn ($v): string => json_encode($v, JSON_UNESCAPED_SLASHES | JSON_
     var payload = null;
     var currentGame = null;
 
+    /* ---------------------------------------------------------------------
+       Auto mode: a card that shows itself when there is something to say
+       --------------------------------------------------------------------- */
+
+    /**
+     * How long a last-goal card stays up after a goal.
+     *
+     * Long enough to read two names off a screen while still watching the
+     * game, short enough to be gone before the next pull. Fifteen seconds is
+     * roughly the gap between a goal and the restart.
+     */
+    var AUTO_MS = 15000;
+
+    var autoUntil = 0;
+    var lastGoalCount = null;
+    var autoTimer = null;
+
+    /**
+     * Notice a goal, and open the auto window.
+     *
+     * Only a goal being ADDED counts. A scorekeeper correcting an attribution
+     * rewrites an existing entry, and re-showing the card for that would put a
+     * graphic on air for an edit nobody watching can see the reason for.
+     *
+     * `lastGoalCount` starts null so the first payload only establishes the
+     * baseline. Without that, every stage would flash the last goal of the
+     * match the moment it loaded — the same first-paint trap the scoreboard's
+     * score animation already had to be taught to avoid.
+     */
+    function noteGoals(body) {
+        var count = Array.isArray(body && body.goals) ? body.goals.length : 0;
+        var was = lastGoalCount;
+        lastGoalCount = count;
+        if (was === null || count <= was) { return false; }
+
+        autoUntil = Date.now() + AUTO_MS;
+        // Re-apply when the window shuts. The show poll only calls applyShow on
+        // a rev change and the game poll is far slower than 15s, so without this
+        // the card would simply stay up.
+        if (autoTimer) { clearTimeout(autoTimer); }
+        autoTimer = setTimeout(function () {
+            autoTimer = null;
+            applyShow(lastShow);
+        }, AUTO_MS + 50);
+        return true;
+    }
+
+    /**
+     * Whether a card wants to be on screen right now.
+     *
+     * Auto is a mode of being ON AIR, not an alternative to it: the card still
+     * has to be switched on, which is what reserves the slot and keeps the
+     * store's one-visible-per-slot rule meaningful. Auto only decides whether an
+     * on-air card is currently painting. So "on air" keeps meaning "this card
+     * owns this position", and auto adds "and it speaks only when there is
+     * something to say".
+     */
+    function wantsVisible(entry) {
+        if (!entry.visible) { return false; }
+        if (!entry.params || !entry.params.auto) { return true; }
+        return Date.now() < autoUntil;
+    }
+
     function keyOf(slot, cardId) { return slot + '::' + cardId; }
 
     function unmount(key) {
@@ -944,7 +1007,7 @@ $json = static fn ($v): string => json_encode($v, JSON_UNESCAPED_SLASHES | JSON_
         Object.keys(wanted).forEach(function (key) {
             var entry = wanted[key];
             var card = CARDS[entry.id];
-            var visible = Boolean(entry.visible);
+            var visible = wantsVisible(entry);
             if (card.kind === 'frame') {
                 mountFrame(entry.slot, card, game, visible);
             } else {
@@ -995,6 +1058,7 @@ $json = static fn ($v): string => json_encode($v, JSON_UNESCAPED_SLASHES | JSON_
         client = new OverlayDataClient({ gameId: game, apiBase: CONFIG.apiBase })
             .onData(function (body) {
                 payload = body;
+                noteGoals(body);
                 // Cheap, and catches the scoreboard growing a ribbon or a
                 // callout row after its own poll.
                 measureBug();
