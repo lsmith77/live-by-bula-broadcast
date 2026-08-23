@@ -358,6 +358,27 @@ body {
     color: #064e3b;
 }
 
+/* Timeout: play is stopped.
+   
+   Slate, because it is neither good news nor bad -- it explains why the picture
+   has stopped moving. Deliberately NOT green or red: those already mean hold and
+   break, and a timeout is not an outcome.
+   
+   No attempt is made to give it a colour "distinguishable from the other tabs".
+   Measured against every candidate -- blue, violet, teal, sky, white, amber --
+   each collided with one of hold, break or the standing tag under a deuteranope
+   or protanope simulation. That is not a failure to find the right colour; with
+   four tab types on one lightness scale, hue is doing work it cannot do. The
+   WORD distinguishes these tabs, the standing tag is separately smaller and
+   quieter, and colour only reinforces -- the same conclusion the hold/break pair
+   reached and the ratio tints reached again.
+   
+   What colour must do is stay legible: 7.24:1 for the text on the tab. */
+.callout.timeout {
+    background: #475569;
+    color: #f8fafc;
+}
+
 .callout.brk {
     background: #b91c1c;
     color: #fff;
