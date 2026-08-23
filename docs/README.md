@@ -152,11 +152,22 @@ Nothing here is an overlay setting — every one of them belongs to UltiOrganize
 
 ### Tests
 
-[`../tests/selftest.php`](../tests/selftest.php) is the switcher diagnostic described above — a routed page, because it has to be loadable by the device it is diagnosing.
+```
+npm install
+npm test                      # the suite
+ADMIN_PASS=... npm test       # including the tests that change what is on air
+npm run shots                 # regenerate the images in docs/images/
+```
 
-[`../tools/describe-scoreboard.py`](../tools/describe-scoreboard.py) measures rendered screenshots, for checking a layout against what it is supposed to be rather than against how it looks.
+Playwright, against a running dev instance rather than a mock — the payload shape is exactly the thing that has been wrong before, so a mock would agree with itself and nothing else. It uses the system Chrome, so there is no browser download. The config lives in `tests/`, which is not where Playwright looks by default, so `npm test` passes `--config`.
 
-There is no automated suite for the overlays. The repository's own harness (`ktolonen/ultiorganizer-tests`) covers UltiOrganizer, not this directory. Verification here has been by measurement — `getBoundingClientRect` through headless Chrome, and payloads compared before and after a change — which is worth continuing, because on a 1920×1080 canvas viewed on a laptop, eyeballing is not evidence.
+The assertions are about **geometry, contrast and state transitions** rather than markup, because that is how this code has actually failed. On a 1920×1080 canvas viewed on a laptop, eyeballing is not evidence.
+
+Tests needing the Live! admin session skip themselves without `ADMIN_PASS`, and anything that writes show state restores it afterwards — the suite borrows the same files a real broadcast reads.
+
+[`../tests/selftest.php`](../tests/selftest.php) is a different thing: the switcher diagnostic described above, a routed page rather than part of the suite, because it has to be loadable by the device it is diagnosing.
+
+UltiOrganizer's own harness (`ktolonen/ultiorganizer-tests`) covers UltiOrganizer, not this directory.
 
 ### Two rules that keep biting
 

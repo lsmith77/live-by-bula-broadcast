@@ -179,14 +179,13 @@ live/overlays/
   logos/           per-installation team crests; contents gitignored
   docs/            PLAN, STUDIO, COMMENTATOR, POSTPRODUCTION
   tests/           selftest.php (routed), playwright.config.js, e2e/
-  tools/           occasional helpers, not part of the suite
   fixtures/        dev-fixture.sql, dev-score.sh, logos/
   install/         the root .htaccess snippet, for pasting
 ```
 
 `tests/selftest.php` is still a routed page — `?view=live/overlays/tests/selftest` — because it has to be loadable by the switcher it diagnoses, and a nested path routes fine.
 
-**Nothing but runtime code sits at the top level**, and that is the rule the layout follows: a routed view's path *is* its URL, so moving `scoreboard.php` into a subdirectory would change `?view=live/overlays/scoreboard`. Everything else goes down a level, including `playwright.config.js` — which Playwright would rather find in the working directory, so `npm test` passes `--config`. `tools/` is for things that are neither runtime nor tests: `describe-scoreboard.py` measures somebody *else's* reference design out of a PNG, which is a different job from testing ours, and the post-production CLI will live there too.
+**Nothing but runtime code sits at the top level**, and that is the rule the layout follows: a routed view's path *is* its URL, so moving `scoreboard.php` into a subdirectory would change `?view=live/overlays/scoreboard`. Everything else goes down a level, including `playwright.config.js` — which Playwright would rather find in the working directory, so `npm test` passes `--config`. A `tools/` directory will come back when the post-production CLI (`POSTPRODUCTION.md`) needs somewhere to live.
 
 **Nothing here needs a `.gitattributes` entry.** `live` is classified `dev` in `docs/ai/release-package-coverage/inventory.txt` and the whole tree is already export-ignored (`git check-attr export-ignore live/overlays/scoreboard.php` confirms it), because Live! is a drop-in addon distributed separately rather than part of UltiOrganizer's release package. So this split is for the people reading the directory and for whatever packaging the overlays eventually get — not something `build-release.sh` acts on.
 
