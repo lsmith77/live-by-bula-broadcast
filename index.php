@@ -155,6 +155,22 @@ $json = static fn ($v): string => json_encode($v, JSON_UNESCAPED_SLASHES | JSON_
     .picker .cell.unfit { background: #0b1220; border-style: dashed; border-color: #1e293b; }
     .picker .cell:disabled { cursor: not-allowed; opacity: .55; }
 
+    /* Possession: two states, one key each, sized to be hit without looking. */
+    .stagebar.possession { border-top: 1px solid #1e293b; padding-top: .75rem; margin-top: .25rem; }
+    .poss { background: #0b1220; border: 1px solid #334155; color: #cbd5e1; font: inherit;
+            font-weight: 700; font-size: .82rem; padding: .4rem .9rem; border-radius: 5px;
+            cursor: pointer; white-space: nowrap; }
+    .poss.on { background: #1d4ed8; border-color: #60a5fa; color: #fff; }
+    /* Defence-in-possession is the state that puts a red tab on air, so it is
+       the one that must never be mistaken for the other at a glance. */
+    .poss.d.on { background: #b91c1c; border-color: #f87171; }
+    .poss:disabled { opacity: .4; cursor: not-allowed; }
+    .connected { font-size: .78rem; color: #64748b; white-space: nowrap; }
+    .connected.on { color: #4ade80; }
+    .codein { width: 5.6rem; background: #0b1220; border: 1px solid #334155; color: #7dd3fc;
+              border-radius: 4px; padding: .3rem .45rem; font-weight: 700; letter-spacing: .12em;
+              text-transform: uppercase; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+
     .autobtn { background: none; border: 1px dashed #475569; color: #94a3b8; font: inherit;
                font-size: .78rem; padding: .35rem .7rem; border-radius: 4px; cursor: pointer;
                white-space: nowrap; }
@@ -239,12 +255,14 @@ $json = static fn ($v): string => json_encode($v, JSON_UNESCAPED_SLASHES | JSON_
     Set the browser source to <strong>1920&times;1080</strong> with a transparent background.
 </div>
 
+<script src="<?= htmlspecialchars($assetUrl('shared/possession.js'), ENT_QUOTES) ?>"></script>
 <script>
 (function () {
     'use strict';
 
     var BASE = <?= $json($base) ?>;
     var API = BASE + '/index.php?view=live/api';
+    var POSSESSION_URL = BASE + '/index.php?view=live/overlays/possession';
     var container = document.getElementById('games');
 
     function el(tag, className, text) {
@@ -409,6 +427,7 @@ $json = static fn ($v): string => json_encode($v, JSON_UNESCAPED_SLASHES | JSON_
     var state = { games: {}, admin: false, writable: false };
     var teamIndex = {};
     var gamesList = [];
+    var possession = { rev: 0, enabled: false, game: null, events: [], admin: false, writable: false };
     var reservations = {};
     var singleDay = false;
 
@@ -682,6 +701,190 @@ $json = static fn ($v): string => json_encode($v, JSON_UNESCAPED_SLASHES | JSON_
             .catch(function (e) { alert(e.message); });
     }
 
+    /* ---------------------------------------------------------------
+       Possession — break chance and clean holds
+       --------------------------------------------------------------- */
+
+    /**
+     * The live score of the pinned game, as the store's key.
+     *
+     * Every possession event is stamped with the score it was made at, which is
+     * what makes a point self-identifying and a goal self-resetting. So the
+     * Studio has to know the score to write one, and it already does — the game
+     * list it renders carries it.
+     */
+    function currentScoreKey() {
+        var id = show.game;
+        var game = null;
+        gamesList.forEach(function (g) { if (Number(g.game_id) === Number(id)) { game = g; } });
+        if (!game || game.homescore === undefined || game.homescore === null) { return null; }
+        return (Number(game.homescore) || 0) + '-' + (Number(game.visitorscore) || 0);
+    }
+
+    function postPossession(change) {
+        return fetch(BASE + '/index.php?view=live/overlays/possession', {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(change)
+        }).then(readJson).then(function (state) {
+            possession = state;
+            renderStage();
+            return state;
+        });
+    }
+
+    function setPossessionMode(on) {
+        postPossession({ enabled: on, game: show.game || null })
+            .then(function () {
+                flash(on
+                    ? 'Break chance mode on — press O and D as possession changes.'
+                    : 'Break chance mode off. The scoreboard falls back to ON DEFENCE.');
+            })
+            .catch(function (e) { alert(e.message); });
+    }
+
+    function setDefence(hasDisc) {
+        if (!possession.enabled) { return; }
+        var key = currentScoreKey();
+        if (!key) { flash('No live score for this game yet.'); return; }
+        postPossession({ game: show.game || null, score: key, defence: hasDisc })
+            .catch(function (e) { alert(e.message); });
+    }
+
+    function defenceHasDisc() {
+        var key = currentScoreKey();
+        if (!key || !window.Possession) { return false; }
+        var parts = key.split('-');
+        return window.Possession.defenceHasDisc(possession.events, parts[0], parts[1]);
+    }
+
+    /**
+     * O and D, on the keyboard.
+     *
+     * Possession changes several times in a scrappy point and an operator is
+     * watching the programme output, not this page. Hunting for a button with a
+     * mouse each time is the thing that makes operator-declared possession fail
+     * in practice, so the two states get one key each and nothing else does.
+     *
+     * Ignored while typing, so a colour hex or a game filter cannot flip what is
+     * on air mid-word.
+     */
+    document.addEventListener('keydown', function (e) {
+        if (e.metaKey || e.ctrlKey || e.altKey) { return; }
+        var tag = (e.target && e.target.tagName) || '';
+        if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA' || e.target.isContentEditable) { return; }
+        var key = (e.key || '').toLowerCase();
+        if (key !== 'o' && key !== 'd') { return; }
+        if (!showCanEdit() || !possession.enabled) { return; }
+        e.preventDefault();
+        setDefence(key === 'd');
+    });
+
+    function possessionBar() {
+        var bar = el('div', 'stagebar possession');
+        var on = Boolean(possession.enabled);
+
+        var mode = el('button', 'autobtn' + (on ? ' on' : ''));
+        mode.type = 'button';
+        mode.disabled = !showCanEdit();
+        mode.textContent = on ? 'Break chance: on' : 'Break chance: off';
+        mode.title = on
+            ? 'Stop declaring possession. The scoreboard falls back to the standing ON DEFENCE tag.'
+            : 'Declare possession by hand so the scoreboard can show BREAK CHANCE and tell a clean hold from an ordinary one.';
+        mode.addEventListener('click', function () { setPossessionMode(!on); });
+        bar.append(mode);
+
+        if (!on) {
+            bar.append(el('span', 'muted',
+                'Off: the scoreboard shows ON DEFENCE, which is always true but never an event.'));
+            return bar;
+        }
+
+        // Hand tracking to the commentary desk by naming their room code.
+        //
+        // The commentator is better placed to do this than the operator —
+        // watching the play IS their job, whereas the operator is choosing and
+        // timing graphics. Naming one code rather than accepting any is what
+        // keeps this a single-entry allowlist: clearing the field revokes it.
+        var codeWrap = el('span', 'kitside');
+        codeWrap.append(el('span', 'muted', 'Commentator code'));
+        var codeIn = document.createElement('input');
+        codeIn.type = 'text';
+        codeIn.className = 'codein';
+        codeIn.maxLength = 5;
+        codeIn.placeholder = '\u2014\u2014\u2014\u2014\u2014';
+        codeIn.value = possession.code || '';
+        codeIn.disabled = !showCanEdit();
+        codeIn.title = 'The 5-character room code shown on the commentator page. '
+            + 'Only that code may set possession; clear the field to take it back.';
+        codeIn.addEventListener('change', function () {
+            var v = codeIn.value.toUpperCase().trim();
+            postPossession({ game: show.game || null, code: v || null })
+                .then(function (state) {
+                    flash(state.code
+                        ? 'Commentator ' + state.code + ' can now set possession.'
+                        : 'Commentator tracking revoked.');
+                })
+                .catch(function (e) { alert(e.message); });
+        });
+        codeWrap.append(codeIn);
+
+        // Who is actually out there. Without this the operator has typed a code
+        // into a box and has no idea whether anyone is on the other end of it,
+        // which is the whole question they care about before kick-off.
+        var n = Number(possession.connected) || 0;
+        var who = el('span', 'connected' + (n ? ' on' : ''));
+        who.textContent = n === 0
+            ? 'nobody connected'
+            : (n === 1 ? '1 commentator connected' : n + ' commentators connected');
+        who.title = n
+            ? 'Commentator pages currently polling with this code.'
+            : 'No commentator page is using this code yet. They enter it as their sync code.';
+        codeWrap.append(who);
+        bar.append(codeWrap);
+
+        var key = currentScoreKey();
+        var d = defenceHasDisc();
+
+        [['o', 'O — offence', false], ['d', 'D — defence', true]].forEach(function (spec) {
+            var active = (spec[2] === d);
+            var b = el('button', 'poss' + (active ? ' on' : '') + (spec[2] ? ' d' : ''));
+            b.type = 'button';
+            b.disabled = !showCanEdit() || !key;
+            b.textContent = spec[1];
+            b.title = 'Keyboard: ' + spec[0].toUpperCase();
+            b.addEventListener('click', function () { setDefence(spec[2]); });
+            bar.append(b);
+        });
+
+        bar.append(el('span', 'muted', key
+            ? 'Point at ' + key + ' \u00b7 resets to offence on every goal'
+            : 'Waiting for a live score'));
+        return bar;
+    }
+
+    /**
+     * Follow possession, do not only drive it.
+     *
+     * A commentator with the room code may be pressing O and D from another
+     * device, and an operator whose buttons showed only their own last press
+     * would be looking at a lie. Cheap: the file is tiny and this is the same
+     * channel the stage already polls.
+     */
+    function startPossessionPoll() {
+        setInterval(function () {
+            fetch(POSSESSION_URL, { credentials: 'same-origin' })
+                .then(readJson)
+                .then(function (state) {
+                    if (state.rev === possession.rev) { return; }
+                    possession = state;
+                    renderStage();
+                })
+                .catch(function () { /* transient; the next tick retries */ });
+        }, 2000);
+    }
+
     function renderStage() {
         stagePanel.replaceChildren();
 
@@ -910,6 +1113,7 @@ $json = static fn ($v): string => json_encode($v, JSON_UNESCAPED_SLASHES | JSON_
         flashNode.setAttribute('aria-live', 'polite');
         bottom.append(flashNode);
         stagePanel.append(bottom);
+        stagePanel.append(possessionBar());
 
         var note = el('p', 'muted');
         note.style.marginTop = '.5rem';
@@ -1043,7 +1247,8 @@ $json = static fn ($v): string => json_encode($v, JSON_UNESCAPED_SLASHES | JSON_
         // Fields live here, keyed by the reservation id each game carries. One
         // fetch for the whole event beats one game-detail fetch per row.
         fetch(API + '&entity=reference', { credentials: 'same-origin' }).then(readJson),
-        fetch(SHOW_URL, { credentials: 'same-origin' }).then(readJson)
+        fetch(SHOW_URL, { credentials: 'same-origin' }).then(readJson),
+        fetch(POSSESSION_URL, { credentials: 'same-origin' }).then(readJson)
     ])
         .then(function (results) {
             gamesList = results[0].games || [];
@@ -1066,7 +1271,9 @@ $json = static fn ($v): string => json_encode($v, JSON_UNESCAPED_SLASHES | JSON_
             singleDay = Object.keys(days).length <= 1;
 
             show = results[4];
+            possession = results[5] || possession;
             renderAll();
+            startPossessionPoll();
         })
         .catch(function (error) {
             fail('The Live! API did not return games.', error.message);

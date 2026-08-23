@@ -210,6 +210,7 @@ $json = static fn ($value): string => json_encode($value, JSON_UNESCAPED_SLASHES
 
 <div class="demo-label hide" id="demoLabel"></div>
 
+<script src="<?= htmlspecialchars($assetUrl('shared/possession.js'), ENT_QUOTES) ?>"></script>
 <script src="<?= htmlspecialchars($assetUrl('shared/overlay-client.js'), ENT_QUOTES) ?>"></script>
 <?php if ($demo) : ?>
 <script src="<?= htmlspecialchars($assetUrl('shared/demo.js'), ENT_QUOTES) ?>"></script>
@@ -229,6 +230,10 @@ $json = static fn ($value): string => json_encode($value, JSON_UNESCAPED_SLASHES
         ribbon: <?= $json($ribbon) ?>,
         demo: <?= $json($demo) ?>,
         demoStep: <?= (int) $demoStep ?>,
+        // Declared possession, read as a static file so it can move at the pace
+        // a break chance needs rather than the pace the game payload allows.
+        possessionUrl: <?= $json($assetBase . '/conf/possession.json') ?>,
+        possessionPoll: 1000,
         // What each side is wearing for this game, entered in the Studio
         // minutes before the pull by someone looking at the jerseys.
         kit: <?= $json($colorStore->gameChoice((int) $gameId)) ?>,
@@ -490,6 +495,64 @@ $json = static fn ($value): string => json_encode($value, JSON_UNESCAPED_SLASHES
     var outcome = null;
     var outcomeTimer = null;
     var possession = { live: false, breaking: null };
+
+    /**
+     * Operator- or commentator-declared possession, on the fast channel.
+     *
+     * UltiOrganizer records no possession changes, so a break chance cannot be
+     * derived — only declared (docs/STUDIO.md 3.5). This is that declaration,
+     * read straight off a static file about once a second because a break
+     * chance is worthless ten seconds late and the game payload is up to 30s
+     * behind.
+     *
+     * Absent, unreadable or switched off, the board falls back to the standing
+     * ON DEFENCE tag, which is always true. The card adapts to what is available
+     * rather than being configured for it.
+     */
+    var declared = { enabled: false, events: [] };
+
+    /** The score the board is currently showing, as the possession store keys it. */
+    var shownScore = null;
+
+    function pollDeclared() {
+        fetch(CONFIG.possessionUrl + '?_=' + Date.now(), { cache: 'no-store' })
+            .then(function (r) { return r.ok ? r.json() : null; })
+            .catch(function () { return null; })
+            .then(function (state) {
+                var next = (state && Array.isArray(state.events)) ? state : { enabled: false, events: [] };
+                var changed = next.enabled !== declared.enabled || next.rev !== declared.rev;
+                declared = next;
+                if (changed) { paintCallouts(); }
+            })
+            .then(function () { setTimeout(pollDeclared, CONFIG.possessionPoll); });
+    }
+
+    /** Is the defence holding the disc right now, according to the log? */
+    function breakChanceNow() {
+        if (!declared.enabled || !possession.live || !window.Possession || !shownScore) { return false; }
+        return window.Possession.defenceHasDisc(declared.events, shownScore.home, shownScore.visitor);
+    }
+
+    /**
+     * Was the point that just ended a CLEAN hold — the defence never touching it?
+     *
+     * Asked of the score BEFORE the goal, which is the point being classified.
+     * Only claimable while the log was actually running: an untracked point is
+     * unknown, not clean, and "Clean hold" is an assertion that over-claims if
+     * it is wrong. So it upgrades a hold only on positive evidence.
+     */
+    function wasCleanHold(latest, goals) {
+        if (!declared.enabled || !latest || latest.kind !== 'hold' || !window.Possession) { return false; }
+        var ordered = (goals || []).slice().sort(function (a, b) { return a.num - b.num; });
+        var home = 0, visitor = 0;
+        for (var i = 0; i < ordered.length; i += 1) {
+            if (ordered[i].num === latest.num) { break; }
+            if (Number(ordered[i].ishomegoal) === 1) { home += 1; } else { visitor += 1; }
+        }
+        var seen = window.Possession.eventsFor(declared.events,
+            window.Possession.scoreKey(home, visitor)).length > 0;
+        return seen && !window.Possession.defenceTouched(declared.events, home, visitor);
+    }
     var lastGoalNum = null;
 
     /** Restart a CSS animation that is already on the element. */
@@ -532,11 +595,21 @@ $json = static fn ($value): string => json_encode($value, JSON_UNESCAPED_SLASHES
     }
 
     function paintCallouts() {
-        var showing = outcome
-            ? { side: outcome.side, text: outcome.kind === 'brk' ? 'Break' : 'Hold', cls: outcome.kind }
-            : (possession.live && possession.breaking
-                ? { side: possession.breaking, text: 'On defence', cls: 'standing' }
-                : null);
+        var showing;
+        if (outcome) {
+            showing = {
+                side: outcome.side,
+                text: outcome.kind === 'brk' ? 'Break' : (outcome.clean ? 'Clean hold' : 'Hold'),
+                cls: outcome.kind
+            };
+        } else if (breakChanceNow() && possession.breaking) {
+            // A declared, transient event — the real thing, not the standing tag.
+            showing = { side: possession.breaking, text: 'Break chance', cls: 'brk chance' };
+        } else if (possession.live && possession.breaking) {
+            showing = { side: possession.breaking, text: 'On defence', cls: 'standing' };
+        } else {
+            showing = null;
+        }
 
         [['home', el.homeCallout], ['away', el.awayCallout]].forEach(function (pair) {
             var key = pair[0] === 'home' ? 'home' : 'visitor';
@@ -560,6 +633,9 @@ $json = static fn ($value): string => json_encode($value, JSON_UNESCAPED_SLASHES
 
     function setPossession(result, goals, gameEvents) {
         var live = Number(result.isongoing) === 1;
+        shownScore = (result.homescore === undefined || result.homescore === null)
+            ? null
+            : { home: Number(result.homescore) || 0, visitor: Number(result.visitorscore) || 0 };
         var offence = live ? currentOffence(goals, gameEvents) : null;
         possession = {
             live: live,
@@ -575,6 +651,7 @@ $json = static fn ($value): string => json_encode($value, JSON_UNESCAPED_SLASHES
 
         if (painted && live && latest && num !== lastGoalNum) {
             outcome = latest;
+            outcome.clean = wasCleanHold(latest, goals);
             if (outcomeTimer) { clearTimeout(outcomeTimer); }
             outcomeTimer = setTimeout(function () {
                 outcome = null;
@@ -862,6 +939,11 @@ $json = static fn ($value): string => json_encode($value, JSON_UNESCAPED_SLASHES
         el.errorDisplay.style.display = 'block';
         el.errorMessage.textContent = error.message;
     }
+
+    // Declared possession runs on its own clock, independent of the game poll:
+    // it is a different channel at a different pace, and it must keep working
+    // when the game payload is stale.
+    if (!CONFIG.demo) { pollDeclared(); }
 
     var client = new OverlayDataClient(CONFIG)
         .onData(render)

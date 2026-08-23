@@ -18,7 +18,8 @@
 
 # Operator state in conf/ is served by its endpoints, not by Apache — with one
 # deliberate exception. The stage polls conf/show.json as a STATIC file about
-# once a second, and routing that through PHP for every stage on every field is
+# once a second, and possession.json on the same channel — a break chance is
+# worthless ten seconds late. Routing those through PHP for every surface is
 # the one place the poll budget genuinely matters (see docs/STUDIO.md section 6).
 #
 # Everything else in conf/ has a PHP front door that owns its rules: team colours
@@ -31,12 +32,12 @@
 # This lives here rather than in conf/.htaccess because conf/ is gitignored:
 # a rule inside it would exist only on the machine that created it.
 <IfModule mod_authz_core.c>
-    <FilesMatch "^show\.json$">
+    <FilesMatch "^(show|possession)\.json$">
         Require all granted
     </FilesMatch>
 </IfModule>
 
-RedirectMatch 404 ^/live/overlays/conf/(?!show\.json$).*$
+RedirectMatch 404 ^/live/overlays/conf/(?!(show|possession)\.json$).*$
 
 <IfModule mod_rewrite.c>
     RewriteEngine On

@@ -245,6 +245,33 @@ try {
     .stat:first-of-type { border-top: 0; }
     .stat b { font-weight: 700; }
 
+    /* ---- possession ---- */
+    .possbox { margin-top: 1rem; padding: .85rem 1rem; border-radius: 6px;
+               background: var(--panel); border: var(--rule-strong) solid var(--line); }
+    .possbox.quiet { background: var(--panel-alt); }
+    .possbox .code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+                     letter-spacing: .12em; color: var(--link); }
+    .possbtns { display: flex; gap: .75rem; }
+    /* Big, because it is pressed repeatedly by someone looking at the field. */
+    .possbig { flex: 1; display: flex; align-items: baseline; justify-content: center;
+               gap: .6rem; padding: .85rem 1rem; border-radius: 6px; cursor: pointer;
+               background: var(--panel-alt); border: var(--rule-strong) solid var(--line);
+               color: var(--ink); font: inherit; }
+    .possbig .k { font-size: 1.5rem; font-weight: 800; font-variant-numeric: tabular-nums; }
+    .possbig .w { font-size: .9rem; font-weight: 600; color: var(--ink-mute); }
+    .possbig.on { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+    .possbig.on .w { color: var(--accent-ink); }
+    /* Defence-in-possession is what puts a red tab on air, so it must never be
+       mistaken for the other state at a glance. */
+    .possbig.d.on { background: var(--bad); border-color: var(--bad); color: #fff; }
+    .possbig.d.on .w { color: #fff; }
+    .possbig:disabled { opacity: .45; cursor: not-allowed; }
+    .posscounts { display: flex; gap: 1.5rem; margin-top: .7rem; }
+    .posscount b { font-size: 1.3rem; font-weight: 800; font-variant-numeric: tabular-nums;
+                   margin-right: .35rem; }
+    .posscount span { font-size: .85rem; color: var(--ink-mute); }
+    .posscount.hot b { color: var(--bad); }
+
     /* ---- play mode ---- */
     .step { margin-top: 1rem; }
     .pickhead { display: flex; align-items: baseline; gap: .75rem; flex-wrap: wrap;
@@ -363,6 +390,7 @@ try {
     <div class="card" id="sheetCard"></div>
 </div>
 
+<script src="<?= $base ?>/live/overlays/shared/possession.js"></script>
 <script>
 (function () {
     'use strict';
@@ -373,6 +401,7 @@ try {
         gameId: <?= $json($gameId ?: null) ?>,
         mode: <?= $json($mode) ?>,
         linesUrl: <?= $json($base . '/index.php?view=live/overlays/lines') ?>,
+        possessionUrl: <?= $json($base . '/index.php?view=live/overlays/possession') ?>,
         suggestedCode: <?= $json($suggestedCode) ?>,
         codeLength: <?= (int) Lines::CODE_LENGTH ?>
     };
@@ -997,6 +1026,116 @@ try {
        here and would be the wrong one for anything that reaches air.
        --------------------------------------------------------------- */
 
+    /* ---------------------------------------------------------------
+       Possession — tracked here, shown on air
+       --------------------------------------------------------------- */
+
+    /**
+     * The commentary desk is the right place to track possession.
+     *
+     * The Studio can do it, but the operator is choosing and timing graphics
+     * while they do; the person calling the game is already watching the disc,
+     * so pressing O and D rides along with their job instead of competing with
+     * it (docs/STUDIO.md 3.5).
+     *
+     * It is gated, because unlike a line selection this reaches the broadcast.
+     * The operator types one room code into the Studio, and only that code may
+     * write. Nothing here can turn the mode on, nominate a code, or change the
+     * game — those stay with the operator, so holding the code never becomes a
+     * way to grant yourself more.
+     */
+    var possession = { enabled: false, events: [], canTrack: false, hasCode: false, rev: -1 };
+
+    /**
+     * A per-browser id, so the Studio can say how many commentators are on.
+     *
+     * Random and local: it identifies a tab across reloads and nothing else. Not
+     * an IP, which would answer the question worse — two commentators on one
+     * tournament wifi are a single address — while storing personal data to do
+     * it.
+     */
+    var CLIENT_KEY = 'uo-commentator-client';
+    var clientId;
+    try {
+        clientId = window.localStorage.getItem(CLIENT_KEY) || '';
+    } catch (e) { clientId = ''; }
+    if (!clientId) {
+        clientId = Math.random().toString(36).slice(2, 12).replace(/[^a-z0-9]/g, '') + '0';
+        try { window.localStorage.setItem(CLIENT_KEY, clientId); } catch (e) { /* private mode */ }
+    }
+
+    function possessionUrl(extra) {
+        return CONFIG.possessionUrl
+            + '&game=' + encodeURIComponent(CONFIG.gameId)
+            + '&code=' + encodeURIComponent(syncCode)
+            + '&client=' + encodeURIComponent(clientId)
+            + (extra || '');
+    }
+
+    function pollPossession() {
+        fetch(possessionUrl(), { credentials: 'same-origin' })
+            .then(function (r) { return r.ok ? r.json() : null; })
+            .then(function (state) {
+                if (!state || state.rev === possession.rev) { return; }
+                possession = state;
+                if (state.mode !== 'prep') { render(); }
+            })
+            .catch(function () { /* transient */ });
+    }
+
+    function setDefence(hasDisc) {
+        if (!possession.canTrack) { return; }
+        var sc = liveScore();
+        if (!sc) { return; }
+        fetch(CONFIG.possessionUrl, {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ game: CONFIG.gameId, code: syncCode,
+                                   score: sc.key, defence: hasDisc })
+        })
+            .then(function (r) { return r.ok ? r.json() : null; })
+            .then(function (state) { if (state) { possession = state; render(); } })
+            .catch(function () { /* transient */ });
+    }
+
+    /** The score as the store keys it, plus the point before it. */
+    function liveScore() {
+        var r = (state.payload && state.payload.game_result) || {};
+        if (r.homescore === undefined || r.homescore === null) { return null; }
+        var h = Number(r.homescore) || 0, v = Number(r.visitorscore) || 0;
+        return { home: h, visitor: v, key: h + '-' + v };
+    }
+
+    /** The score at which the previous point was played, or null at 0-0. */
+    function previousScore() {
+        var goals = (state.payload && state.payload.goals) || [];
+        if (!goals.length) { return null; }
+        var ordered = goals.slice().sort(function (a, b) { return a.num - b.num; });
+        var last = ordered[ordered.length - 1];
+        var sc = liveScore();
+        if (!sc) { return null; }
+        return Number(last.ishomegoal) === 1
+            ? { home: sc.home - 1, visitor: sc.visitor }
+            : { home: sc.home, visitor: sc.visitor - 1 };
+    }
+
+    /**
+     * O and D on the keyboard, for the same reason the Studio has them:
+     * possession changes several times in a scrappy point and a commentator is
+     * watching the field, not this screen.
+     */
+    document.addEventListener('keydown', function (e) {
+        if (e.metaKey || e.ctrlKey || e.altKey) { return; }
+        var tag = (e.target && e.target.tagName) || '';
+        if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA' || e.target.isContentEditable) { return; }
+        var key = (e.key || '').toLowerCase();
+        if (key !== 'o' && key !== 'd') { return; }
+        if (state.mode !== 'play' || !possession.canTrack) { return; }
+        e.preventDefault();
+        setDefence(key === 'd');
+    });
+
     var CODE_KEY = 'uo-lines-code-' + CONFIG.gameId;
     var lastLocalWrite = 0;
 
@@ -1144,10 +1283,90 @@ try {
         return wrap;
     }
 
+    /**
+     * Possession, and how scrappy the point is.
+     *
+     * The turnover counts are the part a commentator actually reaches for. "Four
+     * turnovers in this point already" is a line you can say on air, and it is
+     * derivable here and nowhere else — UltiOrganizer records no possession
+     * changes at all, so this log is the only place the number exists.
+     *
+     * The previous point's count is shown beside it because the interesting
+     * comparison is almost always to the point just gone.
+     */
+    function possessionPanel() {
+        var box = el('div', 'possbox');
+
+        if (!possession.enabled) {
+            box.className = 'possbox quiet';
+            box.append(el('span', 'muted',
+                'Possession tracking is off. The Studio operator turns it on.'));
+            return box;
+        }
+
+        if (!possession.canTrack) {
+            box.className = 'possbox quiet';
+            var ask = el('span', 'muted');
+            ask.append(document.createTextNode(
+                possession.hasCode
+                    ? 'Another code is tracking possession for this game. To take it over, ask the operator to enter '
+                    : 'To track possession, ask the Studio operator to enter your code '));
+            ask.append(el('b', 'code', syncCode));
+            ask.append(document.createTextNode(
+                possession.hasCode ? ' in the Studio instead.' : ' in the Studio.'));
+            box.append(ask);
+            return box;
+        }
+
+        var sc = liveScore();
+        var P = window.Possession;
+        var d = sc && P ? P.defenceHasDisc(possession.events, sc.home, sc.visitor) : false;
+
+        var btns = el('div', 'possbtns');
+        [['O', 'Offence', false], ['D', 'Defence', true]].forEach(function (spec) {
+            var active = (spec[2] === d);
+            var b = el('button', 'possbig' + (active ? ' on' : '') + (spec[2] ? ' d' : ''));
+            b.type = 'button';
+            b.disabled = !sc;
+            b.setAttribute('aria-pressed', active ? 'true' : 'false');
+            b.append(el('span', 'k', spec[0]));
+            b.append(el('span', 'w', spec[1]));
+            b.addEventListener('click', function () { setDefence(spec[2]); });
+            btns.append(b);
+        });
+        box.append(btns);
+
+        var counts = el('div', 'posscounts');
+        var now = (sc && P) ? P.turnovers(possession.events, sc.home, sc.visitor) : 0;
+        var prev = previousScore();
+        var was = (prev && P) ? P.turnovers(possession.events, prev.home, prev.visitor) : null;
+
+        var stat = function (label, value, cls) {
+            var d2 = el('div', 'posscount' + (cls ? ' ' + cls : ''));
+            d2.append(el('b', null, String(value)));
+            d2.append(el('span', null, label));
+            counts.append(d2);
+        };
+        stat('turnovers this point', now, now >= 3 ? 'hot' : '');
+        if (was !== null) {
+            stat('in the previous point', was, '');
+        }
+        box.append(counts);
+
+        box.append(el('p', 'muted',
+            'Press O and D as the disc changes hands. Resets to offence on every goal. '
+            + 'This drives BREAK CHANCE on the scoreboard.'));
+        return box;
+    }
+
     function renderPlay() {
         body.replaceChildren();
         var s = sides();
         body.append(teamStatsRow());
+        // Above the line picker as well as the on-field view: in step 1 it is
+        // how a commentator learns they are not authorised yet, which is worth
+        // finding out before the pull rather than during the point.
+        body.append(possessionPanel());
 
         if (state.step === 1) {
             var bar = el('div', 'pickhead');
@@ -1310,6 +1529,11 @@ try {
         // a line changes far more often than a score.
         pullLines();
         setInterval(pullLines, 2000);
+        // Possession is the fastest-moving thing on this page and the only one
+        // that reaches air, so it gets its own tick rather than riding the 10s
+        // game refresh.
+        pollPossession();
+        setInterval(pollPossession, 2000);
         // A commentator can be a few seconds behind; no need for the overlay's
         // tighter cadence.
         setInterval(function () { refresh().catch(function () {}); }, 10000);
