@@ -130,6 +130,75 @@ test.describe('possession-derived numbers', () => {
   });
 });
 
+test.describe('the timeout tab', () => {
+  /**
+   * The window is unit-tested, not driven through the browser.
+   *
+   * Testing it live meant moving the game clock, and Live! caches a game payload
+   * for 30 seconds — so a test that set the clock and immediately loaded the page
+   * measured the PREVIOUS clock while appearing to measure this one. One run
+   * asked for 20 seconds past a timeout and was served 131. The derivation is a
+   * pure function, so it is tested as one.
+   */
+  const { active } = require('../../shared/stoppage.js');
+
+  const EVENTS = [
+    { time: 0, type: 'offence', ishome: 1 },
+    { time: 600, type: 'timeout', ishome: 1 },
+    { time: 1260, type: 'half_cap', ishome: 0 },
+    { time: 1700, type: 'timeout', ishome: 0 },
+  ];
+
+  test('the window opens when the timeout is called and closes when it ends', () => {
+    expect(active(EVENTS, 1700, 70)).toMatchObject({ kind: 'timeout' });
+    expect(active(EVENTS, 1720, 70)).toMatchObject({ kind: 'timeout' });
+    expect(active(EVENTS, 1769, 70)).toMatchObject({ kind: 'timeout' });
+    // 70 seconds in, play has restarted.
+    expect(active(EVENTS, 1770, 70)).toBeNull();
+    expect(active(EVENTS, 1800, 70)).toBeNull();
+  });
+
+  test('a later event ends it, so a stale tab cannot survive the next passage', () => {
+    // The half cap at 1260 comes after the first timeout at 600.
+    expect(active(EVENTS, 1300, 70)).toBeNull();
+  });
+
+  test('ignores events from the future of the frame being drawn', () => {
+    // Only matters away from live play: post-production draws an earlier moment
+    // with `?at=` while the payload still carries everything that came later.
+    // Reading the greatest timestamp put a timeout on a frame 18 minutes before
+    // it was called.
+    expect(active(EVENTS, 620, 70)).toMatchObject({ kind: 'timeout', side: 'home' });
+    expect(active(EVENTS, 100, 70)).toBeNull();
+  });
+
+  test('attributes it to the team that called it', () => {
+    expect(active(EVENTS, 1710, 70).side).toBe('visitor');
+    expect(active(EVENTS, 620, 70).side).toBe('home');
+  });
+
+  test('claims nothing without a clock, a length, or events', () => {
+    // Each of these is a state the board really reaches: a game that has not
+    // started has no clock, and a pool with no timeout length configured cannot
+    // say how long one lasts.
+    expect(active(EVENTS, 1710, 0)).toBeNull();
+    expect(active(EVENTS, NaN, 70)).toBeNull();
+    expect(active([], 1710, 70)).toBeNull();
+    // Drawing a moment before the timeout was called: it has not happened yet.
+    expect(active(EVENTS, 1699, 70)).toBeNull();
+  });
+
+  test('reaches the scoreboard', async ({ page }) => {
+    // Wiring only -- that the module is loaded, the class is right and the tab
+    // paints. Driven through ?demo=1, which builds its own payload and so needs
+    // no clock moved and no cache defeated.
+    await page.goto(`/s/${GAME_ID}?demo=1&step=600`);
+    await expect(page.locator('#scoreboard')).toBeVisible();
+    await expect(page.locator('.callout.timeout')).toBeVisible({ timeout: 25000 });
+    await expect(page.locator('.callout.timeout')).toHaveText('Timeout');
+  });
+});
+
 test.describe('break-chance conversion on the summary cards', () => {
   test.beforeEach(async ({ page }) => { await loginAsAdmin(page, test); });
 
