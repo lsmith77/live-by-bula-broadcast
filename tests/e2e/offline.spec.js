@@ -137,7 +137,8 @@ test.describe('summary cards', () => {
     const coordinated = names.slice(0, 4);
     expect(coordinated[0]).toBe('Scoreboard');
     coordinated.slice(1).forEach((n) => expect(n).toMatch(/^Last goal/));
-    expect(names.slice(4)).toEqual(['Top scorers', 'Pre-game', 'Half time', 'Full time']);
+    expect(names.slice(4)).toEqual(
+      ['Score progression', 'Top scorers', 'Pre-game', 'Half time', 'Full time']);
   });
 
   test('each summary card offers only its own moment', async ({ page }) => {

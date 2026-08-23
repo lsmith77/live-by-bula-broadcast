@@ -7,7 +7,9 @@
  * exists to catch, so nobody deletes one for looking trivial.
  */
 const { test } = require('@playwright/test');
-const { GAME_ID, expect } = require('./helpers');
+const {
+  GAME_ID, expect, loginAsAdmin, writeShow, withShowRestored,
+} = require('./helpers');
 
 test.describe('scoreboard', () => {
   test('renders a live game with a score and no diagnostics on the canvas', async ({ page }) => {
@@ -94,6 +96,18 @@ test.describe('stage', () => {
     // The companion card once sat 22px on top of the scoreboard because the
     // bug's height was hard-coded at 138px when it was really 160px. It is
     // measured now, but the invariant is what matters: nothing overlaps.
+    //
+    // Sets up its own pair rather than measuring whatever is on air: read as it
+    // was, this passed or failed on leftover operator state, and once quietly
+    // stopped testing anything at all when a session left one card showing.
+    await loginAsAdmin(page, test);
+    await page.goto('/s/');
+    const before = await require('./helpers').readShow(page);
+    await writeShow(page, [
+      { id: 'scoreboard', slot: 'lower-left', visible: true, params: {} },
+      { id: 'lastplay', slot: 'with-scoreboard', visible: true, params: {} },
+    ], { game: GAME_ID });
+
     await page.goto(`/s/${GAME_ID}/overlay`);
     await page.waitForTimeout(3000);
 
@@ -123,6 +137,8 @@ test.describe('stage', () => {
       });
       return out;
     });
+    await writeShow(page, before.cards, { game: before.game, logo: before.logo });
+
     expect(boxes.length).toBeGreaterThan(1);
 
     for (let i = 0; i < boxes.length; i += 1) {
