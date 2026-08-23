@@ -261,7 +261,8 @@ These are asks against UltiOrganizer, not work in this repo. `STUDIO.md` §10 an
 6. **Possession capture in the Scorekeeper.** Everything possession-derived here — break chance, clean holds, turnover counts — rests on somebody declaring it by hand during the broadcast. That works, and it is the wrong permanent home: it is unauthoritative, exists only for games being broadcast, and dies with the tab. **Possession data should land in UO, not in an overlay-side export** — which is why the log is deliberately not exportable (`STUDIO.md` §10.5). An export would make the wrong home permanent.
 7. **Per-game block counts through the API.** They exist in `uo_defense` and via `GameTeamDefenseBoard()`, but `GameManager` never exposes them, so a card cannot reach them at all. `entity=teams` carries only tournament totals, behind `ShowDefenseStats`.
 8. **Player photos**, which Live! has none of — `TEAM_PHOTOS_ENABLED` covers team photos only.
-9. **Pronunciation hints and pronouns**, for the commentary position. Both are personal data the moment they exist, so they need a registration-side home with the consent handling that implies.
+9. **The first point's gender ratio, per mixed game.** It is circled on the paper scoresheet and never captured, so the ABBA pattern is derivable but its labels are not — and scoring splits cannot be aggregated across games, because "ratio A" means different things in different games. One column would make every mixed game ever played analysable by ratio. `COMMENTATOR.md` §6c.
+10. **Pronunciation hints and pronouns**, for the commentary position. Both are personal data the moment they exist, so they need a registration-side home with the consent handling that implies.
 
 ---
 

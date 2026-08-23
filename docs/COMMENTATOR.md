@@ -292,6 +292,14 @@ The ratios themselves come from the season type: outdoor is 4M/3F against 3M/4F,
 
 It shows the current point and the next three, because the useful call is "this one and the next are 4M/3F, then it flips" rather than a single value.
 
+### 6c. Which ratio each side is winning
+
+Once four points have been played the ratio panel adds the split: how each team has scored on the first point's ratio against the other one. "They have taken five of six on 4M/3F and are level on the other" is a real line about how a mixed game is being won, and it costs nothing — the ABBA slot of every point falls out of its number, and the goals are already in hand.
+
+**This game only, and that is a limit rather than an omission.** A pre-game or tournament-wide version would be the more interesting stat and it cannot be built. The first point's ratio is decided per game — the scoresheet prints both options with a box to circle (`cust/wfdf/pdfscoresheet.php:475`) — so "ratio A" in one game and "ratio A" in the next are not necessarily the same ratio. Without the per-game choice recorded somewhere, adding two games' splits together produces a number that looks meaningful and is not.
+
+That makes it another entry on the same list as possession: the pattern is derivable, the labels are not, and the fix is upstream. If UltiOrganizer recorded the first point's ratio alongside the score, every mixed game ever played would become analysable this way at once.
+
 ## 7. The auto-surfacing behaviour
 
 The idea: when something happens — a goal, a block — the person involved is pulled up automatically for a few seconds, with a control to pin it.

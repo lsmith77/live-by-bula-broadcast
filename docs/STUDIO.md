@@ -492,6 +492,20 @@ Three details that are not obvious:
 
 **On latency.** The card appears when the *stage learns* of the goal, which can be up to 30 seconds after it happened (`CACHE_SECONDS_GAME_DETAIL_ONGOING`). That is not a defect to engineer around: the scoreboard is on the same poll, so the card appears at the same instant the score ticks over on screen. The two are consistent with each other and with what the viewer sees, which matters more than either being early. Measured end to end against a real goal: card up at t+42s, down at t+57s — 15 seconds exactly.
 
+### 9.05 The score progression card
+
+A staircase on a grid, the way an ultimate scoresheet has always drawn it: the line steps **right** when the home team scores and **down** when the away team does.
+
+The shape is the whole point. A long horizontal run is a scoring streak, a tight staircase is two teams trading, and a game that stayed close hugs the diagonal all the way into the corner — none of which a running score can show, and none of which needs any numbers read. It is the one card that says how a game went rather than what it ended.
+
+The grid is as wide as the winning score and as tall as the losing one, so it changes shape with the game. One cell is a fixed 40 units in the SVG and the viewBox grows around it, which means a 15-13 game and a 3-1 game both fill the card instead of one being a postage stamp.
+
+**Gender ratio rides on the staircase**, in mixed divisions, when the operator has named the first point's ratio in the Studio. Each step is tinted by the ratio that point was played at, so "they broke three times and all three were on the same ratio" becomes something you see rather than something you work out.
+
+That control exists because **nothing records which ratio the first point used** — it is circled by hand on the paper scoresheet and never sent back. The A-B-B-A pattern itself is derivable from the point number (§ COMMENTATOR.md 6b), but which actual ratio "A" is, is not. So the card omits the dimension entirely until somebody says, rather than tinting with invented labels. The control only appears at all for a mixed division, decided by the division name exactly as UltiOrganizer's own scoresheet decides it.
+
+The two tints separate by lightness as well as hue, for the same reason hold and break do: two solid mid-tones are one colour to a deuteranope.
+
 ### 9.15 Break-chance conversion on the summary cards
 
 The half-time and full-time cards show `2 of 3 brk` rather than a bare break count, wherever the possession log has anything to say. "Two breaks" reports what happened; "two from three chances" says how the game is going, and it is the number a commentator reaches for.
