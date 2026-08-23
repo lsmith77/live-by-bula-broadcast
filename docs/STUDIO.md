@@ -160,7 +160,7 @@ Placement is non-exclusive but visibility is exclusive per slot (§2.3), so putt
 
 So the click always works, and the consequence is shown **before** it: hovering a control that would take something off air flags the cards that would lose. The warning lands on the card being taken off, which is where an operator looking for it will look, rather than in a message box beside the control they are already pressing.
 
-This applies to every displacing action — switching a card on into an occupied slot, moving a live card to an occupied slot, and All off air (§9.1) — and it is why none of those are ever disabled for conflict. The only thing that disables a control here is having nothing to do.
+This applies to every displacing action — switching a card on into an occupied slot, moving a live card to an occupied slot, and All off air (§9.2) — and it is why none of those are ever disabled for conflict. The only thing that disables a control here is having nothing to do.
 
 ## 3. What the data actually supports
 
@@ -444,7 +444,23 @@ Explicitly **not** in the MVP: `player`, `halfsummary`, `bracket`, `spirit`, `em
 
 **Order matters:** step 3 (stage + scoreboard, no control at all) is independently useful and independently verifiable. If the switcher turns out not to run JS, the whole plan stops there and nothing after step 3 is wasted.
 
-### 9.1 Two controls that are not per-card
+### 9.1 Auto mode: a card that shows itself
+
+The last-play cards are *about an event*. A scoreboard has something to say continuously and a stat card has something to say whenever anyone looks, but "last goal" is worth exactly the few seconds after a goal and is clutter for the rest of the point. Leaving it up permanently is wrong; asking an operator to click it on and off every point is worse, and in auto mode there is no operator at all.
+
+So `params.auto` on `lastgoal`, `lastassist` or `lastplay` makes the card show itself for **15 seconds** after each goal. Long enough to read two names off a screen while still watching the game, short enough to be gone before the next pull.
+
+**Auto is a mode of being on air, not an alternative to it.** The card is still switched ON AIR, which is what reserves the slot and keeps the store's one-visible-per-slot rule meaningful; auto only decides whether an on-air card is currently painting. "On air" keeps meaning *this card owns this position*, and auto adds *and it speaks only when there is something to say*. Anything else would need the exclusivity rules rewritten so that a card flickering into view could displace a neighbour without an operator touching anything.
+
+Three details that are not obvious:
+
+- **Only a goal being added counts.** A scorekeeper correcting an attribution rewrites an existing entry, and re-showing the card for that would put a graphic on air for an edit nobody watching can see the reason for. The trigger is the goal *count* rising.
+- **The first payload only sets a baseline.** Without that, every stage would flash the last goal of the match the moment it loaded — the same first-paint trap the scoreboard's score animation already had to be taught to avoid.
+- **A timer closes the window, not a poll.** The show poll only calls `applyShow()` on a `rev` change and the game poll is twice as slow as the window, so without an explicit `setTimeout` the card would simply stay up.
+
+**On latency.** The card appears when the *stage learns* of the goal, which can be up to 30 seconds after it happened (`CACHE_SECONDS_GAME_DETAIL_ONGOING`). That is not a defect to engineer around: the scoreboard is on the same poll, so the card appears at the same instant the score ticks over on screen. The two are consistent with each other and with what the viewer sees, which matters more than either being early. Measured end to end against a real goal: card up at t+42s, down at t+57s — 15 seconds exactly.
+
+### 9.2 Two controls that are not per-card
 
 Both live in the bar under the card list, and both exist because the per-card switches are the wrong granularity for the two mistakes an operator actually makes.
 

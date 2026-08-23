@@ -124,12 +124,25 @@ live/overlays/fixtures/dev-score.sh home      # or visitor / undo / show
 
 It writes straight to the database, bypassing Scorekeeper. Development only.
 
-### Optional settings worth knowing
+### Settings that change what the overlays can show
 
-| setting | effect |
-|---|---|
-| `ShowDefenseStats` | System setting, **ships off**. On, every roster row gains `deftotal` and blocks appear in the commentator page. Off, the column does not exist — see `STUDIO.md` §3.1, and note the `totalavg` trap there. |
-| `TV_SCREEN_LOGO_PATH` | The tournament logo. Its corner is chosen in the Studio; the stage keeps it clear of whatever else is in that corner. |
+Nothing here is an overlay setting — every one of them belongs to UltiOrganizer, Live! or the pool format, and the overlays simply render whatever is available. Collected in one place because an overlay that "does not show timeouts" is almost always a pool that has none configured rather than a bug.
+
+| setting | where | ships as | what it changes |
+|---|---|---|---|
+| **Published season** | Live! admin, `LIVE_SEASON_ID` | — | The precondition for everything. An unpublished season means the API returns nothing and every surface is empty |
+| `ShowDefenseStats` | `uo_setting`, UO admin | `false` (`sql/ultiorganizer.sql:975`) | On, every roster row gains `deftotal` and the commentator page grows a **Blk** column and a Blocks sort. Off, the field is absent and the column does not exist. Note the `totalavg` trap in `STUDIO.md` §3.1 |
+| `TV_SCREEN_LOGO_PATH` | `live/conf/local-config.json` | a sample path | The tournament logo. Its corner is chosen in the Studio; the stage keeps it clear of whatever else is in that corner |
+| `TEAM_PHOTOS_ENABLED` | `live/conf/local-config.json` | `false` | On, Live! exposes team photos and the scoreboard will fall back to one when `logos/<team_id>.*` is absent. Those are usually wide squad photos rather than a square mark, so a real logo file beats it |
+| `UO_URL_PREFIX` | UO config | `/` | Every route and asset URL is built from this. Set it when UltiOrganizer is installed under a subpath, or the overlays will request their CSS from the wrong place |
+| **Pool: time cap** | `uo_pool.timecap`, pool settings | unset | Set, the game clock counts **down** to it and the cap states appear. Unset, the clock counts up and no cap is ever shown |
+| **Pool: timeouts** | `uo_pool.timeouts`, `timeoutsper` | unset | The allowance drawn as ticks under each team name. `timeoutsper: "half"` resets the allowance at half time, so only timeouts after the `half_cap` event count in the second half |
+| `CACHE_MINUTES_MODULATOR` | Live! admin | `1.0` | How long game data is cached. **Upstream documents this as "do not lower below 1.0"** — lowering it to chase score latency is not the supported route. See `PLAN.md` §6 for what is |
+
+**Two preconditions that are not settings at all**, and between them account for most of "the overlay is not working":
+
+- **A scorekeeper has to start the clock.** `timer_start` is only ever written by UltiOrganizer's Scorekeeper. If nobody starts it there is no clock on air and the overlay quietly falls back to a status word. Worth a line on the pre-game checklist.
+- **Games must be marked ongoing.** Live and final are different states, and almost everything transient — the clock, cap states, hold and break tabs, break chance — is deliberately suppressed once a game is not running.
 
 ### Tests
 
