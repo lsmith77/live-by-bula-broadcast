@@ -90,6 +90,35 @@ $reload = filter_input(INPUT_GET, 'reload', FILTER_VALIDATE_INT, [
  *
  * Development and design review only; never point a switcher at it.
  */
+/**
+ * Deterministic render mode, for post-production.
+ *
+ *   ?at=<clock seconds>&goals=<count>&phase=pre|live|final
+ *
+ * The overlay is handed the state to draw instead of deriving it from the
+ * clock: how many goals have been scored, what the clock reads, and which phase
+ * the game is in. It fetches the payload once, renders one frame, and stops --
+ * no polling, no timers, nothing that would make two runs differ.
+ *
+ * Deliberately dumb. It does NOT work out which goals have happened by the time
+ * given, because in post-production that question is not the overlay's to
+ * answer: a recording is aligned to the game by anchors the operator supplies,
+ * and plenty of tournaments record no goal times at all
+ * (`hide_time_on_scoresheet`). Keeping the alignment entirely in the tool means
+ * the overlay renders identically whether the answer came from UltiOrganizer's
+ * timestamps or from somebody scrubbing a video.
+ */
+$atParam = filter_input(INPUT_GET, 'at', FILTER_VALIDATE_INT, [
+    'options' => ['min_range' => 0, 'max_range' => 86400],
+]);
+$offline = $atParam !== false && $atParam !== null;
+$atGoals = filter_input(INPUT_GET, 'goals', FILTER_VALIDATE_INT, [
+    'options' => ['default' => 0, 'min_range' => 0, 'max_range' => 999],
+]);
+$atPhase = in_array(filter_input(INPUT_GET, 'phase'), ['pre', 'live', 'final'], true)
+    ? filter_input(INPUT_GET, 'phase')
+    : 'live';
+
 $demo = filter_input(INPUT_GET, 'demo') === '1';
 $demoStep = filter_input(INPUT_GET, 'step', FILTER_VALIDATE_INT, [
     'options' => ['default' => 3200, 'min_range' => 600, 'max_range' => 30000],
@@ -234,6 +263,10 @@ $json = static fn ($value): string => json_encode($value, JSON_UNESCAPED_SLASHES
         // a break chance needs rather than the pace the game payload allows.
         possessionUrl: <?= $json($assetBase . '/conf/possession.json') ?>,
         possessionPoll: 1000,
+        offline: <?= $json($offline) ?>,
+        at: <?= (int) ($offline ? $atParam : 0) ?>,
+        atGoals: <?= (int) $atGoals ?>,
+        atPhase: <?= $json($atPhase) ?>,
         // What each side is wearing for this game, entered in the Studio
         // minutes before the pull by someone looking at the jerseys.
         kit: <?= $json($colorStore->gameChoice((int) $gameId)) ?>,
@@ -958,7 +991,69 @@ $json = static fn ($value): string => json_encode($value, JSON_UNESCAPED_SLASHES
             if (error.fatal || error.consecutiveErrors >= 5) showError(error);
         });
 
-    if (CONFIG.demo) {
+    /**
+     * Build the payload as it stood at one instant, and draw it once.
+     *
+     * Everything downstream -- score, hold/break tab, clock, status word -- is
+     * already a pure function of the payload, so the whole of offline mode is
+     * "hand render() a truncated payload". No second renderer, and therefore no
+     * way for a post-produced overlay to drift from the live one.
+     */
+    function renderAt(base) {
+        var payload = JSON.parse(JSON.stringify(base));
+        var goals = (payload.goals || []).slice().sort(function (a, b) { return a.num - b.num; });
+        var upTo = goals.slice(0, Math.min(CONFIG.atGoals, goals.length));
+
+        payload.goals = upTo;
+        var home = 0, away = 0;
+        upTo.forEach(function (g) {
+            if (Number(g.ishomegoal) === 1) { home += 1; } else { away += 1; }
+        });
+
+        var r = payload.game_result || (payload.game_result = {});
+        r.homescore = home;
+        r.visitorscore = away;
+        r.isongoing = CONFIG.atPhase === 'live' ? 1 : 0;
+        r.hasstarted = CONFIG.atPhase === 'pre' ? 0 : 1;
+        r.status = CONFIG.atPhase === 'final' ? 'completed' : r.status;
+
+        // The clock is stated, not derived: `at` IS the reading. Anchoring it to
+        // a synthetic timer_start lets the existing clock code run unchanged,
+        // including the countdown and the cap tints.
+        //
+        // The payload's own generated_timestamp has to go, or render() will set
+        // a server skew from it and shift the reading by however stale the cache
+        // was -- three seconds, in the first run of this. Offline there is no
+        // "now" to be skewed against.
+        if (payload.meta) { delete payload.meta.generated_timestamp; }
+        if (CONFIG.atPhase === 'live') {
+            serverSkew = 0;
+            r.timer_start = Math.floor(Date.now() / 1000) - CONFIG.at;
+            r.timer_pause_start = null;
+            r.timer_paused_duration = 0;
+        } else {
+            r.timer_start = null;
+        }
+
+        // Cap events only count once the goal they were called at has happened.
+        payload.gameevents = (payload.gameevents || []).filter(function (e) {
+            return !e || e.time === null || e.time === undefined || Number(e.time) <= CONFIG.at;
+        });
+
+        // A frame is a still: the score flash and the hold/break tab are
+        // transitions, and a burnt-in overlay must not show a tab that would
+        // otherwise have expired.
+        painted = true;
+        render(payload);
+        if (timer) { clearInterval(timer); timer = null; }
+        document.documentElement.setAttribute('data-rendered', '1');
+    }
+
+    if (CONFIG.offline) {
+        client.fetchGame()
+            .then(renderAt)
+            .catch(function (e) { showError({ message: e.message }); });
+    } else if (CONFIG.demo) {
         // One real fetch for the payload shape, then the script drives it. The
         // poll loop never starts, so nothing overwrites a demo frame.
         el.demoLabel.classList.remove('hide');
