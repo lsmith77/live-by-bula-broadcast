@@ -15,7 +15,18 @@
  * ES5 on purpose: this is loaded by the scoreboard, which runs inside a video
  * switcher's browser source alongside the rest of the page scripts.
  */
-(function (root) {
+/*
+ * Loaded both by a browser page and by the test runner, so it publishes to
+ * `window` and to `module.exports` alike. Relying on top-level `this` is not
+ * enough: it is `module.exports` under plain CommonJS but `undefined` under the
+ * loader Playwright uses, which fails at import time rather than at use.
+ */
+(function (root, factory) {
+    'use strict';
+    var api = factory();
+    if (typeof module === 'object' && module.exports) { module.exports = api; }
+    if (root) { root.Possession = api; }
+}(typeof window !== 'undefined' ? window : null, function () {
     'use strict';
 
     function scoreKey(home, visitor) {
@@ -117,7 +128,7 @@
         return out;
     }
 
-    root.Possession = {
+    return {
         scoreKey: scoreKey,
         eventsFor: eventsFor,
         defenceHasDisc: defenceHasDisc,
@@ -125,4 +136,4 @@
         turnovers: turnovers,
         conversion: conversion
     };
-}(typeof window !== 'undefined' ? window : this));
+}));
