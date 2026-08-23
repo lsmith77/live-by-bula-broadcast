@@ -245,6 +245,22 @@ try {
     .stat:first-of-type { border-top: 0; }
     .stat b { font-weight: 700; }
 
+    /* ---- gender ratio ---- */
+    .abba { margin-top: 1rem; padding: .75rem 1rem; border-radius: 6px;
+            background: var(--panel); border: var(--rule-strong) solid var(--line); }
+    .abbahead { font-size: .68rem; text-transform: uppercase; letter-spacing: .08em;
+                font-weight: 700; margin-bottom: .5rem; }
+    .abbaask { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; }
+    .abbarun { display: flex; gap: .6rem; margin-bottom: .6rem; }
+    .abbapt { flex: 1; padding: .5rem .6rem; border-radius: 5px; text-align: center;
+              background: var(--panel-alt); border: 1px solid var(--line); }
+    .abbapt b { display: block; font-size: 1.15rem; font-weight: 800;
+                font-variant-numeric: tabular-nums; }
+    .abbapt span { font-size: .72rem; color: var(--ink-mute); }
+    /* The point being played is the one the commentator is talking over. */
+    .abbapt.now { background: var(--accent); border-color: var(--accent); }
+    .abbapt.now b, .abbapt.now span { color: var(--accent-ink); }
+
     /* ---- possession ---- */
     .possbox { margin-top: 1rem; padding: .85rem 1rem; border-radius: 6px;
                background: var(--panel); border: var(--rule-strong) solid var(--line); }
@@ -1027,6 +1043,74 @@ try {
        --------------------------------------------------------------- */
 
     /* ---------------------------------------------------------------
+       Gender ratio (WFDF prescribed ratio, "ABBA")
+       --------------------------------------------------------------- */
+
+    /**
+     * Which points repeat the first point's ratio.
+     *
+     * WFDF's prescribed ratio runs A B B A · A B B A over successive points, so
+     * points 1, 4, 5, 8, 9, 12 … carry whatever ratio was set for point 1 and
+     * the rest carry the other. Taken from UltiOrganizer's own WFDF scoresheet
+     * (`cust/wfdf/pdfscoresheet.php:1254`), which marks exactly those points
+     * with an asterisk — the same rule, so a commentator reading this and a
+     * scorekeeper reading the printed sheet cannot disagree.
+     */
+    function abbaSlot(pointNumber) {
+        var i = Number(pointNumber) || 1;
+        return (i % 4 === 0 || (i - 1) % 4 === 0) ? 'A' : 'B';
+    }
+
+    /**
+     * The two ratios in play, by season type.
+     *
+     * Indoor and beach are five a side, outdoor seven — same source as the
+     * scoresheet (`pdfscoresheet.php:461-471`).
+     */
+    function ratioPair() {
+        var type = ((state.payload && state.payload.seasoninfo
+            && state.payload.seasoninfo.type) || 'outdoor').toLowerCase();
+        return (type === 'indoor' || type === 'beach')
+            ? ['3M/2F', '2M/3F']
+            : ['4M/3F', '3M/4F'];
+    }
+
+    /** Mixed is decided by the division name, exactly as the scoresheet decides it. */
+    function isMixedDivision() {
+        var name = (state.payload && state.payload.game_info
+            && state.payload.game_info.seriesname) || '';
+        return name.toLowerCase().indexOf('mixed') !== -1;
+    }
+
+    /**
+     * Which of the two ratios was chosen for point 1.
+     *
+     * **UltiOrganizer does not record this.** The printed scoresheet has it
+     * circled by hand and nothing sends it back, so the pattern is derivable but
+     * the labels are not — the same shape of gap as possession. So the
+     * commentator sets it once and it is remembered per game; until they do, the
+     * panel shows the pattern honestly ("same as point 1") rather than guessing
+     * a ratio and being wrong for the entire game.
+     */
+    var FIRST_KEY = 'uo-abba-first-' + CONFIG.gameId;
+    var firstRatio = null;
+    try { firstRatio = window.localStorage.getItem(FIRST_KEY); } catch (e) { firstRatio = null; }
+
+    function setFirstRatio(v) {
+        firstRatio = v;
+        try {
+            if (v) { window.localStorage.setItem(FIRST_KEY, v); }
+            else { window.localStorage.removeItem(FIRST_KEY); }
+        } catch (e) { /* private mode */ }
+        render();
+    }
+
+    /** The point being played now: goals scored plus one. */
+    function currentPointNumber() {
+        return ((state.payload && state.payload.goals) || []).length + 1;
+    }
+
+    /* ---------------------------------------------------------------
        Possession — tracked here, shown on air
        --------------------------------------------------------------- */
 
@@ -1359,6 +1443,62 @@ try {
         return box;
     }
 
+    /**
+     * The ratio for this point and the next few.
+     *
+     * Mixed only, and silent otherwise — an Open or Women's game has no ratio to
+     * show and a panel saying so would be clutter. Shows the run ahead rather
+     * than just the current point, because the useful call is "this one and the
+     * next are 4M/3F, then it flips".
+     */
+    function ratioPanel() {
+        if (!isMixedDivision()) { return null; }
+
+        var box = el('div', 'abba');
+        var pair = ratioPair();
+        var now = currentPointNumber();
+
+        var head = el('div', 'abbahead');
+        head.append(el('span', 'muted', 'Gender ratio'));
+        box.append(head);
+
+        if (!firstRatio) {
+            // Ask once, plainly. Nothing in the payload can answer it.
+            var ask = el('div', 'abbaask');
+            ask.append(el('span', 'muted', 'Ratio on point 1:'));
+            pair.forEach(function (r) {
+                var b = el('button', 'chip', r);
+                b.type = 'button';
+                b.addEventListener('click', function () { setFirstRatio(r); });
+                ask.append(b);
+            });
+            box.append(ask);
+            box.append(el('p', 'muted',
+                'Not recorded anywhere — it is circled on the paper scoresheet. '
+                + 'Set it once and the rest of the game follows the ABBA pattern.'));
+            return box;
+        }
+
+        var other = pair[0] === firstRatio ? pair[1] : pair[0];
+        var ratioFor = function (n) { return abbaSlot(n) === 'A' ? firstRatio : other; };
+
+        var run = el('div', 'abbarun');
+        for (var n = now; n < now + 4; n += 1) {
+            var cell = el('div', 'abbapt' + (n === now ? ' now' : ''));
+            cell.append(el('b', null, ratioFor(n)));
+            cell.append(el('span', null, n === now ? 'this point' : 'pt ' + n));
+            run.append(cell);
+        }
+        box.append(run);
+
+        var reset = el('button', 'chip', 'point 1 was ' + firstRatio);
+        reset.type = 'button';
+        reset.title = 'Change what was set for the first point';
+        reset.addEventListener('click', function () { setFirstRatio(null); });
+        box.append(reset);
+        return box;
+    }
+
     function renderPlay() {
         body.replaceChildren();
         var s = sides();
@@ -1366,6 +1506,8 @@ try {
         // Above the line picker as well as the on-field view: in step 1 it is
         // how a commentator learns they are not authorised yet, which is worth
         // finding out before the pull rather than during the point.
+        var ratio = ratioPanel();
+        if (ratio) { body.append(ratio); }
         body.append(possessionPanel());
 
         if (state.step === 1) {
