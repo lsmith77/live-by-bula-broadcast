@@ -1079,8 +1079,8 @@ try {
         var type = ((state.payload && state.payload.seasoninfo
             && state.payload.seasoninfo.type) || 'outdoor').toLowerCase();
         return (type === 'indoor' || type === 'beach')
-            ? ['3M/2F', '2M/3F']
-            : ['4M/3F', '3M/4F'];
+            ? ['3MMP/2FMP', '2MMP/3FMP']
+            : ['4MMP/3FMP', '3MMP/4FMP'];
     }
 
     /** Mixed is decided by the division name, exactly as the scoresheet decides it. */
@@ -1093,24 +1093,32 @@ try {
     /**
      * Which of the two ratios was chosen for point 1.
      *
-     * **UltiOrganizer does not record this.** The printed scoresheet has it
-     * circled by hand and nothing sends it back, so the pattern is derivable but
-     * the labels are not — the same shape of gap as possession. So the
-     * commentator sets it once and it is remembered per game; until they do, the
-     * panel shows the pattern honestly ("same as point 1") rather than guessing
-     * a ratio and being wrong for the entire game.
+     * **UltiOrganizer does not record this.** It is circled by hand on the paper
+     * scoresheet and nothing sends it back, so the A-B-B-A pattern is derivable
+     * but its labels are not — the same shape of gap as possession, and
+     * collected the same way.
+     *
+     * Kept with the GAME rather than in this browser, so the commentator panel
+     * and the stage's progression card read one value. It was per-browser at
+     * first, which meant the person calling the game and the graphic going out
+     * could quietly disagree about which ratio a point was played at.
+     *
+     * Writable by whoever holds the room code, for the same reason possession
+     * is: the commentary desk has the scoresheet in front of them.
      */
-    var FIRST_KEY = 'uo-abba-first-' + CONFIG.gameId;
-    var firstRatio = null;
-    try { firstRatio = window.localStorage.getItem(FIRST_KEY); } catch (e) { firstRatio = null; }
+    function firstRatioValue() { return possession.ratio1 || null; }
 
     function setFirstRatio(v) {
-        firstRatio = v;
-        try {
-            if (v) { window.localStorage.setItem(FIRST_KEY, v); }
-            else { window.localStorage.removeItem(FIRST_KEY); }
-        } catch (e) { /* private mode */ }
-        render();
+        if (!possession.canTrack) { return; }
+        fetch(CONFIG.possessionUrl, {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ game: CONFIG.gameId, code: syncCode, ratio1: v || '' })
+        })
+            .then(function (r) { return r.ok ? r.json() : null; })
+            .then(function (state) { if (state) { possession = state; render(); } })
+            .catch(function () { /* transient */ });
     }
 
     /** The point being played now: goals scored plus one. */
@@ -1495,20 +1503,27 @@ try {
         head.append(el('span', 'muted', 'Gender ratio'));
         box.append(head);
 
+        var firstRatio = firstRatioValue();
+
         if (!firstRatio) {
             // Ask once, plainly. Nothing in the payload can answer it.
             var ask = el('div', 'abbaask');
             ask.append(el('span', 'muted', 'Ratio on point 1:'));
-            pair.forEach(function (r) {
-                var b = el('button', 'chip', r);
-                b.type = 'button';
-                b.addEventListener('click', function () { setFirstRatio(r); });
-                ask.append(b);
-            });
+            if (possession.canTrack) {
+                pair.forEach(function (r) {
+                    var b = el('button', 'chip', r);
+                    b.type = 'button';
+                    b.addEventListener('click', function () { setFirstRatio(r); });
+                    ask.append(b);
+                });
+            } else {
+                ask.append(el('span', 'muted', 'set by the operator, or by a code holder'));
+            }
             box.append(ask);
             box.append(el('p', 'muted',
-                'Not recorded anywhere — it is circled on the paper scoresheet. '
-                + 'Set it once and the rest of the game follows the ABBA pattern.'));
+                'Not recorded anywhere \u2014 it is circled on the paper scoresheet. '
+                + 'Set it once and the rest of the game follows the ABBA pattern, '
+                + 'here and on the progression card.'));
             return box;
         }
 
@@ -1545,7 +1560,10 @@ try {
 
         var reset = el('button', 'chip', 'point 1 was ' + firstRatio);
         reset.type = 'button';
-        reset.title = 'Change what was set for the first point';
+        reset.disabled = !possession.canTrack;
+        reset.title = possession.canTrack
+            ? 'Change what was set for the first point'
+            : 'Only a code holder can change this';
         reset.addEventListener('click', function () { setFirstRatio(null); });
         box.append(reset);
         return box;

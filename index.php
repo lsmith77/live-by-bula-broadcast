@@ -665,21 +665,11 @@ $json = static fn ($v): string => json_encode($v, JSON_UNESCAPED_SLASHES | JSON_
         var series = String(seriesIndex[String(game.pool)] || '');
         if (series.toLowerCase().indexOf('mixed') === -1) { return null; }
         return seasonType === 'indoor' || seasonType === 'beach'
-            ? ['3M/2F', '2M/3F']
-            : ['4M/3F', '3M/4F'];
+            ? ['3MMP/2FMP', '2MMP/3FMP']
+            : ['4MMP/3FMP', '3MMP/4FMP'];
     }
 
-    function setRatio(cardId, value) {
-        var cards = (show.cards || []).map(function (c) {
-            if (c.id !== cardId) { return c; }
-            var params = JSON.parse(JSON.stringify(c.params || {}));
-            if (value) { params.ratio1 = value; } else { delete params.ratio1; }
-            return { id: c.id, slot: c.slot, visible: c.visible, params: params };
-        });
-        pushUndo();
-        saveShow({ rev: show.rev, game: show.game, logo: show.logo, cards: cards })
-            .catch(function (e) { alert(e.message); });
-    }
+
 
     function autoOf(entry) {
         var a = entry && entry.params && entry.params.auto;
@@ -960,12 +950,53 @@ $json = static fn ($v): string => json_encode($v, JSON_UNESCAPED_SLASHES | JSON_
         var mode = el('button', 'autobtn' + (on ? ' on' : ''));
         mode.type = 'button';
         mode.disabled = !showCanEdit();
-        mode.textContent = on ? 'Break chance: on' : 'Break chance: off';
+        // Named for what it switches on, not for one of the things it feeds.
+        // "Break chance" described a single graphic; tracking possession also
+        // powers clean holds, the turnover count on the bug, and the conversion
+        // figures on the summary cards.
+        mode.textContent = on ? 'Possession tracking: on' : 'Possession tracking: off';
         mode.title = on
             ? 'Stop declaring possession. The scoreboard falls back to the standing ON DEFENCE tag.'
-            : 'Declare possession by hand so the scoreboard can show BREAK CHANCE and tell a clean hold from an ordinary one.';
+            : 'Declare possession by hand. Feeds BREAK CHANCE, clean holds, the turnover count and break-chance conversion.';
         mode.addEventListener('click', function () { setPossessionMode(!on); });
         bar.append(mode);
+
+        // The first point's ratio sits here, not on the progression card.
+        //
+        // It is the same kind of thing as possession: a fact about the game that
+        // UltiOrganizer does not record, collected by hand. Putting it on a card
+        // made it a property of one graphic, which meant the commentator panel
+        // and the card each had their own copy and could disagree on air.
+        var ratios = ratioChoices();
+        if (ratios) {
+            var rWrap = el('span', 'kitside');
+            rWrap.append(el('span', 'muted', 'Ratio on point 1'));
+            var rsel = document.createElement('select');
+            var chosen = possession.ratio1 || '';
+            rsel.className = 'autosel' + (chosen ? ' on' : '');
+            rsel.disabled = !showCanEdit();
+            rsel.title = 'Circled on the paper scoresheet, and recorded nowhere else. '
+                + 'Until it is set, nothing can name which ratio a point was played at.';
+            [['', 'not set']].concat(ratios.map(function (r) { return [r, r]; }))
+                .forEach(function (o) {
+                    var opt = document.createElement('option');
+                    opt.value = o[0];
+                    opt.textContent = o[1];
+                    if (o[0] === chosen) { opt.selected = true; }
+                    rsel.append(opt);
+                });
+            rsel.addEventListener('change', function () {
+                postPossession({ game: show.game || null, ratio1: rsel.value })
+                    .then(function (state) {
+                        flash(state.ratio1
+                            ? 'Point 1 was ' + state.ratio1 + '.'
+                            : 'Ratio cleared \u2014 points are no longer labelled.');
+                    })
+                    .catch(function (e) { alert(e.message); });
+            });
+            rWrap.append(rsel);
+            bar.append(rWrap);
+        }
 
         if (!on) {
             bar.append(el('span', 'muted',
@@ -1224,32 +1255,6 @@ $json = static fn ($v): string => json_encode($v, JSON_UNESCAPED_SLASHES | JSON_
                 });
                 sel.addEventListener('change', function () { setAuto(id, sel.value); });
                 row.append(sel);
-            }
-
-            // The progression card can tint each point by the gender ratio it
-            // was played at, but only once somebody says which ratio the first
-            // point used. Nothing records it — it is circled by hand on the
-            // scoresheet — so this is the operator entering a fact the system
-            // cannot know. Left unset the card simply omits the dimension.
-            if (id === 'progression') {
-                var ratios = ratioChoices();
-                if (ratios) {
-                    var rsel = document.createElement('select');
-                    var chosen = (entry && entry.params && entry.params.ratio1) || '';
-                    rsel.className = 'autosel' + (chosen ? ' on' : '');
-                    rsel.disabled = !showCanEdit() || !placed;
-                    rsel.title = 'Gender ratio on the first point, from the scoresheet';
-                    [['', 'no ratio']].concat(ratios.map(function (r) { return [r, r]; }))
-                        .forEach(function (o) {
-                            var opt = document.createElement('option');
-                            opt.value = o[0];
-                            opt.textContent = o[1];
-                            if (o[0] === chosen) { opt.selected = true; }
-                            rsel.append(opt);
-                        });
-                    rsel.addEventListener('change', function () { setRatio(id, rsel.value); });
-                    row.append(rsel);
-                }
             }
 
             var sw = el('button', 'switch' + (on ? ' on' : ''));
