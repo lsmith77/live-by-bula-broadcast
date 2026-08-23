@@ -433,6 +433,12 @@ $json = static fn ($v): string => json_encode($v, JSON_UNESCAPED_SLASHES | JSON_
     var teamIndex = {};
     var gamesList = [];
     var possession = { rev: 0, enabled: false, game: null, events: [], admin: false, writable: false };
+
+    // pool id -> division name, and the season type. Both come from
+    // entity=reference, which the page already fetches for field names, and both
+    // exist only to answer "is this game mixed, and which ratios apply".
+    var seriesIndex = {};
+    var seasonType = 'outdoor';
     var reservations = {};
     var singleDay = false;
 
@@ -632,6 +638,7 @@ $json = static fn ($v): string => json_encode($v, JSON_UNESCAPED_SLASHES | JSON_
         lastgoal: ['off', 'goal'],
         lastassist: ['off', 'goal'],
         lastplay: ['off', 'goal'],
+        progression: ['off', 'halftime', 'final'],
         topplayers: ['off', 'halftime', 'final', 'pregame'],
         // Each of these has exactly one moment. Offering the others would only
         // be a way to put a half-time card on air at full time.
@@ -641,6 +648,38 @@ $json = static fn ($v): string => json_encode($v, JSON_UNESCAPED_SLASHES | JSON_
     };
 
     function autoChoices(cardId) { return AUTO_FOR[cardId] || null; }
+
+    /**
+     * The two ratios in play, or null when the question does not arise.
+     *
+     * Mixed divisions only, decided by the division name exactly as
+     * UltiOrganizer's own scoresheet decides it. Offering a ratio control on an
+     * Open game would be inviting an operator to record something meaningless.
+     */
+    function ratioChoices() {
+        var game = null;
+        gamesList.forEach(function (g) {
+            if (Number(g.game_id) === Number(show.game)) { game = g; }
+        });
+        if (!game) { return null; }
+        var series = String(seriesIndex[String(game.pool)] || '');
+        if (series.toLowerCase().indexOf('mixed') === -1) { return null; }
+        return seasonType === 'indoor' || seasonType === 'beach'
+            ? ['3M/2F', '2M/3F']
+            : ['4M/3F', '3M/4F'];
+    }
+
+    function setRatio(cardId, value) {
+        var cards = (show.cards || []).map(function (c) {
+            if (c.id !== cardId) { return c; }
+            var params = JSON.parse(JSON.stringify(c.params || {}));
+            if (value) { params.ratio1 = value; } else { delete params.ratio1; }
+            return { id: c.id, slot: c.slot, visible: c.visible, params: params };
+        });
+        pushUndo();
+        saveShow({ rev: show.rev, game: show.game, logo: show.logo, cards: cards })
+            .catch(function (e) { alert(e.message); });
+    }
 
     function autoOf(entry) {
         var a = entry && entry.params && entry.params.auto;
@@ -807,6 +846,7 @@ $json = static fn ($v): string => json_encode($v, JSON_UNESCAPED_SLASHES | JSON_
     function labelOf(cardId) {
         return ({
             scoreboard: 'Scoreboard',
+            progression: 'Score progression',
             topplayers: 'Top scorers',
             lastgoal: 'Last goal — scorer',
             lastassist: 'Last goal — assist',
@@ -1186,6 +1226,32 @@ $json = static fn ($v): string => json_encode($v, JSON_UNESCAPED_SLASHES | JSON_
                 row.append(sel);
             }
 
+            // The progression card can tint each point by the gender ratio it
+            // was played at, but only once somebody says which ratio the first
+            // point used. Nothing records it — it is circled by hand on the
+            // scoresheet — so this is the operator entering a fact the system
+            // cannot know. Left unset the card simply omits the dimension.
+            if (id === 'progression') {
+                var ratios = ratioChoices();
+                if (ratios) {
+                    var rsel = document.createElement('select');
+                    var chosen = (entry && entry.params && entry.params.ratio1) || '';
+                    rsel.className = 'autosel' + (chosen ? ' on' : '');
+                    rsel.disabled = !showCanEdit() || !placed;
+                    rsel.title = 'Gender ratio on the first point, from the scoresheet';
+                    [['', 'no ratio']].concat(ratios.map(function (r) { return [r, r]; }))
+                        .forEach(function (o) {
+                            var opt = document.createElement('option');
+                            opt.value = o[0];
+                            opt.textContent = o[1];
+                            if (o[0] === chosen) { opt.selected = true; }
+                            rsel.append(opt);
+                        });
+                    rsel.addEventListener('change', function () { setRatio(id, rsel.value); });
+                    row.append(rsel);
+                }
+            }
+
             var sw = el('button', 'switch' + (on ? ' on' : ''));
             sw.type = 'button';
             sw.disabled = !showCanEdit() || !placed;
@@ -1424,6 +1490,16 @@ $json = static fn ($v): string => json_encode($v, JSON_UNESCAPED_SLASHES | JSON_
             (results[3].reservations || []).forEach(function (r) {
                 reservations[String(r.id)] = r;
             });
+
+            var seriesNames = {};
+            (results[3].series || []).forEach(function (s) {
+                seriesNames[String(s.series_id)] = s.name || '';
+            });
+            (results[3].pools || []).forEach(function (pool) {
+                seriesIndex[String(pool.pool_id)] = seriesNames[String(pool.series_id)] || '';
+            });
+            seasonType = String((results[3].season && results[3].season.type) || 'outdoor')
+                .toLowerCase();
 
             // Show only the time when the whole event is on one day.
             var days = {};
