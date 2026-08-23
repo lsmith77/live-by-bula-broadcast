@@ -490,6 +490,17 @@ Each shows both sides with crest, seed and record, the score once there is one, 
 
 **Card order on the control page is the store's `CARDS` order, and that is load-bearing.** The scoreboard and the strips that ride with it share the frame and need positioning relative to each other, so they are grouped at the top where an operator coordinating positions is looking. Everything that takes the middle of the frame or the whole of it sits below, because it has nothing to coordinate with. Reshuffling that list for tidiness would undo the grouping.
 
+**What the deleted pre-game stub wanted, and this does not do yet.** `statistics/pregame.php` sat in the tree for months as a 501 returning stub with four hundred lines of markup below the `return`, kept as "the starting point for the Phase 2 port". The port happened by a different route — these cards — so the stub is gone, but it asked for four things the summary cards do not show, and they are worth keeping on the list:
+
+| wanted | reachable today? |
+|---|---|
+| Scoring averages — goals for, against, margin | yes, from `entity=teams` across the tournament |
+| Hold and break **percentages** rather than counts | yes, `classifyPoints()` already returns the parts |
+| Breaks converted, as *n* of *m* | no — the denominator is break chances, which needs possession (§3.4) |
+| Spirit scores, per category, both teams | yes, `entity=spirit`, subject to the visibility rules |
+
+The first two are small additions to the existing card. The third is blocked on the same missing data as everything else about possession. The fourth is a card of its own, and putting spirit numbers on air deserves its own decision rather than arriving as a row in a stats block.
+
 ### 9.4 Deterministic rendering, for a game nobody switched
 
     ?at=<clock seconds>&goals=<count>&phase=pre|live|final

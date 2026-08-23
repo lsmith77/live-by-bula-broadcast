@@ -22,7 +22,7 @@ Rebased on UltiOrganizer 4.0 + Live! by BULA 3.0.6; supersedes the January 2026 
 | Dev stack | `docs/dev/compose.yaml` — PHP 8.3 + MariaDB 10.11, app on :8080, db on :3307 |
 | Event | `HRN2026` (upstream test fixture), `api_public=1` |
 | Working | `?view=live/overlays/index` (picker), `?view=live/overlays/scoreboard&game=<id>` |
-| Not ported | `statistics/pregame.php` (returns 501), progression overlay (removed) |
+| Superseded | `statistics/pregame.php` — deleted; the `pregame`/`halftime`/`postgame` cards do the job (`STUDIO.md` §9.3). Progression overlay removed |
 
 ---
 
@@ -173,16 +173,20 @@ Runtime code sits at the top level, because a routed view's path *is* its URL �
 ```
 live/overlays/
   scoreboard.php  stage.php  commentator.php  index.php    routed pages
-  show.php  colors.php  lines.php                          routed JSON endpoints
+  show.php  colors.php  lines.php  possession.php          routed JSON endpoints
   shared/          CSS, JS and the PHP stores behind those endpoints
   conf/            operator-authored state; gitignored, web-server-writable
-  logos/  statistics/
-  docs/            PLAN.md, STUDIO.md, COMMENTATOR.md
-  tests/           selftest.php (routed), describe-scoreboard.py
-  fixtures/        dev-fixture.sql, dev-score.sh
+  logos/           per-installation team crests; contents gitignored
+  docs/            PLAN, STUDIO, COMMENTATOR, POSTPRODUCTION
+  tests/           selftest.php (routed), playwright.config.js, e2e/
+  tools/           occasional helpers, not part of the suite
+  fixtures/        dev-fixture.sql, dev-score.sh, logos/
+  install/         the root .htaccess snippet, for pasting
 ```
 
-`tests/selftest.php` is still a routed page — `?view=live/overlays/tests/selftest` — because it has to be loadable by the switcher it diagnoses. The nested path routes fine; `statistics/` already proved that.
+`tests/selftest.php` is still a routed page — `?view=live/overlays/tests/selftest` — because it has to be loadable by the switcher it diagnoses, and a nested path routes fine.
+
+**Nothing but runtime code sits at the top level**, and that is the rule the layout follows: a routed view's path *is* its URL, so moving `scoreboard.php` into a subdirectory would change `?view=live/overlays/scoreboard`. Everything else goes down a level, including `playwright.config.js` — which Playwright would rather find in the working directory, so `npm test` passes `--config`. `tools/` is for things that are neither runtime nor tests: `describe-scoreboard.py` measures somebody *else's* reference design out of a PNG, which is a different job from testing ours, and the post-production CLI will live there too.
 
 **Nothing here needs a `.gitattributes` entry.** `live` is classified `dev` in `docs/ai/release-package-coverage/inventory.txt` and the whole tree is already export-ignored (`git check-attr export-ignore live/overlays/scoreboard.php` confirms it), because Live! is a drop-in addon distributed separately rather than part of UltiOrganizer's release package. So this split is for the people reading the directory and for whatever packaging the overlays eventually get — not something `build-release.sh` acts on.
 
