@@ -8,3 +8,9 @@
 # The directory is tracked; its contents are not.
 /logos/*
 !/logos/README.md
+
+# Playwright
+/node_modules/
+/test-results/
+/playwright-report/
+/docs/images/.frames/
