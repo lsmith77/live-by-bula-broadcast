@@ -46,6 +46,14 @@ $background = $backgrounds[$bgParam]
 // a field while another follows the operator.
 $pinnedGame = filter_input(INPUT_GET, 'game', FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
 
+// Or pin to a FIELD instead, and follow whatever is being played on it. One
+// camera covers one field all day while the games on it change every ninety
+// minutes, so this is the URL a switcher is actually set up with.
+$pinnedField = trim((string) (filter_input(INPUT_GET, 'field') ?: ''));
+if (strlen($pinnedField) > 40) {
+    $pinnedField = '';
+}
+
 $showPoll = filter_input(INPUT_GET, 'showpoll', FILTER_VALIDATE_INT, [
     'options' => ['default' => 1000, 'min_range' => 250, 'max_range' => 60000],
 ]);
@@ -90,16 +98,21 @@ $json = static fn ($v): string => json_encode($v, JSON_UNESCAPED_SLASHES | JSON_
 </div>
 
 <script src="<?= htmlspecialchars($assetUrl('shared/overlay-client.js'), ENT_QUOTES) ?>"></script>
+<script src="<?= htmlspecialchars($assetUrl('shared/possession.js'), ENT_QUOTES) ?>"></script>
+<script src="<?= htmlspecialchars($assetUrl('shared/field.js'), ENT_QUOTES) ?>"></script>
 <script>
 (function () {
     'use strict';
 
     var CONFIG = {
         apiBase: <?= $json($apiBase) ?>,
+        possessionUrl: <?= $json($assetBase . '/conf/possession.json') ?>,
         assetBase: <?= $json($assetBase) ?>,
         showUrl: <?= $json($store->publicUrl($assetBase)) ?>,
         showPoll: <?= (int) $showPoll ?>,
         pinnedGame: <?= $json($pinnedGame ?: null) ?>,
+        pinnedField: <?= $json($pinnedField !== '' ? $pinnedField : null) ?>,
+        fieldPoll: 30000,
         bg: <?= $json($bgParam) ?>,
         fallback: <?= $json(Show::defaults()) ?>,
         // Team id -> logo URL, same store the scoreboard uses. Live!'s own team
@@ -396,12 +409,32 @@ $json = static fn ($v): string => json_encode($v, JSON_UNESCAPED_SLASHES | JSON_
                     ? classifyPoints(payload.goals || [], payload.gameevents || [])
                     : null;
 
+                // Break chances, where anybody was tracking possession. The
+                // conversion rate is the number this card exists to carry --
+                // "two breaks" says what happened, "two from three" says how the
+                // game is actually going.
+                //
+                // Fetched at arm time rather than polled: this card appears at
+                // the half and at the end, so one read when it is about to show
+                // is both fresher than a poller and cheaper than one.
+                var possessionRead = fetch(CONFIG.possessionUrl + '?_=' + Date.now(),
+                    { cache: 'no-store' })
+                    .then(function (r) { return r.ok ? r.json() : null; })
+                    .catch(function () { return null; });
+
                 return Promise.all(sides.map(function (s) {
                     return fetch(CONFIG.apiBase + '&entity=teams&id=' + encodeURIComponent(s.team_id),
                         { credentials: 'same-origin' })
                         .then(function (r) { return r.ok ? r.json() : null; })
                         .catch(function () { return null; });
-                })).then(function (full) {
+                }).concat([possessionRead])).then(function (results) {
+                    var full = results.slice(0, sides.length);
+                    var declared = results[sides.length];
+                    var conv = (declared && declared.enabled && window.Possession
+                            && typeof startingOffence === 'function')
+                        ? window.Possession.conversion(declared.events || [],
+                            payload.goals || [], startingOffence(payload.gameevents || []))
+                        : null;
                     return Promise.all(sides.map(function (s, i) {
                         return teamLogo(full[i] || s);
                     })).then(function (logos) {
@@ -415,6 +448,8 @@ $json = static fn ($v): string => json_encode($v, JSON_UNESCAPED_SLASHES | JSON_
                                 ? null
                                 : [Number(result.homescore) || 0, Number(result.visitorscore) || 0],
                             unresolved: points ? Number(points.unresolved) || 0 : 0,
+                            tracked: conv ? conv.tracked : 0,
+                            trackedOf: conv ? conv.points : 0,
                             sides: sides.map(function (s, i) {
                                 var f = full[i] || {};
                                 var st = f.stats || {};
@@ -425,7 +460,9 @@ $json = static fn ($v): string => json_encode($v, JSON_UNESCAPED_SLASHES | JSON_
                                     logo: logos[i],
                                     record: (s.wins !== undefined ? s.wins : (st.wins || 0))
                                         + '-' + (s.losses !== undefined ? s.losses : (st.losses || 0)),
-                                    breaks: points ? Number(points[key] && points[key].breaks) || 0 : 0
+                                    breaks: points ? Number(points[key] && points[key].breaks) || 0 : 0,
+                                    chances: conv ? conv[key].chances : 0,
+                                    converted: conv ? conv[key].converted : 0
                                 };
                             })
                         };
@@ -481,7 +518,14 @@ $json = static fn ($v): string => json_encode($v, JSON_UNESCAPED_SLASHES | JSON_
                     bits.push(side.record);
                     // Breaks are the number that decides ultimate games, and they
                     // only exist once points have been played.
-                    if (data.when !== 'pre') { bits.push(side.breaks + ' brk'); }
+                    if (data.when !== 'pre') {
+                        // "2 of 3 chances" only where the point was watched. With
+                        // nothing tracked the card says breaks and stops, rather
+                        // than printing a zero that reads as "no chances taken".
+                        bits.push(side.chances
+                            ? side.converted + ' of ' + side.chances + ' brk'
+                            : side.breaks + ' brk');
+                    }
                     meta.textContent = bits.join(' \u00b7 ');
                     col.appendChild(meta);
 
@@ -492,9 +536,16 @@ $json = static fn ($v): string => json_encode($v, JSON_UNESCAPED_SLASHES | JSON_
 
                 var foot = document.createElement('div');
                 foot.className = 'summaryfoot';
-                foot.textContent = data.unresolved
-                    ? data.context + ' \u00b7 ' + data.unresolved + ' unresolved'
-                    : data.context;
+                var notes = [data.context];
+                if (data.unresolved) { notes.push(data.unresolved + ' unresolved'); }
+                // The denominator travels with the number, always. A conversion
+                // rate over part of a game is a different claim from one over all
+                // of it, and only this line can tell them apart.
+                if (data.tracked && data.tracked < data.trackedOf) {
+                    notes.push('possession tracked for ' + data.tracked
+                        + ' of ' + data.trackedOf + ' points');
+                }
+                foot.textContent = notes.join(' \u00b7 ');
                 card.appendChild(foot);
 
                 node.appendChild(card);
@@ -1192,7 +1243,7 @@ $json = static fn ($v): string => json_encode($v, JSON_UNESCAPED_SLASHES | JSON_
     }
 
     function applyShow(state) {
-        var game = CONFIG.pinnedGame || state.game || currentGame;
+        var game = CONFIG.pinnedGame || fieldGame || state.game || currentGame;
         var wanted = {};
 
         anchorCompanion(state);
@@ -1255,7 +1306,7 @@ $json = static fn ($v): string => json_encode($v, JSON_UNESCAPED_SLASHES | JSON_
                 lastShow = state;
                 setLogoCorner(state.logo);
 
-                var game = CONFIG.pinnedGame || state.game;
+                var game = CONFIG.pinnedGame || fieldGame || state.game;
                 var gameChanged = game && game !== currentGame;
                 if (gameChanged) {
                     currentGame = game;
@@ -1267,6 +1318,29 @@ $json = static fn ($v): string => json_encode($v, JSON_UNESCAPED_SLASHES | JSON_
                 }
             })
             .then(function () { setTimeout(pollShow, CONFIG.showPoll); });
+    }
+
+    /**
+     * The game a field-pinned stage is currently following.
+     *
+     * Re-resolved on a slow timer rather than once at load, because the whole
+     * point is surviving a round change without anyone touching the switcher.
+     * When it moves, applyShow() tears down and remounts against the new game —
+     * the same path an operator repinning the game already takes, so there is no
+     * second way for a stage to change game.
+     */
+    var fieldGame = null;
+
+    function followField() {
+        if (!CONFIG.pinnedField || !window.FieldResolver) { return; }
+        window.FieldResolver.resolveFieldGame(CONFIG.apiBase, CONFIG.pinnedField)
+            .then(function (id) {
+                if (id && id !== fieldGame) {
+                    fieldGame = id;
+                    if (lastShow) { applyShow(lastShow); }
+                }
+            })
+            .catch(function () { /* transient; the next tick retries */ });
     }
 
     var client = null;
@@ -1296,6 +1370,13 @@ $json = static fn ($v): string => json_encode($v, JSON_UNESCAPED_SLASHES | JSON_
     }
 
     loadTourneyLogo();
+    // Resolve the field before the first show poll, so a field-pinned stage
+    // opens on the right game instead of blank-then-correct.
+    if (CONFIG.pinnedField) {
+        followField();
+        setInterval(followField, CONFIG.fieldPoll);
+    }
+
     pollShow();
     window.addEventListener('beforeunload', function () { if (client) { client.stop(); } });
 }());
