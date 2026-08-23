@@ -539,7 +539,8 @@ $json = static fn ($v): string => json_encode($v, JSON_UNESCAPED_SLASHES | JSON_
                 card.appendChild(cols);
                 node.appendChild(card);
             }
-        }
+        },
+
     };
 
     /* ---------------------------------------------------------------------
@@ -567,46 +568,111 @@ $json = static fn ($v): string => json_encode($v, JSON_UNESCAPED_SLASHES | JSON_
        --------------------------------------------------------------------- */
 
     /**
-     * How long a last-goal card stays up after a goal.
+     * Four moments in a game are worth a graphic without anyone pressing
+     * anything, and they are not all the same shape.
      *
-     * Long enough to read two names off a screen while still watching the
-     * game, short enough to be gone before the next pull. Fifteen seconds is
-     * roughly the gap between a goal and the restart.
+     *   goal      an EVENT -- open a window, close it again
+     *   halftime  an event, likewise, on the half_cap
+     *   final     an event: the game stops being live
+     *   pregame   a STATE -- true until the first pull, with no duration at all
+     *
+     * So a trigger is either "for N seconds after X happened" or "while X is
+     * true", and `for: null` is what says which. Getting that distinction wrong
+     * would mean a pre-game card that vanished after fifteen seconds and left
+     * the frame empty until the game started.
+     *
+     * Stored per card as params.auto:
+     *
+     *   { "on": "halftime", "for": 20 }
+     *   { "on": "pregame",  "for": null }
+     *
+     * `auto: true` still means what it always did -- fifteen seconds after each
+     * goal -- so nothing already configured has to be rewritten.
      */
-    var AUTO_MS = 15000;
+    var AUTO_DEFAULT_MS = 15000;
 
-    var autoUntil = 0;
-    var lastGoalCount = null;
-    var autoTimer = null;
+    var TRIGGERS = ['goal', 'halftime', 'final', 'pregame'];
+
+    /** Event triggers: when their window shuts, in ms since the epoch. */
+    var autoUntil = { goal: 0, halftime: 0, final: 0 };
+
+    /** State triggers: simply true or false right now. */
+    var autoState = { pregame: false };
+
+    var seen = { goals: null, half: null, live: null };
+    var autoTimers = {};
+
+    function normaliseAuto(raw) {
+        if (!raw) { return null; }
+        if (raw === true) { return { on: 'goal', ms: AUTO_DEFAULT_MS }; }
+        var on = TRIGGERS.indexOf(raw.on) === -1 ? 'goal' : raw.on;
+        // for: null means "while the state holds"; anything else is a duration.
+        var ms = (raw['for'] === null || raw['for'] === undefined)
+            ? (on === 'pregame' ? null : AUTO_DEFAULT_MS)
+            : Math.max(1, Number(raw['for']) || 1) * 1000;
+        return { on: on, ms: ms };
+    }
+
+    /** Open an event window, and make sure something closes it. */
+    function fire(trigger, ms) {
+        autoUntil[trigger] = Date.now() + ms;
+        // The show poll only calls applyShow on a rev change and the game poll is
+        // far slower than any of these windows, so without an explicit timer the
+        // card would simply stay up.
+        if (autoTimers[trigger]) { clearTimeout(autoTimers[trigger]); }
+        autoTimers[trigger] = setTimeout(function () {
+            autoTimers[trigger] = null;
+            applyShow(lastShow);
+        }, ms + 50);
+    }
 
     /**
-     * Notice a goal, and open the auto window.
+     * Watch the payload for the moments above.
      *
-     * Only a goal being ADDED counts. A scorekeeper correcting an attribution
-     * rewrites an existing entry, and re-showing the card for that would put a
-     * graphic on air for an edit nobody watching can see the reason for.
-     *
-     * `lastGoalCount` starts null so the first payload only establishes the
-     * baseline. Without that, every stage would flash the last goal of the
-     * match the moment it loaded — the same first-paint trap the scoreboard's
-     * score animation already had to be taught to avoid.
+     * Every counter starts null so the FIRST payload only establishes a
+     * baseline. Without that, a stage opened at half time would fire the
+     * halftime card, and one opened after a game would fire the final card --
+     * the same first-paint trap the scoreboard's score animation had to be
+     * taught to avoid.
      */
     function noteGoals(body) {
-        var count = Array.isArray(body && body.goals) ? body.goals.length : 0;
-        var was = lastGoalCount;
-        lastGoalCount = count;
-        if (was === null || count <= was) { return false; }
+        var result = (body && body.game_result) || {};
+        var events = (body && body.gameevents) || [];
+        var fired = false;
 
-        autoUntil = Date.now() + AUTO_MS;
-        // Re-apply when the window shuts. The show poll only calls applyShow on
-        // a rev change and the game poll is far slower than 15s, so without this
-        // the card would simply stay up.
-        if (autoTimer) { clearTimeout(autoTimer); }
-        autoTimer = setTimeout(function () {
-            autoTimer = null;
-            applyShow(lastShow);
-        }, AUTO_MS + 50);
-        return true;
+        var count = Array.isArray(body && body.goals) ? body.goals.length : 0;
+        var wasCount = seen.goals;
+        seen.goals = count;
+        // Only a goal being ADDED counts. A scorekeeper correcting an
+        // attribution rewrites an existing entry, and re-showing a card for that
+        // puts a graphic on air for an edit nobody watching can see the reason
+        // for.
+        if (wasCount !== null && count > wasCount) { fire('goal', autoMsFor('goal')); fired = true; }
+
+        var halves = events.filter(function (e) { return e && e.type === 'half_cap'; }).length;
+        var wasHalf = seen.half;
+        seen.half = halves;
+        if (wasHalf !== null && halves > wasHalf) { fire('halftime', autoMsFor('halftime')); fired = true; }
+
+        var live = Number(result.isongoing) === 1;
+        var wasLive = seen.live;
+        seen.live = live;
+        if (wasLive === true && !live) { fire('final', autoMsFor('final')); fired = true; }
+
+        // Pre-game is a state, not an event: true until the first pull.
+        autoState.pregame = Number(result.hasstarted) !== 1 && !live;
+
+        return fired;
+    }
+
+    /** The longest window any card configured for this trigger asked for. */
+    function autoMsFor(trigger) {
+        var ms = AUTO_DEFAULT_MS;
+        ((lastShow && lastShow.cards) || []).forEach(function (c) {
+            var a = normaliseAuto(c && c.params && c.params.auto);
+            if (a && a.on === trigger && a.ms) { ms = Math.max(ms, a.ms); }
+        });
+        return ms;
     }
 
     /**
@@ -621,8 +687,10 @@ $json = static fn ($v): string => json_encode($v, JSON_UNESCAPED_SLASHES | JSON_
      */
     function wantsVisible(entry) {
         if (!entry.visible) { return false; }
-        if (!entry.params || !entry.params.auto) { return true; }
-        return Date.now() < autoUntil;
+        var auto = normaliseAuto(entry.params && entry.params.auto);
+        if (!auto) { return true; }
+        if (auto.ms === null) { return Boolean(autoState[auto.on]); }
+        return Date.now() < (autoUntil[auto.on] || 0);
     }
 
     function keyOf(slot, cardId) { return slot + '::' + cardId; }

@@ -171,6 +171,11 @@ $json = static fn ($v): string => json_encode($v, JSON_UNESCAPED_SLASHES | JSON_
               border-radius: 4px; padding: .3rem .45rem; font-weight: 700; letter-spacing: .12em;
               text-transform: uppercase; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
 
+    .autosel { background: #0b1220; border: 1px dashed #475569; color: #94a3b8; font: inherit;
+               font-size: .78rem; padding: .3rem .4rem; border-radius: 4px; cursor: pointer; }
+    .autosel.on { border-style: solid; border-color: #38bdf8; color: #7dd3fc; }
+    .autosel:disabled { opacity: .4; cursor: not-allowed; }
+
     .autobtn { background: none; border: 1px dashed #475569; color: #94a3b8; font: inherit;
                font-size: .78rem; padding: .35rem .7rem; border-radius: 4px; cursor: pointer;
                white-space: nowrap; }
@@ -607,24 +612,59 @@ $json = static fn ($v): string => json_encode($v, JSON_UNESCAPED_SLASHES | JSON_
      * exactly the few seconds after a goal and is clutter for the rest of the
      * point. That is the test for adding another one here.
      */
-    var AUTO_CARDS = ['lastgoal', 'lastassist', 'lastplay'];
+    /**
+     * What each card can run itself off.
+     *
+     * The moment has to suit the card. A last-goal card is about a goal and is
+     * clutter for the rest of the point; a stats card has something to say at
+     * half time and nothing to say during a pull. So the offer is per card
+     * rather than one global switch.
+     */
+    var AUTO_OPTIONS = [
+        { key: 'off', label: 'Manual', hint: 'Stays up while it is on air.' },
+        { key: 'goal', label: 'On goals', secs: 15, hint: '15s after each goal.' },
+        { key: 'halftime', label: 'At half time', secs: 30, hint: '30s when the halftime cap is called.' },
+        { key: 'final', label: 'At full time', secs: 45, hint: '45s once the game is final.' },
+        { key: 'pregame', label: 'Before the pull', secs: null, hint: 'Up until the game starts, then gone.' },
+    ];
 
-    function canAuto(cardId) { return AUTO_CARDS.indexOf(cardId) !== -1; }
+    var AUTO_FOR = {
+        lastgoal: ['off', 'goal'],
+        lastassist: ['off', 'goal'],
+        lastplay: ['off', 'goal'],
+        topplayers: ['off', 'halftime', 'final', 'pregame'],
+    };
 
-    function setAuto(cardId, on) {
+    function autoChoices(cardId) { return AUTO_FOR[cardId] || null; }
+
+    function autoOf(entry) {
+        var a = entry && entry.params && entry.params.auto;
+        if (!a) { return 'off'; }
+        if (a === true) { return 'goal'; }
+        return a.on || 'goal';
+    }
+
+    function setAuto(cardId, choice) {
+        var spec = null;
+        AUTO_OPTIONS.forEach(function (o) { if (o.key === choice) { spec = o; } });
+
         var cards = (show.cards || []).map(function (c) {
             if (c.id !== cardId) { return c; }
             var params = {};
             Object.keys(c.params || {}).forEach(function (k) { params[k] = c.params[k]; });
-            if (on) { params.auto = true; } else { delete params.auto; }
+            if (!spec || spec.key === 'off') {
+                delete params.auto;
+            } else {
+                params.auto = { on: spec.key, 'for': spec.secs };
+            }
             return { id: c.id, slot: c.slot, visible: c.visible, params: params };
         });
 
         pushUndo();
         saveShow({ rev: show.rev, game: show.game, logo: show.logo, cards: cards })
             .then(function () {
-                flash(on
-                    ? labelOf(cardId) + ' is on auto — 15s after each goal.'
+                flash(spec && spec.key !== 'off'
+                    ? labelOf(cardId) + ': ' + spec.hint
                     : labelOf(cardId) + ' is back to manual.');
             })
             .catch(function (e) { alert(e.message); });
@@ -1034,19 +1074,24 @@ $json = static fn ($v): string => json_encode($v, JSON_UNESCAPED_SLASHES | JSON_
             // Auto sits beside the switch rather than replacing it, because it
             // does not replace it: the card is still switched on, still owns its
             // position, and auto only decides whether it is painting right now.
-            if (canAuto(id)) {
-                var auto = Boolean(entry && entry.params && entry.params.auto);
-                var ab = el('button', 'autobtn' + (auto ? ' on' : ''));
-                ab.type = 'button';
-                ab.disabled = !showCanEdit() || !placed;
-                ab.textContent = auto ? 'Auto 15s' : 'Auto';
-                ab.title = !placed
-                    ? 'Give it a position first'
-                    : (auto
-                        ? 'On air but silent, appearing for 15s after each goal. Click for manual.'
-                        : 'Show it for 15s after each goal instead of leaving it up.');
-                ab.addEventListener('click', function () { setAuto(id, !auto); });
-                row.append(ab);
+            var choices = autoChoices(id);
+            if (choices) {
+                var current = autoOf(entry);
+                var sel = document.createElement('select');
+                sel.className = 'autosel' + (current === 'off' ? '' : ' on');
+                sel.disabled = !showCanEdit() || !placed;
+                sel.title = placed ? 'When this card shows itself' : 'Give it a position first';
+                AUTO_OPTIONS.forEach(function (o) {
+                    if (choices.indexOf(o.key) === -1) { return; }
+                    var opt = document.createElement('option');
+                    opt.value = o.key;
+                    opt.textContent = o.label;
+                    opt.title = o.hint;
+                    if (o.key === current) { opt.selected = true; }
+                    sel.append(opt);
+                });
+                sel.addEventListener('change', function () { setAuto(id, sel.value); });
+                row.append(sel);
             }
 
             var sw = el('button', 'switch' + (on ? ' on' : ''));
