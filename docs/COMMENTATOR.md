@@ -280,6 +280,18 @@ Line data makes several genuinely new things possible: who is on for a key point
 
 It also answers the "who is on this point" graphic that `STUDIO.md` §10.2 lists as impossible. **But promoting it to air is a separate decision, not a free consequence.** Commentator-entered lines are a personal reference: a missed substitution costs the commentator a moment's confusion. The same error on a lower-third states something false about a named player to the audience. If it is ever put on air, it needs the same all-or-nothing test applied to break chance (`STUDIO.md` §3.4) — and probably an explicit "confirmed" action rather than automatically mirroring whatever the commentators happen to have typed.
 
+## 6b. Gender ratio
+
+Mixed divisions only, decided the way UltiOrganizer's own scoresheet decides it — the division name contains "mixed" (`cust/wfdf/pdfscoresheet.php:142`).
+
+**The pattern is derivable; the labels are not.** WFDF's prescribed ratio runs A B B A · A B B A over successive points, so points 1, 4, 5, 8, 9, 12 … repeat the first point's ratio and the rest carry the other. That is taken from the same source as the printed sheet (`pdfscoresheet.php:1254`, which marks exactly those points with an asterisk), so a commentator reading this screen and a scorekeeper reading the paper cannot disagree.
+
+What UltiOrganizer does *not* record is which ratio was chosen for point 1 — it is circled by hand on the scoresheet and nothing sends it back. So the panel asks once, remembers it per game, and only then names actual ratios. Until it is set it shows the pattern rather than guessing, because guessing wrong is wrong for the entire game rather than for one point.
+
+The ratios themselves come from the season type: outdoor is 4M/3F against 3M/4F, indoor and beach 3M/2F against 2M/3F (`pdfscoresheet.php:461-471`). `seasoninfo.type` is in the game payload already.
+
+It shows the current point and the next three, because the useful call is "this one and the next are 4M/3F, then it flips" rather than a single value.
+
 ## 7. The auto-surfacing behaviour
 
 The idea: when something happens — a goal, a block — the person involved is pulled up automatically for a few seconds, with a control to pin it.

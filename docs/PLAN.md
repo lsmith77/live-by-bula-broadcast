@@ -20,8 +20,8 @@ This file is the **platform reference**: what Live! v3 gives an overlay, what it
 | Live! by BULA | 3.0.6, unmodified drop-in, no local patches |
 | Dev stack | `docs/dev/compose.yaml` — PHP 8.3 + MariaDB 10.11, app on :8080, db on :3307 |
 | Event | `HRN2026` (upstream test fixture), `api_public=1` |
-| Surfaces | `/s/` studio · `/s/<game>` scoreboard · `/s/<game>/overlay` stage · `/c/<game>` commentator |
-| Tests | 44 Playwright specs, `npm test` |
+| Surfaces | `/s/` studio · `/s/<game>` scoreboard · `/s/<game>/overlay` stage · `/s/field/<n>/overlay` field-following stage · `/c/<game>` commentator |
+| Tests | 56 Playwright specs, `npm test` |
 | **Unverified on hardware** | **nothing here has run on a Magewell Director Mini or a Yolobox.** Whether the browser source runs JavaScript continuously is the assumption everything rests on |
 
 ---
@@ -230,6 +230,9 @@ What was learned building it, all verified by measurement rather than inspection
 | **Hold / break callout** | A tab above the bar over the scoring team, sharing one `FLASH_MS` with the score flash so the two read as one event |
 | **Clean hold** | Upgrades a hold when the possession log says the defence never touched the disc that point — and only on positive evidence, since an untracked point is unknown rather than clean |
 | **Break chance** | Transient, from the operator- or commentator-declared possession log on the ~1s channel. Falls back to the standing **ON DEFENCE** tag when nobody is tracking — deliberately not called "break chance", because that is an event claim requiring possession UO does not record |
+| **Turnover count** | On the context ribbon, from the possession log on the ~1s channel, and only from two upwards — one change of hands is noise and zero is where every point starts. 12-11 looks identical whether the last point took one throw or fifteen; this is the only thing on the bug that says which |
+| **`?field=`** | Follows whatever is live on a field rather than a fixed game, so a switcher set up in the morning survives every round change. `STUDIO.md` §9.0 |
+| **`?size=compact`** | A smaller bug for replays and busy shots. Drops standing context — seed, timeouts, ribbon, the ON DEFENCE tag — but keeps outcome callouts: a break is the most valuable thing the bug ever says and worthless a few seconds later, and this is the variant used for exactly the shots where one is most likely |
 | **`?demo=1`** | Walks every display state from one real fetched payload — scheduled, live, hold, break, timeout, cap, paused, final. The only way to see a running clock locally, and the sharpest switcher test: no polling or server cache in the path |
 | **`?at=`** | Draws one deterministic frame for post-production. See `POSTPRODUCTION.md` |
 | **`tests/selftest`** | Four independently moving panels (JS timer, rAF, pure CSS, network) so a switcher that fails to update can be diagnosed by *which* layer is frozen |

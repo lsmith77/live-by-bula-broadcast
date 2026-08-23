@@ -82,6 +82,16 @@ The broadcast surfaces (`scoreboard`, `stage`) are rendered to video and have no
 
 **Diagnostics are painted onto the broadcast canvas.** A wrong game id, or five consecutive failed polls, replaces the scoreboard with white error text over the live picture. Useful on a laptop during setup, unacceptable once the source is live, and the page cannot tell the two apart. Unresolved by choice — see `docs/STUDIO.md` §11 for the three options.
 
+## Every feature ships with docs and a test
+
+Not a nicety here, for two reasons specific to this project.
+
+**Docs, because the reasoning is the deliverable.** Most of what these documents record is *why* — which upstream field does not exist, which number cannot be claimed, which plausible approach was measured and found wrong. None of that survives in the code, and re-deriving it costs what it cost the first time. A feature landing without its reasoning written down is a feature that will be re-litigated.
+
+**A test, because the failure mode is on air.** These surfaces are watched live by people who cannot refresh, and the characteristic bug is not a crash but a graphic quietly asserting something untrue — a tab outliving its point, a rate without its denominator, a field-following overlay silently showing the wrong game. Those look completely normal in a screenshot. `tests/e2e/derived.spec.js` is the model: it asserts as hard on what a feature *refuses* to claim as on what it shows.
+
+Where a test genuinely cannot be written — it needs hardware, or data no fixture has — say so in the pull request and in the doc, and write the check that *can* run. "Untestable" is a claim to justify, not a default.
+
 ## Verification
 
 **Measure; do not eyeball.** On a 1920×1080 canvas viewed in a window, looking at it proves nothing. Every layout claim in this project has been settled with `getBoundingClientRect()` through headless Chrome, and several confident-looking visual judgements were wrong.

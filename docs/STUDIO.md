@@ -444,6 +444,25 @@ Explicitly **not** in the MVP: `player`, `halfsummary`, `bracket`, `spirit`, `em
 
 **Order matters:** step 3 (stage + scoreboard, no control at all) is independently useful and independently verifiable. If the switcher turns out not to run JS, the whole plan stops there and nothing after step 3 is wasted.
 
+### 9.0 Following a field instead of a game
+
+`/s/field/1/overlay` follows whatever is being played on field 1, all day. `/s/field/1` does the same for a bare scoreboard.
+
+At a tournament one camera covers one field while the games on it turn over every ninety minutes. A game-pinned URL means somebody walks to the switcher between rounds and retypes it on an on-screen keyboard, usually while the next game is already pulling. This is the URL a switcher is actually set up with in the morning and left alone.
+
+The join is not direct — `entity=games` carries a `reservation` and `entity=reference` carries `reservations[].fieldname` — but both are payloads the overlays already fetch, so it costs no new server work.
+
+**What it does when nothing is live matters more than the live case**, because that is where an overlay can quietly lie:
+
+| state of the field | what shows | why |
+|---|---|---|
+| a game in progress | that game | unambiguous — it is what the camera is pointed at |
+| between rounds | the next scheduled game | a camera operator framing up wants the teams warming up, not a blank frame |
+| after the last game | the most recently finished | the final score stays up rather than vanishing |
+| no games at all on that field | an explicit "no game found" | **never another field's game.** Following the wrong field would look completely normal and be entirely wrong |
+
+The resolver re-runs every 30 seconds. When it moves, the scoreboard rebuilds its client rather than swapping the id: the goal history the hold/break derivation walks and the score the flash compares against are both per game, and carrying either across would announce the new game's first goal as if it had just been scored.
+
 ### 9.1 Auto mode: a card that shows itself
 
 The last-play cards are *about an event*. A scoreboard has something to say continuously and a stat card has something to say whenever anyone looks, but "last goal" is worth exactly the few seconds after a goal and is clutter for the rest of the point. Leaving it up permanently is wrong; asking an operator to click it on and off every point is worse, and in auto mode there is no operator at all.
@@ -472,6 +491,16 @@ Three details that are not obvious:
 - **A timer closes the window, not a poll.** The show poll only calls `applyShow()` on a `rev` change and the game poll is twice as slow as the window, so without an explicit `setTimeout` the card would simply stay up.
 
 **On latency.** The card appears when the *stage learns* of the goal, which can be up to 30 seconds after it happened (`CACHE_SECONDS_GAME_DETAIL_ONGOING`). That is not a defect to engineer around: the scoreboard is on the same poll, so the card appears at the same instant the score ticks over on screen. The two are consistent with each other and with what the viewer sees, which matters more than either being early. Measured end to end against a real goal: card up at t+42s, down at t+57s — 15 seconds exactly.
+
+### 9.15 Break-chance conversion on the summary cards
+
+The half-time and full-time cards show `2 of 3 brk` rather than a bare break count, wherever the possession log has anything to say. "Two breaks" reports what happened; "two from three chances" says how the game is going, and it is the number a commentator reaches for.
+
+**The denominator travels with it, always.** The card's footer carries `possession tracked for 5 of 15 points` whenever the log covers less than the whole game. A conversion rate over five tracked points reads identically to one over a full game without that line, and the two are completely different claims. A card that omits it is asserting the stronger one.
+
+With nothing tracked the card shows breaks and stops. It does not print `0 of 0`, which reads as "no chances taken" rather than "nobody was watching" — the same absent-is-not-zero rule §4 states for blocks.
+
+The log is read once when the card arms rather than polled: these cards appear at the half and at the end, so a single read at the moment of showing is both fresher and cheaper than a poller running all game.
 
 ### 9.2 Two controls that are not per-card
 
