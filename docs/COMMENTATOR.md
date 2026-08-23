@@ -339,7 +339,7 @@ Explicitly not in the MVP: search, drill-down, milestones, streak detection, bra
 ## 10. Open questions
 
 1. **One screen or two?** A commentator with a laptop can have this beside the broadcast; a commentator with a tablet at a field cannot. Layout should degrade to narrow.
-2. **Does `pool_placements` cover bracket play?** Same open question as `PLAN.md` §6.3, and it gates any bracket display here too.
+2. **Does `pool_placements` cover bracket play?** Same open question as `PLAN.md` §7.3, and it gates any bracket display here too.
 3. **How much does a commentator actually want on screen?** Unknown, and worth answering by watching one work rather than by design. The density guess in this document is the least evidenced thing in it.
 4. ~~Is per-game block data worth the direct-database decision on its own?~~ **Partly answered:** tournament block *totals* turned out to need no such decision at all — they are already on the roster row behind `ShowDefenseStats` (`STUDIO.md` §3.1), and are built. The question narrows to per-*game* counts, which are still worth more here than on a graphic because a caveat is possible, and which are what a block-triggered card (§7) would need.
 5. ~~Who supplies pronunciation and pronouns?~~ **Answered:** `uo_player_profile`, edited by the player themselves via `user/playerprofile.php`, published through the existing `public` opt-in whitelist (§5). The remaining question is only whether commentary teams will maintain the local staging version long enough to justify proposing the upstream field.

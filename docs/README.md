@@ -84,7 +84,7 @@ Read them in this order if you are new; each assumes the one before it.
 
 ### [`PLAN.md`](PLAN.md) — the platform and the scoreboard
 
-The foundation. What the rebase onto UO 4.0 + Live! 3.0.6 changed, how a request actually flows, which field names the payloads really use, the polling and caching model, and the scoreboard bug itself — clock derivation, cap states, timeouts, hold/break classification.
+The foundation. What Live! v3's API gives an overlay and what it withholds, how a request actually flows, which field names the payloads really use, the polling and caching model, the scoreboard bug itself, and what is still left to build — clock derivation, cap states, timeouts, hold/break classification.
 
 **Go here for:** how the data reaches an overlay, what a field is called, why a poll interval is what it is, the directory layout, and the switcher-compatibility findings.
 
