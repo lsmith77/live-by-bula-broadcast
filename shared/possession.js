@@ -70,11 +70,59 @@
         return count;
     }
 
+    /**
+     * Break chances and how many became breaks, per side.
+     *
+     * A break chance is a point where the defending team got the disc. That is
+     * only knowable where somebody was tracking, so this counts `tracked` as
+     * well — and every caller must show it. "Two breaks from three chances" over
+     * four tracked points out of fourteen is not a statistic, it is a guess with
+     * a denominator attached, and a card that omits the denominator is asserting
+     * the stronger claim.
+     *
+     * Walks the goals reconstructing the score before each one, mirroring
+     * classifyPoints(): whoever concedes receives next, so the side NOT
+     * receiving is the one defending and the one a break chance belongs to.
+     */
+    function conversion(events, goals, startingOffenceSide) {
+        var out = {
+            home: { chances: 0, converted: 0 },
+            visitor: { chances: 0, converted: 0 },
+            tracked: 0,
+            points: 0
+        };
+        var ordered = (goals || []).slice().sort(function (a, b) { return a.num - b.num; });
+        var receiving = startingOffenceSide || null;
+        var home = 0, visitor = 0;
+
+        for (var i = 0; i < ordered.length; i += 1) {
+            var g = ordered[i];
+            var scoredBy = Number(g.ishomegoal) === 1 ? 'home' : 'visitor';
+            out.points += 1;
+
+            if (receiving) {
+                var defending = receiving === 'home' ? 'visitor' : 'home';
+                if (eventsFor(events, scoreKey(home, visitor)).length > 0) {
+                    out.tracked += 1;
+                    if (defenceTouched(events, home, visitor)) {
+                        out[defending].chances += 1;
+                        if (scoredBy === defending) { out[defending].converted += 1; }
+                    }
+                }
+                receiving = scoredBy === 'home' ? 'visitor' : 'home';
+            }
+
+            if (scoredBy === 'home') { home += 1; } else { visitor += 1; }
+        }
+        return out;
+    }
+
     root.Possession = {
         scoreKey: scoreKey,
         eventsFor: eventsFor,
         defenceHasDisc: defenceHasDisc,
         defenceTouched: defenceTouched,
-        turnovers: turnovers
+        turnovers: turnovers,
+        conversion: conversion
     };
 }(typeof window !== 'undefined' ? window : this));
