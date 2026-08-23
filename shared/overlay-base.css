@@ -650,8 +650,25 @@ body {
 .scoreboard.compact .seed,
 .scoreboard.compact .timeouts,
 .scoreboard.compact .segment,
-.scoreboard.compact .ribbon,
-.scoreboard.compact .callout-row {
+.scoreboard.compact .ribbon {
+    display: none;
+}
+
+/* The callout stays, scaled down, where the seed and the ribbon go.
+   Everything else dropped here is standing context — true all point, readable
+   whenever the viewer next looks. A break is the opposite: the most valuable
+   thing the bug ever says and worthless a few seconds later. Hiding it made
+   "small" and "shows breaks" a choice an operator had to make, and this is the
+   variant used for exactly the busy shots where a break is most likely. */
+.scoreboard.compact .callout {
+    padding: 2px 8px;
+    font-size: 13px;
+    letter-spacing: 0.06em;
+}
+
+.scoreboard.compact .callout.standing {
+    /* The standing tag is the one callout that IS ambient, so it stays out of a
+       bug chosen for being unobtrusive. Outcomes and break chances still show. */
     display: none;
 }
 

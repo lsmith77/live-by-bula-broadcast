@@ -24,10 +24,19 @@ require_once __DIR__ . '/shared/colors.php';
 require_once __DIR__ . '/shared/logos.php';
 
 $gameId = filter_input(INPUT_GET, 'game', FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
-if (!$gameId) {
+
+// Or follow a FIELD, and let the game change under the overlay as the day runs.
+// One camera covers one field while the games on it turn over every ninety
+// minutes, so this is the URL a switcher is actually set up with.
+$fieldName = trim((string) (filter_input(INPUT_GET, 'field') ?: ''));
+if (strlen($fieldName) > 40) {
+    $fieldName = '';
+}
+
+if (!$gameId && $fieldName === '') {
     http_response_code(400);
     header('Content-Type: text/plain; charset=UTF-8');
-    echo 'Missing or invalid ?game=<id>.';
+    echo 'Missing or invalid ?game=<id> (or ?field=<name>).';
     exit;
 }
 
@@ -240,6 +249,7 @@ $json = static fn ($value): string => json_encode($value, JSON_UNESCAPED_SLASHES
 <div class="demo-label hide" id="demoLabel"></div>
 
 <script src="<?= htmlspecialchars($assetUrl('shared/possession.js'), ENT_QUOTES) ?>"></script>
+<script src="<?= htmlspecialchars($assetUrl('shared/field.js'), ENT_QUOTES) ?>"></script>
 <script src="<?= htmlspecialchars($assetUrl('shared/overlay-client.js'), ENT_QUOTES) ?>"></script>
 <?php if ($demo) : ?>
 <script src="<?= htmlspecialchars($assetUrl('shared/demo.js'), ENT_QUOTES) ?>"></script>
@@ -250,6 +260,8 @@ $json = static fn ($value): string => json_encode($value, JSON_UNESCAPED_SLASHES
 
     var CONFIG = {
         gameId: <?= (int) $gameId ?>,
+        field: <?= $json($fieldName !== '' ? $fieldName : null) ?>,
+        fieldPoll: 30000,
         apiBase: <?= $json($apiBase) ?>,
         interval: <?= (int) $interval ?>,
         homeColour: <?= $json($homeColour) ?>,
@@ -555,9 +567,43 @@ $json = static fn ($value): string => json_encode($value, JSON_UNESCAPED_SLASHES
                 var next = (state && Array.isArray(state.events)) ? state : { enabled: false, events: [] };
                 var changed = next.enabled !== declared.enabled || next.rev !== declared.rev;
                 declared = next;
-                if (changed) { paintCallouts(); }
+                if (changed) { paintCallouts(); paintRibbon(); }
             })
             .then(function () { setTimeout(pollDeclared, CONFIG.possessionPoll); });
+    }
+
+    /**
+     * The ribbon, repainted from either channel.
+     *
+     * Its fixed half — event, pool, round — arrives on the 30s game poll, but
+     * the turnover count moves on the 1s possession channel. Painting it only
+     * from render() would leave the count up to thirty seconds stale while the
+     * tab above it was current, so the text is composed here and both callers
+     * use it.
+     */
+    var ribbonContext = '';
+
+    function paintRibbon() {
+        if (!CONFIG.ribbon) { return; }
+        var text = ribbonContext;
+        var churn = turnoversThisPoint();
+        if (churn >= 2) {
+            text += (text ? ' · ' : '') + churn + ' turnovers this point';
+        }
+        el.ribbon.textContent = text;
+        el.ribbon.className = text ? 'ribbon' : 'ribbon hide';
+    }
+
+    /**
+     * How often the disc has changed hands in the point being played.
+     *
+     * Zero unless the mode is on and somebody is pressing O and D, which is the
+     * point: an untracked game reports nothing rather than reporting zero, and
+     * the ribbon simply does not mention it.
+     */
+    function turnoversThisPoint() {
+        if (!declared.enabled || !possession.live || !window.Possession || !shownScore) { return 0; }
+        return window.Possession.turnovers(declared.events, shownScore.home, shownScore.visitor);
     }
 
     /** Is the defence holding the disc right now, according to the log? */
@@ -942,12 +988,9 @@ $json = static fn ($value): string => json_encode($value, JSON_UNESCAPED_SLASHES
 
         // Context moves out of the centre column, where it competed with the
         // score, onto its own strip.
-        if (CONFIG.ribbon) {
-            var context = [season.name, pool.name || info.poolname, info.gamename]
-                .filter(Boolean).join(' · ');
-            el.ribbon.textContent = context;
-            el.ribbon.className = context ? 'ribbon' : 'ribbon hide';
-        }
+        ribbonContext = [season.name, pool.name || info.poolname, info.gamename]
+            .filter(Boolean).join(' · ');
+        paintRibbon();
 
         el.loadingState.style.display = 'none';
         el.errorDisplay.style.display = 'none';
@@ -978,7 +1021,26 @@ $json = static fn ($value): string => json_encode($value, JSON_UNESCAPED_SLASHES
     // when the game payload is stale.
     if (!CONFIG.demo) { pollDeclared(); }
 
-    var client = new OverlayDataClient(CONFIG)
+    /**
+     * Everything the board remembers about the game it is showing.
+     *
+     * Cleared when a field-following board moves to the next game. Without this
+     * the new game's first goal would be compared against the old game's score
+     * and announced as if it had just been scored, and `painted` would still be
+     * true so the flash would fire on the very first payload.
+     */
+    function resetForNewGame() {
+        painted = false;
+        shownScore = null;
+        lastGoalNum = null;
+        outcome = null;
+        if (outcomeTimer) { clearTimeout(outcomeTimer); outcomeTimer = null; }
+        possession = { live: false, breaking: null };
+        ribbonContext = '';
+    }
+
+    function buildClient() {
+        return new OverlayDataClient(CONFIG)
         .onData(render)
         .onStatus(function (status) {
             el.connectionIndicator.classList.toggle('connected', status.connected);
@@ -990,6 +1052,9 @@ $json = static fn ($value): string => json_encode($value, JSON_UNESCAPED_SLASHES
             // only replace it once retrying has been abandoned.
             if (error.fatal || error.consecutiveErrors >= 5) showError(error);
         });
+    }
+
+    var client = buildClient();
 
     /**
      * Build the payload as it stood at one instant, and draw it once.
@@ -1068,6 +1133,41 @@ $json = static fn ($value): string => json_encode($value, JSON_UNESCAPED_SLASHES
             .catch(function (e) {
                 showError({ message: 'Demo needs one real payload first: ' + e.message });
             });
+    } else if (CONFIG.field) {
+        /**
+         * Field-following: resolve first, then start, then keep checking.
+         *
+         * The client is rebuilt rather than mutated when the game changes,
+         * because everything downstream of a game id — the goal history the
+         * hold/break derivation walks, the score the flash compares against —
+         * is per game. Carrying any of it across would announce the new game's
+         * first goal as if it had just been scored.
+         */
+        var following = null;
+
+        var follow = function () {
+            window.FieldResolver.resolveFieldGame(CONFIG.apiBase, CONFIG.field)
+                .then(function (id) {
+                    if (!id) {
+                        if (!following) {
+                            showError({ message: 'No game found on field ' + CONFIG.field + '.' });
+                        }
+                        return;
+                    }
+                    if (id === following) { return; }
+                    following = id;
+                    if (client) { client.stop(); }
+                    resetForNewGame();
+                    CONFIG.gameId = id;
+                    client = buildClient();
+                    client.start();
+                })
+                .catch(function () { /* transient; the next tick retries */ });
+        };
+
+        follow();
+        setInterval(follow, CONFIG.fieldPoll);
+        window.addEventListener('beforeunload', function () { if (client) { client.stop(); } });
     } else {
         client.start();
         window.addEventListener('beforeunload', function () { client.stop(); });
