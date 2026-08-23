@@ -58,16 +58,111 @@ $json = static fn ($v): string => json_encode($v, JSON_UNESCAPED_SLASHES | JSON_
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Commentator</title>
+<script>
+// Applied before the first paint, not with the rest of the script at the end of
+// the body. A reader who chose night gets a full white flash otherwise — which
+// is exactly the reader least able to tolerate one, and in a dark booth it is
+// worse than the mismatch it corrects.
+try {
+    if (localStorage.getItem('uo-commentator-theme') === 'night') {
+        document.documentElement.setAttribute('data-theme', 'night');
+    }
+} catch (e) { /* private window, blocked storage: day is the default anyway */ }
+</script>
 <style>
-    :root { color-scheme: dark; }
+    /* ---- palette -------------------------------------------------------
+       Two themes, and DAY IS THE DEFAULT, because this page is used at the
+       side of a pitch.
+
+       A dark interface is the wrong instrument in sunlight. A screen cannot
+       out-emit the sun, so under a bright sky its dark pixels stop being dark:
+       the glass turns into a mirror and the reader sees their own reflection
+       where the text should be. A light background puts the panel's brightest
+       pixels everywhere, so reflected glare is a smaller fraction of what comes
+       back, and dark ink on it survives. This is why every outdoor sign and
+       e-reader is dark-on-light and not the other way round.
+
+       So the day palette is not the night one inverted. It is built to a
+       different rule: every text pair measured at 7:1 or better (WCAG AAA,
+       not AA), borders solid enough to survive glare instead of the hairlines
+       that read as texture indoors, and no information carried by a mid-tone.
+
+       Night is kept for a commentary booth, an indoor hall, or an evening game,
+       and the choice is remembered per device.
+       -------------------------------------------------------------------- */
+    :root {
+        color-scheme: light;
+
+        --bg: #ffffff;
+        --panel: #ffffff;
+        --panel-alt: #f1f5f9;
+        --sunk: #e2e8f0;
+
+        --ink: #0a0f1a;
+        --ink-2: #1e293b;
+        --ink-mute: #44546b;
+
+        --line: #94a3b8;
+        --line-soft: #cbd5e1;
+
+        --link: #0b4f8a;
+        --accent: #1e3a8a;
+        --accent-ink: #ffffff;
+        --accent-soft: #dbeafe;
+
+        --ok: #166534;
+        --bad: #991b1b;
+
+        --badge-live-bg: #dcfce7;  --badge-live-ink: #14532d;
+        --badge-done-bg: #e2e8f0;  --badge-done-ink: #334155;
+        --badge-soon-bg: #e0f2fe;  --badge-soon-ink: #1e3a5f;
+        --err-bg: #fee2e2;         --err-ink: #7f1d1d;   --err-edge: #b91c1c;
+
+        /* Glare eats thin strokes before it eats thick ones. */
+        --rule: 1px;
+        --rule-strong: 2px;
+    }
+
+    :root[data-theme="night"] {
+        color-scheme: dark;
+
+        --bg: #0b1220;
+        --panel: #0f1a30;
+        --panel-alt: #131c33;
+        --sunk: #16213a;
+
+        --ink: #e2e8f0;
+        --ink-2: #cbd5e1;
+        --ink-mute: #94a3b8;
+
+        --line: #1e293b;
+        --line-soft: #16213a;
+
+        --link: #7dd3fc;
+        --accent: #1d4ed8;
+        --accent-ink: #ffffff;
+        --accent-soft: #1e3a5f;
+
+        --ok: #4ade80;
+        --bad: #f87171;
+
+        --badge-live-bg: #14532d;  --badge-live-ink: #4ade80;
+        --badge-done-bg: #1e293b;  --badge-done-ink: #94a3b8;
+        --badge-soon-bg: #1e3a5f;  --badge-soon-ink: #7dd3fc;
+        --err-bg: #3f1d1d;         --err-ink: #fecaca;   --err-edge: #ef4444;
+
+        --rule: 1px;
+        --rule-strong: 1px;
+    }
+
     * { box-sizing: border-box; }
     body {
         margin: 0; padding: 1.25rem 1.5rem 3rem;
         font: 16px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif;
-        background: #0b1220; color: #e2e8f0;
+        background: var(--bg); color: var(--ink);
     }
-    .muted { color: #94a3b8; }
-    a { color: #7dd3fc; }
+    .muted { color: var(--ink-mute); }
+    a { color: var(--link); }
 
     /* ---- header ----
        The header is also the column header for everything below it. The page is
@@ -75,10 +170,10 @@ $json = static fn ($v): string => json_encode($v, JSON_UNESCAPED_SLASHES | JSON_
        the top — home over the left column, away over the right — labels every
        panel underneath and buys back the vertical space three repeated headings
        were costing. It sticks, so the label survives a scroll. */
-    .top { position: sticky; top: 0; z-index: 20; background: #0b1220;
+    .top { position: sticky; top: 0; z-index: 20; background: var(--bg);
            display: grid; grid-template-columns: 1fr auto 1fr; align-items: center;
            gap: .5rem 1rem; padding: .15rem 0 .55rem;
-           border-bottom: 1px solid #1e293b; }
+           border-bottom: var(--rule-strong) solid var(--line); }
     /* Available to assistive technology, absent from the layout. Used for the
        fixture heading, which the visible header states as two names either side
        of a score rather than as a sentence. */
@@ -91,13 +186,13 @@ $json = static fn ($v): string => json_encode($v, JSON_UNESCAPED_SLASHES | JSON_
                 margin: 0; font-size: 1rem; font-weight: 400; }
     .teamhead .nm { font-size: 1.25rem; font-weight: 800; line-height: 1.15;
                     overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .teamhead .seed { color: #94a3b8; font-size: .75rem; font-weight: 600; white-space: nowrap; }
+    .teamhead .seed { color: var(--ink-mute); font-size: .75rem; font-weight: 600; white-space: nowrap; }
     .teamhead a { font-size: .72rem; white-space: nowrap; }
     .teamhead.away { flex-direction: row-reverse; justify-content: flex-start; text-align: right; }
     .mid { text-align: center; }
     .scoreline { font-size: 1.6rem; font-weight: 800; font-variant-numeric: tabular-nums;
                  line-height: 1.1; }
-    .ctx { font-size: .8rem; color: #94a3b8; }
+    .ctx { font-size: .8rem; color: var(--ink-mute); }
     .toolbar { display: flex; align-items: center; gap: 1rem; flex-wrap: wrap;
                padding: .55rem 0 0; }
     .toolbar .tabs { margin-left: auto; }
@@ -107,45 +202,46 @@ $json = static fn ($v): string => json_encode($v, JSON_UNESCAPED_SLASHES | JSON_
     }
     .badge { display: inline-block; padding: .1rem .5rem; border-radius: 999px;
              font-size: .75rem; font-weight: 700; }
-    .badge.live { background: #14532d; color: #4ade80; }
-    .badge.done { background: #1e293b; color: #94a3b8; }
-    .badge.soon { background: #1e3a5f; color: #7dd3fc; }
+    .badge.live { background: var(--badge-live-bg); color: var(--badge-live-ink); }
+    .badge.done { background: var(--badge-done-bg); color: var(--badge-done-ink); }
+    .badge.soon { background: var(--badge-soon-bg); color: var(--badge-soon-ink); }
 
     .tabs { display: flex; gap: .35rem; }
-    .tabs button { background: #16213a; border: 1px solid #1e293b; color: #cbd5e1;
+    .tabs button { background: var(--sunk); border: 1px solid var(--line); color: var(--ink-2);
                    padding: .45rem 1rem; border-radius: 5px; font: inherit; font-weight: 600;
                    font-size: .85rem; cursor: pointer; }
-    .tabs button.on { background: #1d4ed8; border-color: #1d4ed8; color: #fff; }
+    .tabs button.on { background: var(--accent); border-color: var(--accent); color: #fff; }
 
     /* ---- two-column layouts ---- */
     .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 1.25rem; margin-top: 1rem; }
     @media (max-width: 820px) { .cols { grid-template-columns: 1fr; } }
-    .panel { background: #0f1a30; border: 1px solid #1e293b; border-radius: 6px; padding: .85rem 1rem; }
+    .panel { background: var(--panel); border: var(--rule-strong) solid var(--line); border-radius: 6px; padding: .85rem 1rem; }
     .panel h2 { margin: 0 0 .6rem; font-size: .95rem; display: flex; align-items: baseline; gap: .5rem; }
-    .panel h2 .seed { color: #94a3b8; font-size: .8rem; font-weight: 600; }
+    .panel h2 .seed { color: var(--ink-mute); font-size: .8rem; font-weight: 600; }
     .panel h2 a { margin-left: auto; font-size: .75rem; }
 
     /* ---- roster ---- */
     table.roster { width: 100%; border-collapse: collapse; }
-    .roster th { text-align: right; font-size: .68rem; text-transform: uppercase;
-                 letter-spacing: .06em; color: #94a3b8; font-weight: 600; padding: 0 .3rem .3rem; }
+    .roster th { text-align: right; font-size: .78rem; text-transform: uppercase;
+                 letter-spacing: .06em; color: var(--ink-mute); font-weight: 700; padding: 0 .3rem .35rem;
+                 border-bottom: var(--rule) solid var(--line); }
     .roster th.n, .roster th.who { text-align: left; }
-    .roster td { padding: .22rem .3rem; border-top: 1px solid #16213a;
+    .roster td { padding: .28rem .3rem; border-top: var(--rule) solid var(--line-soft);
                  font-variant-numeric: tabular-nums; text-align: right; }
-    .roster td.n { width: 2.6rem; text-align: left; color: #94a3b8; font-weight: 700; }
+    .roster td.n { width: 2.6rem; text-align: left; color: var(--ink-mute); font-weight: 700; }
     .roster td.who { text-align: left; }
-    .roster td.who button { background: none; border: 0; color: #e2e8f0; font: inherit;
+    .roster td.who button { background: none; border: 0; color: var(--ink); font: inherit;
                             font-weight: 600; cursor: pointer; padding: 0; text-align: left; }
-    .roster td.who button:hover { color: #7dd3fc; text-decoration: underline; }
+    .roster td.who button:hover { color: var(--link); text-decoration: underline; }
     /* A player with no points yet is the DEFAULT state, not an exception — on a
        fresh game it is most of the roster. So the row dims only its statistics,
        never the jersey number or the name, which are the two things a
        commentator is looking the row up BY. */
-    .roster tr.quiet td:not(.n):not(.who) { color: #94a3b8; }
+    .roster tr.quiet td:not(.n):not(.who) { color: var(--ink-mute); }
 
     /* ---- team stats ---- */
     .stat { display: flex; justify-content: space-between; gap: 1rem; padding: .25rem 0;
-            border-top: 1px solid #16213a; font-variant-numeric: tabular-nums; }
+            border-top: 1px solid var(--sunk); font-variant-numeric: tabular-nums; }
     .stat:first-of-type { border-top: 0; }
     .stat b { font-weight: 700; }
 
@@ -154,60 +250,60 @@ $json = static fn ($v): string => json_encode($v, JSON_UNESCAPED_SLASHES | JSON_
     .pickhead { display: flex; align-items: baseline; gap: .75rem; flex-wrap: wrap;
                 margin-bottom: .4rem; }
     .pickhead .count { font-weight: 700; font-variant-numeric: tabular-nums; }
-    .pickhead .count.ok { color: #4ade80; }
-    .pickhead .count.over { color: #f87171; }
+    .pickhead .count.ok { color: var(--ok); }
+    .pickhead .count.over { color: var(--bad); }
     .nums { display: flex; flex-wrap: wrap; gap: .35rem; }
     .nums button { min-width: 3.1rem; padding: .5rem .4rem; border-radius: 5px;
-                   border: 1px solid #334155; background: #0b1220; color: #cbd5e1;
+                   border: 1px solid var(--line); background: var(--bg); color: var(--ink-2);
                    font: inherit; font-weight: 700; font-variant-numeric: tabular-nums;
                    cursor: pointer; line-height: 1.1; }
     .nums button small { display: block; font-size: .62rem; font-weight: 500;
-                         color: #94a3b8; letter-spacing: .02em; }
-    .nums button.on { background: #1d4ed8; border-color: #60a5fa; color: #fff; }
-    .nums button.on small { color: #dbeafe; }
+                         color: var(--ink-mute); letter-spacing: .02em; }
+    .nums button.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+    .nums button.on small { color: var(--accent-soft); }
 
     .onfield { margin-top: .75rem; }
-    .onfield .side { padding: .6rem .9rem; border-radius: 6px; background: #0f1a30;
-                     border: 1px solid #1e293b; margin-bottom: .6rem; }
-    .onfield .side.away { background: #131c33; }
+    .onfield .side { padding: .6rem .9rem; border-radius: 6px; background: var(--panel);
+                     border: 1px solid var(--line); margin-bottom: .6rem; }
+    .onfield .side.away { background: var(--panel-alt); }
     .onfield .side h3 { margin: 0 0 .35rem; font-size: .8rem; text-transform: uppercase;
-                        letter-spacing: .1em; color: #94a3b8; font-weight: 700; }
+                        letter-spacing: .1em; color: var(--ink-mute); font-weight: 700; }
     .onfield .line { display: flex; flex-wrap: wrap; gap: .35rem 1.4rem; }
     .onfield .p { font-size: 1.5rem; font-weight: 700; line-height: 1.25; }
-    .onfield .p span { color: #94a3b8; font-size: 1.05rem; font-weight: 600; margin-right: .3rem;
+    .onfield .p span { color: var(--ink-mute); font-size: 1.05rem; font-weight: 600; margin-right: .3rem;
                        font-variant-numeric: tabular-nums; }
-    .onfield .empty { color: #94a3b8; font-size: .95rem; }
-    .barbtn { background: #16213a; border: 1px solid #334155; color: #cbd5e1; font: inherit;
+    .onfield .empty { color: var(--ink-mute); font-size: .95rem; }
+    .barbtn { background: var(--sunk); border: 1px solid var(--line); color: var(--ink-2); font: inherit;
               font-size: .82rem; padding: .4rem .8rem; border-radius: 5px; cursor: pointer; }
-    .barbtn.primary { background: #1d4ed8; border-color: #1d4ed8; color: #fff; font-weight: 600; }
+    .barbtn.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
 
     /* ---- player detail overlay ---- */
     .sheet { position: fixed; inset: 0; background: rgb(2 6 16 / 72%); display: none;
              align-items: center; justify-content: center; padding: 1rem; z-index: 50; }
     .sheet.open { display: flex; }
-    .sheet .card { background: #0f1a30; border: 1px solid #334155; border-radius: 8px;
+    .sheet .card { background: var(--panel); border: 1px solid var(--line); border-radius: 8px;
                    padding: 1.1rem 1.3rem; max-width: 540px; width: 100%;
                    max-height: 90vh; overflow-y: auto; }
     .sheet h3 { margin: 0 0 .1rem; font-size: 1.35rem; }
-    .sheet .sub { color: #94a3b8; font-size: .85rem; margin-bottom: .8rem; }
+    .sheet .sub { color: var(--ink-mute); font-size: .85rem; margin-bottom: .8rem; }
     .sheet .grid { display: grid; gap: .3rem .8rem; font-variant-numeric: tabular-nums; }
     .sheet .grid .h { font-size: .68rem; text-transform: uppercase; letter-spacing: .06em;
-                      color: #94a3b8; font-weight: 600; }
+                      color: var(--ink-mute); font-weight: 600; }
     .sheet .grid .v { text-align: right; font-weight: 700; }
     .sheet h4 { margin: 1rem 0 .4rem; font-size: .7rem; text-transform: uppercase;
-                letter-spacing: .08em; color: #94a3b8; font-weight: 700; }
+                letter-spacing: .08em; color: var(--ink-mute); font-weight: 700; }
     .sheet .facts { display: grid; grid-template-columns: 1fr auto; gap: .2rem .8rem;
                     font-size: .87rem; font-variant-numeric: tabular-nums; }
-    .sheet .facts .k { color: #94a3b8; }
+    .sheet .facts .k { color: var(--ink-mute); }
     .sheet .facts .v { font-weight: 700; text-align: right; }
     /* Game-by-game: the line a commentator reaches for when a name comes up. */
-    .hist { border-top: 1px solid #16213a; padding: .35rem 0; display: flex;
+    .hist { border-top: 1px solid var(--sunk); padding: .35rem 0; display: flex;
             gap: .6rem; align-items: baseline; font-size: .87rem; }
     .hist .opp { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis;
                  white-space: nowrap; }
-    .hist .res { color: #94a3b8; font-variant-numeric: tabular-nums; }
-    .hist .res.w { color: #4ade80; font-weight: 700; }
-    .hist .res.l { color: #f87171; }
+    .hist .res { color: var(--ink-mute); font-variant-numeric: tabular-nums; }
+    .hist .res.w { color: var(--ok); font-weight: 700; }
+    .hist .res.l { color: var(--bad); }
     .hist .ga { font-weight: 700; font-variant-numeric: tabular-nums; min-width: 4.2rem;
                 text-align: right; }
     .sheet footer { display: flex; gap: .6rem; align-items: center; margin-top: 1rem; }
@@ -216,21 +312,21 @@ $json = static fn ($v): string => json_encode($v, JSON_UNESCAPED_SLASHES | JSON_
     /* Room code: shown, not asked for. A random one is generated on first load
        so two commentary pairs at one tournament cannot both pick "12345". */
     .sync { display: flex; align-items: center; gap: .4rem; font-size: .8rem; }
-    .sync .code { background: #0b1220; border: 1px solid #334155; color: #7dd3fc;
+    .sync .code { background: var(--bg); border: 1px solid var(--line); color: var(--link);
                   border-radius: 4px; padding: .3rem .45rem; font-weight: 700;
                   letter-spacing: .12em; text-transform: uppercase;
                   font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
     /* A 28-player squad needs its own scroll; the panel header stays visible. */
     .scroll { max-height: 46vh; overflow-y: auto; overscroll-behavior: contain; }
     .scroll table { width: 100%; }
-    .roster thead th { position: sticky; top: 0; background: #0f1a30; z-index: 1; }
+    .roster thead th { position: sticky; top: 0; background: var(--panel); z-index: 1; }
 
-    .chip { background: #16213a; border: 1px solid #1e293b; color: #cbd5e1; font: inherit;
+    .chip { background: var(--sunk); border: 1px solid var(--line); color: var(--ink-2); font: inherit;
             font-size: .78rem; font-weight: 600; padding: .25rem .6rem; border-radius: 999px;
             cursor: pointer; }
-    .chip.on { background: #1d4ed8; border-color: #1d4ed8; color: #fff; }
+    .chip.on { background: var(--accent); border-color: var(--accent); color: #fff; }
 
-    .err { padding: 1rem 1.25rem; background: #3f1d1d; border-left: 3px solid #ef4444;
+    .err { padding: 1rem 1.25rem; background: var(--err-bg); color: var(--err-ink); border-left: 3px solid var(--err-edge);
            border-radius: 4px; margin-top: 1rem; }
 </style>
 </head>
@@ -253,6 +349,7 @@ $json = static fn ($v): string => json_encode($v, JSON_UNESCAPED_SLASHES | JSON_
     <h2 class="teamhead away" id="headAway"></h2>
 </header>
 <div class="toolbar">
+    <button id="themeBtn" class="chip" type="button" aria-pressed="false"></button>
     <div class="sync" id="sync"></div>
     <div class="tabs" role="group" aria-label="View">
         <button id="tabPrep" type="button" aria-pressed="true">Prep</button>
@@ -293,6 +390,49 @@ $json = static fn ($v): string => json_encode($v, JSON_UNESCAPED_SLASHES | JSON_
         a.rel = 'noopener';
         return a;
     };
+
+    /* ---------------------------------------------------------------
+       Daylight and night
+       --------------------------------------------------------------- */
+
+    /**
+     * Day is the default because the pitch is the default.
+     *
+     * Deliberately NOT `prefers-color-scheme`: that reports what the reader
+     * chose for their operating system months ago, indoors. It says nothing
+     * about whether the sun is currently on the screen, which is the only thing
+     * that matters here. So it is a decision the reader makes on the spot, and
+     * the page remembers it per device.
+     *
+     * localStorage can throw outright in a private window or with site data
+     * blocked, so every access is guarded and the page renders correctly with no
+     * stored value.
+     */
+    var THEME_KEY = 'uo-commentator-theme';
+
+    function storedTheme() {
+        try { return localStorage.getItem(THEME_KEY); } catch (e) { return null; }
+    }
+
+    function setTheme(mode) {
+        var night = mode === 'night';
+        document.documentElement.setAttribute('data-theme', night ? 'night' : 'day');
+        var b = document.getElementById('themeBtn');
+        // The label names what a click DOES, not what is currently on — a
+        // control read at a glance in bad light should not need interpreting.
+        b.textContent = night ? '\u2600 Daylight' : '\u263E Night';
+        b.title = night
+            ? 'Switch to the high-contrast daylight theme for use in sunlight'
+            : 'Switch to the dark theme for a booth or an evening game';
+        b.setAttribute('aria-pressed', night ? 'true' : 'false');
+        try { localStorage.setItem(THEME_KEY, night ? 'night' : 'day'); } catch (e) { /* fine */ }
+    }
+
+    setTheme(document.documentElement.getAttribute('data-theme') === 'night'
+        || storedTheme() === 'night' ? 'night' : 'day');
+    document.getElementById('themeBtn').addEventListener('click', function () {
+        setTheme(document.documentElement.getAttribute('data-theme') === 'night' ? 'day' : 'night');
+    });
 
     var body = document.getElementById('body');
     var state = {
