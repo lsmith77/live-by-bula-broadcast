@@ -109,6 +109,18 @@ Recorded a game without a switcher? [docs/POSTPRODUCTION.md](docs/POSTPRODUCTION
 
 Full instructions, URLs, and the reasoning behind the design: **[docs/README.md](docs/README.md)**.
 
+## Help wanted
+
+Two kinds of help would make more difference to this project than more features.
+
+**Design.** The graphics work and are measured — contrast, title-safe insets, colour-blind separation, names that fit — but measured is not the same as *good*. The scoreboard bug and the cards would benefit from somebody who designs broadcast graphics for a living, and the operator and commentator interfaces from anyone who does UX. If a layout here looks amateur to you, that is useful information and I would like to hear it.
+
+**Testing.** This has never run at a real tournament. It has never run on a Magewell Director Mini or a Yolobox at all, and the single assumption everything rests on — that a hardware switcher's browser source keeps running JavaScript — is still unverified on hardware. `tests/selftest.php` answers that in about ten seconds on the device.
+
+If you are broadcasting an Ultimate event and willing to try it, or to run the self-test and report what happened, that is worth more than any amount of further development. Failures are the useful part: an overlay that never updated, a graphic that looked wrong on air, an instruction that made no sense at the side of a pitch.
+
+Open an issue either way.
+
 ## Development
 
 This project is built with heavy use of AI coding assistants. The conventions that keep that workable — what may not be touched, how claims are verified, and why the documentation is load-bearing rather than decorative — are written down in [AGENTS.md](AGENTS.md), which is meant for both the humans and the agents.

@@ -523,6 +523,24 @@ Sized for the worst case rather than the measured one, deliberately: the bug's w
 
 `with-scoreboard` is never blocked: those cards ride with the scoreboard and inherit whichever slot it is allowed to occupy.
 
+### 9.015 One document per game
+
+`conf/possession-<game>.json`, one per game, with a private sibling holding that game's code. Not a single shared document, and the reason is worth keeping because the failure was invisible.
+
+A tournament runs several fields at once and this project supports that explicitly — a stage per game, `/s/field/1/overlay`, `/s/field/2/overlay`. With one shared document, three things happened, all reproduced before it was changed:
+
+| what happened | measured |
+|---|---|
+| a second field's desk wiped the first's | field 1 had three possession changes; field 2 started tracking and field 1 had none, its code silently replaced |
+| data crossed between games **on air** | an injury stoppage flagged on game 703 at 8-6 appeared on game 702's scoreboard, which was also at 8-6 |
+| the first point's ratio outlived a round change | set on a mixed game, still there after the operator moved the stage to a different one |
+
+The second is the worst: no consumer checked whose game the document belonged to, and two games at the same score is routine rather than unlucky.
+
+Keying by game makes all three impossible to write, which is worth more than any guard the consumers could have carried — a guard has to be remembered in every new reader, and this shape does not. `shared/lines.php` was per game from the start; this is the same arrangement.
+
+Every request names its game: a call without one is a 400 rather than a guess.
+
 ### 9.02 The commentary link, and the three things it unlocks
 
 The link is **one code**, and it is independent of what is being tracked.
