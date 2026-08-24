@@ -280,6 +280,14 @@ Line data makes several genuinely new things possible: who is on for a key point
 
 It also answers the "who is on this point" graphic that `STUDIO.md` §10.2 lists as impossible. **But promoting it to air is a separate decision, not a free consequence.** Commentator-entered lines are a personal reference: a missed substitution costs the commentator a moment's confusion. The same error on a lower-third states something false about a named player to the audience. If it is ever put on air, it needs the same all-or-nothing test applied to break chance (`STUDIO.md` §3.4) — and probably an explicit "confirmed" action rather than automatically mirroring whatever the commentators happen to have typed.
 
+## 6a. Name and code, in the header
+
+Both are setup, so both sit in the header beside each other rather than inside a mode.
+
+The name identifies this desk to the Studio operator; the code links it. Neither belongs in the play-by-play panel, which is where the name started — invisible while preparing, and behind possession tracking, so it could not be set until somebody had already put a graphic on air. The operator reads that name when deciding whose code to enter, which makes it the *first* thing needed, not the last.
+
+The name is typed here, kept in this browser, sent with the poll, and shown only to the operator. It is never returned to other commentators: enumerating who else is on a code is the operator's business.
+
 ## 6b. Gender ratio
 
 Mixed divisions only, decided the way UltiOrganizer's own scoresheet decides it — the division name contains "mixed" (`cust/wfdf/pdfscoresheet.php:142`).

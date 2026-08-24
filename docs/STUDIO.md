@@ -537,6 +537,8 @@ It did not start that way. A code was created as a side effect of turning break 
 
 All three are the same kind of thing: **facts about the game that UltiOrganizer does not record**, so somebody watching declares them. That is the reason they share a link rather than a mode.
 
+**The roster refreshes on its own**, which needed care: who is connected is not part of `rev`. A commentator merely polling does not write to the show's possession state, so the roster changes underneath an unchanged rev. Comparing rev alone meant the operator typed a code, saw "nobody connected", and went on seeing it after the desk had joined — the one question this panel exists to answer.
+
 **The roster names the desks rather than counting them.** "2 commentators connected" answers the wrong question — the operator needs to know whether the *right* desk is on the code. Each commentator page carries a name they type themselves; it is kept in their browser, sent with their poll, shown only to the operator, and gone as soon as they stop polling. It is not returned to other commentators: enumerating who else is on a code is nobody's business but the operator's.
 
 ### 9.025 Injury stoppage
