@@ -492,6 +492,18 @@ Three details that are not obvious:
 
 **On latency.** The card appears when the *stage learns* of the goal, which can be up to 30 seconds after it happened (`CACHE_SECONDS_GAME_DETAIL_ONGOING`). That is not a defect to engineer around: the scoreboard is on the same poll, so the card appears at the same instant the score ticks over on screen. The two are consistent with each other and with what the viewer sees, which matters more than either being early. Measured end to end against a real goal: card up at t+42s, down at t+57s — 15 seconds exactly.
 
+### 9.028 One summary card, not three
+
+`summary` reads which moment it is describing off the game and headlines itself accordingly: **Coming up**, **Half time**, **How it stands**, **Full time**.
+
+They were always one card with a different heading and a slightly different stat line. Keeping them apart cost the operator three rows in the control page, three positions to set and three auto triggers to configure — for a graphic that can see the answer for itself. `hasstarted`, `isongoing` and the `half_cap` event already distinguish all four states.
+
+**"At the half" means the half has been called and nobody has scored since.** The half is a moment, not a phase: a card still headed "Half time" three points into the second half is simply wrong, so once a goal lands after the `half_cap` the same card becomes the running summary. That check is against the event's *time* against the goals' times — an earlier version compared goal counts and was always true whenever a half had been called at all.
+
+`params.when` overrides the inference. The case that needs it is showing full-time numbers during a break, which no rule can infer from a game still in play.
+
+The old `pregame`, `halftime` and `postgame` ids remain as the same card pinned to one moment, so a saved show state or an exported configuration file still means what it meant.
+
 ### 9.03 The tournament logo owns its corner
 
 The logo does not move. The stage refuses to place a card in the corner it occupies, and that is the whole rule — visible in the position picker as a blocked cell, and enforced in the store so a stale tab or a direct write cannot get a card underneath it.
@@ -510,6 +522,30 @@ Sized for the worst case rather than the measured one, deliberately: the bug's w
 | `bottom-right` | `lower-right` | same |
 
 `with-scoreboard` is never blocked: those cards ride with the scoreboard and inherit whichever slot it is allowed to occupy.
+
+### 9.02 The commentary link, and the three things it unlocks
+
+The link is **one code**, and it is independent of what is being tracked.
+
+It did not start that way. A code was created as a side effect of turning break chances on, which meant an operator could not hand the commentary desk the gender ratio or an injury stoppage without also putting a graphic on air — three unrelated facts behind one switch. `allowsCode()` now says only "is this the code the operator nominated"; each thing it unlocks decides its own conditions.
+
+| fact | who can set it | needs possession mode | key |
+|---|---|---|---|
+| possession (offence / defence) | operator or code holder | yes — the log is cleared without it | `O` / `D` |
+| the first point's gender ratio | operator or code holder | no | — |
+| injury stoppage | operator or code holder | no | `I` |
+
+All three are the same kind of thing: **facts about the game that UltiOrganizer does not record**, so somebody watching declares them. That is the reason they share a link rather than a mode.
+
+**The roster names the desks rather than counting them.** "2 commentators connected" answers the wrong question — the operator needs to know whether the *right* desk is on the code. Each commentator page carries a name they type themselves; it is kept in their browser, sent with their poll, shown only to the operator, and gone as soon as they stop polling. It is not returned to other commentators: enumerating who else is on a code is nobody's business but the operator's.
+
+### 9.025 Injury stoppage
+
+Play stops for things the clock knows nothing about. A timeout is in `gameevents` and needs no help; an injury is recorded nowhere, so it is declared — the same shape of gap as possession, and handled the same way.
+
+**Keyed by score, so it ends itself at the next goal.** Nobody has to remember to clear it, and the failure that matters — a stoppage tab still on air two points later — cannot happen. It outranks a timeout when both are somehow live, because it is the more important thing to explain.
+
+It is shown **centred**, not over one team. A stoppage belongs to neither side, and every other callout on the bug is an attribution.
 
 ### 9.04 Several people tracking possession
 
