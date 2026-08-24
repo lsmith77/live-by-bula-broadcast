@@ -288,6 +288,18 @@ The name identifies this desk to the Studio operator; the code links it. Neither
 
 The name is typed here, kept in this browser, sent with the poll, and shown only to the operator. It is never returned to other commentators: enumerating who else is on a code is the operator's business.
 
+## 6a2. Where the live controls live
+
+Injury, O, D and the log button sit in the **sticky header**, beside the code that authorises them. Nothing that is tracked has controls in the body.
+
+Two reasons, and the second is the one that decided it. The play-by-play view has the least vertical space to spare — its whole job is fourteen names at a size readable across a desk — and a panel of controls was taking a band of it. But these are also the controls pressed most often, several times a point, without looking: they are the last thing that should be allowed to scroll away. The header and the toolbar stick as one block for that reason; sticking only the header would have kept the names in view and let the buttons leave.
+
+What remains in the body is a **reading**, not a control: turnovers this point, and the previous point beside it for comparison.
+
+The buttons are smaller than the ones they replace, which is a real cost — the body versions were deliberately large to be hit without looking. Being permanently on screen is worth more than being large, because a button that has scrolled off cannot be hit at any size. The keyboard is unchanged and remains the fast path: `O`, `D`, `I`, `U`.
+
+**Team stats sit at the bottom of this view**, the opposite of the prep view. There the squads scroll and the short block belongs on top so it never leaves the screen; here nothing scrolls, and a season record does not change while a point is being played.
+
 ## 6b. Gender ratio
 
 Mixed divisions only, decided the way UltiOrganizer's own scoresheet decides it — the division name contains "mixed" (`cust/wfdf/pdfscoresheet.php:142`).
