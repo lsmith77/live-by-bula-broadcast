@@ -268,6 +268,7 @@ $json = static fn ($v): string => json_encode($v, JSON_UNESCAPED_SLASHES | JSON_
 </div>
 
 <script src="<?= htmlspecialchars($assetUrl('shared/possession.js'), ENT_QUOTES) ?>"></script>
+<script src="<?= htmlspecialchars($assetUrl('shared/ratio.js'), ENT_QUOTES) ?>"></script>
 <script>
 (function () {
     'use strict';
@@ -683,11 +684,8 @@ $json = static fn ($v): string => json_encode($v, JSON_UNESCAPED_SLASHES | JSON_
             if (Number(g.game_id) === Number(show.game)) { game = g; }
         });
         if (!game) { return null; }
-        var series = String(seriesIndex[String(game.pool)] || '');
-        if (series.toLowerCase().indexOf('mixed') === -1) { return null; }
-        return seasonType === 'indoor' || seasonType === 'beach'
-            ? ['3MMP/2FMP', '2MMP/3FMP']
-            : ['4MMP/3FMP', '3MMP/4FMP'];
+        if (!window.Ratio.isMixed(seriesIndex[String(game.pool)])) { return null; }
+        return window.Ratio.pair(seasonType);
     }
 
 
@@ -1110,7 +1108,9 @@ $json = static fn ($v): string => json_encode($v, JSON_UNESCAPED_SLASHES | JSON_
             rsel.disabled = !showCanEdit();
             rsel.title = 'Circled on the paper scoresheet, and recorded nowhere else. '
                 + 'Until it is set, nothing can name which ratio a point was played at.';
-            [['', 'not set']].concat(ratios.map(function (r) { return [r, r]; }))
+            [['', 'not set']].concat(ratios.map(function (r) {
+                return [r, window.Ratio.short(r)];
+            }))
                 .forEach(function (o) {
                     var opt = document.createElement('option');
                     opt.value = o[0];

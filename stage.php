@@ -99,6 +99,7 @@ $json = static fn ($v): string => json_encode($v, JSON_UNESCAPED_SLASHES | JSON_
 
 <script src="<?= htmlspecialchars($assetUrl('shared/overlay-client.js'), ENT_QUOTES) ?>"></script>
 <script src="<?= htmlspecialchars($assetUrl('shared/possession.js'), ENT_QUOTES) ?>"></script>
+<script src="<?= htmlspecialchars($assetUrl('shared/ratio.js'), ENT_QUOTES) ?>"></script>
 <script src="<?= htmlspecialchars($assetUrl('shared/field.js'), ENT_QUOTES) ?>"></script>
 <script>
 (function () {
@@ -825,14 +826,8 @@ $json = static fn ($v): string => json_encode($v, JSON_UNESCAPED_SLASHES | JSON_
                 var goals = (payload.goals || []).slice()
                     .sort(function (a, b) { return a.num - b.num; });
 
-                var seriesName = String(info.seriesname || '');
-                var mixed = seriesName.toLowerCase().indexOf('mixed') !== -1;
-
-                var seasonType = String((payload.seasoninfo && payload.seasoninfo.type)
-                    || 'outdoor').toLowerCase();
-                var pair = (seasonType === 'indoor' || seasonType === 'beach')
-                    ? ['3MMP/2FMP', '2MMP/3FMP']
-                    : ['4MMP/3FMP', '3MMP/4FMP'];
+                var mixed = window.Ratio.isMixed(info.seriesname);
+                var pair = window.Ratio.pair(payload.seasoninfo && payload.seasoninfo.type);
                 // Walk the goals into steps. Each carries the point number, so
                 // its ratio slot falls out of the ABBA pattern.
                 var steps = [];
@@ -848,7 +843,7 @@ $json = static fn ($v): string => json_encode($v, JSON_UNESCAPED_SLASHES | JSON_
                         y: v,
                         // Same rule as the printed sheet: points 1, 4, 5, 8 ...
                         // repeat the first point's ratio.
-                        slotA: (n % 4 === 0 || (n - 1) % 4 === 0)
+                        slotA: window.Ratio.slot(n) === 'A'
                     });
                 });
 
@@ -873,8 +868,8 @@ $json = static fn ($v): string => json_encode($v, JSON_UNESCAPED_SLASHES | JSON_
                             awayScore: Number(result.visitorscore) || 0,
                             steps: steps,
                             showRatio: showRatio,
-                            ratioA: first,
-                            ratioB: other
+                            ratioA: window.Ratio.short(first),
+                            ratioB: window.Ratio.short(other)
                         };
                     });
             },

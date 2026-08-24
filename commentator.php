@@ -215,6 +215,12 @@ try {
     .tracking .tbtn.d.on { background: var(--bad); border-color: var(--bad); color: #fff; }
     .tracking .tbtn:disabled { opacity: .4; cursor: not-allowed; }
     .tracking .note { font-size: .78rem; color: var(--ink-mute); }
+    .tracking .tsel { background: var(--panel-alt); border: 1px solid var(--line);
+                      color: var(--ink); font: inherit; font-size: .8rem;
+                      border-radius: 5px; padding: .3rem .4rem; }
+    .tracking .tsel:disabled { opacity: .5; }
+    .tracking .tbtn.primary { background: var(--accent); border-color: var(--accent);
+                              color: var(--accent-ink); }
     @media (max-width: 820px) {
         .top { grid-template-columns: 1fr auto; }
         .teamhead.away { grid-column: 1 / -1; flex-direction: row; justify-content: flex-start; text-align: left; }
@@ -270,11 +276,11 @@ try {
     .abbahead { font-size: .68rem; text-transform: uppercase; letter-spacing: .08em;
                 font-weight: 700; margin-bottom: .5rem; }
     .abbaask { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; }
-    .abbarun { display: flex; gap: .6rem; margin-bottom: .6rem; }
-    .abbapt { flex: 1; padding: .5rem .6rem; border-radius: 5px; text-align: center;
+    .abbarun { display: flex; gap: .5rem; flex-wrap: wrap; }
+    .abbapt { display: flex; align-items: baseline; gap: .4rem;
+              padding: .3rem .6rem; border-radius: 5px;
               background: var(--panel-alt); border: 1px solid var(--line); }
-    .abbapt b { display: block; font-size: 1.15rem; font-weight: 800;
-                font-variant-numeric: tabular-nums; }
+    .abbapt b { font-size: 1rem; font-weight: 800; font-variant-numeric: tabular-nums; }
     .abbapt span { font-size: .72rem; color: var(--ink-mute); }
     /* The point being played is the one the commentator is talking over. */
     .abbapt.now { background: var(--accent); border-color: var(--accent); }
@@ -449,6 +455,7 @@ try {
     <button id="themeBtn" class="chip" type="button" aria-pressed="false"></button>
     <div class="sync" id="sync"></div>
     <div class="tracking" id="tracking" role="group" aria-label="Live tracking"></div>
+    <div class="tracking" id="steps" role="group" aria-label="Point"></div>
     <div class="tabs" role="group" aria-label="View">
         <button id="tabPrep" type="button" aria-pressed="true">Prep</button>
         <button id="tabPlay" type="button" aria-pressed="false">Play-by-play</button>
@@ -463,6 +470,7 @@ try {
 </div>
 
 <script src="<?= $base ?>/live/overlays/shared/possession.js"></script>
+<script src="<?= $base ?>/live/overlays/shared/ratio.js"></script>
 <script>
 (function () {
     'use strict';
@@ -1112,10 +1120,7 @@ try {
      * with an asterisk — the same rule, so a commentator reading this and a
      * scorekeeper reading the printed sheet cannot disagree.
      */
-    function abbaSlot(pointNumber) {
-        var i = Number(pointNumber) || 1;
-        return (i % 4 === 0 || (i - 1) % 4 === 0) ? 'A' : 'B';
-    }
+    function abbaSlot(n) { return window.Ratio.slot(n); }
 
     /**
      * The two ratios in play, by season type.
@@ -1124,18 +1129,24 @@ try {
      * scoresheet (`pdfscoresheet.php:461-471`).
      */
     function ratioPair() {
-        var type = ((state.payload && state.payload.seasoninfo
-            && state.payload.seasoninfo.type) || 'outdoor').toLowerCase();
-        return (type === 'indoor' || type === 'beach')
-            ? ['3MMP/2FMP', '2MMP/3FMP']
-            : ['4MMP/3FMP', '3MMP/4FMP'];
+        return window.Ratio.pair((state.payload && state.payload.seasoninfo
+            && state.payload.seasoninfo.type) || 'outdoor');
     }
+
+    /**
+     * "4MMP/3FMP" said in one word: "4MMP".
+     *
+     * The majority side names the ratio on its own — a seven-a-side line with
+     * four MMP has three FMP and there is nothing else it could be — so printing
+     * both halves spends characters on something already known. Works for the
+     * five-a-side ratios too: "3MMP" is 3MMP/2FMP.
+     */
+    function shortRatio(full) { return window.Ratio.short(full); }
 
     /** Mixed is decided by the division name, exactly as the scoresheet decides it. */
     function isMixedDivision() {
-        var name = (state.payload && state.payload.game_info
-            && state.payload.game_info.seriesname) || '';
-        return name.toLowerCase().indexOf('mixed') !== -1;
+        return window.Ratio.isMixed(state.payload && state.payload.game_info
+            && state.payload.game_info.seriesname);
     }
 
     /**
@@ -1772,6 +1783,42 @@ try {
     }
 
     /**
+     * The first point's ratio, in the toolbar with the other setup.
+     *
+     * It is answered once per game and then never touched, so it belongs beside
+     * the code rather than taking a block in the panel that is read between
+     * every point. Mixed divisions only — there is nothing to set otherwise.
+     */
+    function renderRatioControl() {
+        var box = document.getElementById('tracking');
+        if (!box || !isMixedDivision()) { return; }
+
+        var pair = ratioPair();
+        var current = firstRatioValue();
+
+        var sel = document.createElement('select');
+        sel.className = 'tsel';
+        sel.disabled = !possession.canTrack;
+        sel.title = current
+            ? 'Gender ratio on point 1. Everything else follows the ABBA pattern from it.'
+            : 'Set the gender ratio on point 1, from the paper scoresheet.';
+        sel.setAttribute('aria-label', 'Gender ratio on point 1');
+
+        var opts = [['', 'ratio pt 1']].concat(pair.map(function (r) {
+            return [r, shortRatio(r) + ' pt 1'];
+        }));
+        opts.forEach(function (o) {
+            var opt = document.createElement('option');
+            opt.value = o[0];
+            opt.textContent = o[1];
+            if (o[0] === (current || '')) { opt.selected = true; }
+            sel.append(opt);
+        });
+        sel.addEventListener('change', function () { setFirstRatio(sel.value || null); });
+        box.append(sel);
+    }
+
+    /**
      * What the tracking is telling you — not the controls for it.
      *
      * The buttons live in the sticky header now, so this is a single slim line
@@ -1779,6 +1826,40 @@ try {
      * commentator says; the previous point sits beside it because that is the
      * comparison actually reached for.
      */
+    /**
+     * Which step of the point, in the toolbar.
+     *
+     * The heading and its buttons were a full row in the body, and the heading
+     * said what the panel underneath already showed — a grid of jersey numbers
+     * is self-evidently a line picker. What is worth keeping is the transition
+     * between the two steps, which is a control, so it goes where the other
+     * controls are.
+     */
+    function renderSteps() {
+        var box = document.getElementById('steps');
+        if (!box) { return; }
+        box.replaceChildren();
+        if (state.mode !== 'play') { return; }
+
+        if (state.step === 1) {
+            var go = el('button', 'tbtn primary', 'Start point \u2192');
+            go.type = 'button';
+            go.addEventListener('click', function () { state.step = 2; render(); });
+            box.append(go);
+
+            var clear = el('button', 'tbtn', 'Clear');
+            clear.type = 'button';
+            clear.title = 'Clear both lines';
+            clear.addEventListener('click', function () { state.line = {}; render(); });
+            box.append(clear);
+        } else {
+            var edit = el('button', 'tbtn', '\u2190 Change line');
+            edit.type = 'button';
+            edit.addEventListener('click', function () { state.step = 1; render(); });
+            box.append(edit);
+        }
+    }
+
     function trackingPanel() {
         if (!possession.canTrack || !possession.enabled) { return null; }
         var sc = liveScore();
@@ -1825,34 +1906,30 @@ try {
         var firstRatio = firstRatioValue();
 
         if (!firstRatio) {
-            // Ask once, plainly. Nothing in the payload can answer it.
-            var ask = el('div', 'abbaask');
-            ask.append(el('span', 'muted', 'Ratio on point 1:'));
-            if (possession.canTrack) {
-                pair.forEach(function (r) {
-                    var b = el('button', 'chip', r);
-                    b.type = 'button';
-                    b.addEventListener('click', function () { setFirstRatio(r); });
-                    ask.append(b);
-                });
-            } else {
-                ask.append(el('span', 'muted', 'set by the operator, or by a code holder'));
-            }
-            box.append(ask);
-            box.append(el('p', 'muted',
-                'Not recorded anywhere \u2014 it is circled on the paper scoresheet. '
-                + 'Set it once and the rest of the game follows the ABBA pattern, '
-                + 'here and on the progression card.'));
+            // The selector is in the toolbar now; this only says why the rest of
+            // the panel is empty.
+            // Do not tell somebody to use a control they cannot reach.
+            box.append(el('p', 'muted', possession.canTrack
+                ? 'Set the ratio for point 1 in the toolbar. It is not recorded anywhere '
+                    + '\u2014 it is circled on the paper scoresheet \u2014 and the rest of '
+                    + 'the game follows the ABBA pattern from it, here and on the '
+                    + 'progression card.'
+                : 'Nobody has set the ratio for point 1 yet. The Studio operator sets it, '
+                    + 'or a commentator holding the code. Nothing records it \u2014 it is '
+                    + 'circled on the paper scoresheet.'));
             return box;
         }
 
         var other = pair[0] === firstRatio ? pair[1] : pair[0];
         var ratioFor = function (n) { return abbaSlot(n) === 'A' ? firstRatio : other; };
 
+        // Ratio and which point it is, on one line each: the label is a caption
+        // for the number, not a second fact, and stacking them doubled the
+        // height of the one panel that is read at a glance between points.
         var run = el('div', 'abbarun');
         for (var n = now; n < now + 4; n += 1) {
             var cell = el('div', 'abbapt' + (n === now ? ' now' : ''));
-            cell.append(el('b', null, ratioFor(n)));
+            cell.append(el('b', null, shortRatio(ratioFor(n))));
             cell.append(el('span', null, n === now ? 'this point' : 'pt ' + n));
             run.append(cell);
         }
@@ -1868,7 +1945,7 @@ try {
             [['A', firstRatio], ['B', other]].forEach(function (pairv) {
                 var slot = split[pairv[0]];
                 var line = el('div', 'abbasplitrow');
-                line.append(el('b', null, pairv[1]));
+                line.append(el('b', null, shortRatio(pairv[1])));
                 line.append(el('span', 'sc', slot.home + ' \u2013 ' + slot.away));
                 line.append(el('span', 'who',
                     (s[0].team.name || 'Home') + ' v ' + (s[1].team.name || 'Away')));
@@ -1877,14 +1954,6 @@ try {
             box.append(tbl);
         }
 
-        var reset = el('button', 'chip', 'point 1 was ' + firstRatio);
-        reset.type = 'button';
-        reset.disabled = !possession.canTrack;
-        reset.title = possession.canTrack
-            ? 'Change what was set for the first point'
-            : 'Only a code holder can change this';
-        reset.addEventListener('click', function () { setFirstRatio(null); });
-        box.append(reset);
         return box;
     }
 
@@ -1907,30 +1976,10 @@ try {
         if (track) { body.append(track); }
 
         if (state.step === 1) {
-            var bar = el('div', 'pickhead');
-            bar.append(el('strong', null, 'Who is on for this point?'));
-            var go = el('button', 'barbtn primary', 'Start point →');
-            go.type = 'button';
-            go.addEventListener('click', function () { state.step = 2; renderPlay(); });
-            bar.append(go);
-            var clear = el('button', 'barbtn', 'Clear both');
-            clear.type = 'button';
-            clear.addEventListener('click', function () { state.line = {}; renderPlay(); });
-            bar.append(clear);
-            body.append(bar);
-
             var cols = el('div', 'cols');
             s.forEach(function (side) { cols.append(pickPanel(side)); });
             body.append(cols);
         } else {
-            var top = el('div', 'pickhead');
-            top.append(el('strong', null, 'On the field'));
-            var edit = el('button', 'barbtn', '← Change line');
-            edit.type = 'button';
-            edit.addEventListener('click', function () { state.step = 1; renderPlay(); });
-            top.append(edit);
-            body.append(top);
-
             var field = el('div', 'onfield');
             field.append(onFieldPanel(s[0]));
             field.append(onFieldPanel(s[1], 'away'));
@@ -1952,6 +2001,8 @@ try {
         document.getElementById('tabPlay').className = state.mode === 'play' ? 'on' : '';
         renderSync();
         renderTracking();
+        renderRatioControl();
+        renderSteps();
         if (state.mode === 'play') { renderPlay(); } else { renderPrep(); }
     }
 
