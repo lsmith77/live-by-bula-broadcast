@@ -82,12 +82,26 @@ test.describe('stage', () => {
   test('placed cards are mounted even while off air, so revealing is instant', async ({ page }) => {
     // The arm/show split: a card that mounted only when switched on would pop in
     // half-drawn, on air. Mounted must exceed or equal what is painting.
+    //
+    // Sets up its own cards. Read as it was, this measured whatever the stage
+    // happened to be configured with, so it failed the moment somebody cleared
+    // the stage — and proved nothing whenever the ambient state was rich.
+    await loginAsAdmin(page, test);
+    await page.goto('/s/');
+    const before = await readShow(page);
+    await writeShow(page, [
+      { id: 'scoreboard', slot: 'lower-left', visible: true, params: {} },
+      { id: 'topplayers', slot: 'center', visible: false, params: {} },
+    ], { game: GAME_ID });
+
     await page.goto(`/s/${GAME_ID}/overlay`);
     await page.waitForTimeout(2500);
     const counts = await page.evaluate(() => ({
       mounted: document.querySelectorAll('.mount').length,
       shown: document.querySelectorAll('.mount.shown').length,
     }));
+    await writeShow(page, before.cards, { game: before.game, logo: before.logo });
+
     expect(counts.mounted).toBeGreaterThan(0);
     expect(counts.mounted).toBeGreaterThanOrEqual(counts.shown);
   });

@@ -12,7 +12,7 @@
 const { test, expect } = require('@playwright/test');
 const {
   GAME_ID, loginAsAdmin, readPossession, writePossession,
-  writeShow, withShowRestored,
+  writeShow, withShowRestored, readShow,
 } = require('./helpers');
 
 /** The mixed fixture game — the only one that can exercise gender ratio. */
@@ -373,6 +373,36 @@ test.describe('the commentator link', () => {
   });
 });
 
+test.describe('the commentator panel', () => {
+  test.beforeEach(async ({ page }) => { await loginAsAdmin(page, test); });
+
+  test('the name field is reachable with everything switched off', async ({ page }) => {
+    // It was behind possession tracking, so the field the operator reads when
+    // deciding whose code to enter was invisible until somebody had already put
+    // a graphic on air. The store shed that coupling; the panel had kept it.
+    await withPossession(page, [], async () => {
+      await writePossession(page, { enabled: false, game: GAME_ID, code: null });
+      await page.goto(`/c/${GAME_ID}`);
+      await page.locator('#tabPlay').click();
+      await expect(page.locator('#commentatorName')).toBeVisible();
+      // And it says how to get linked, rather than saying nothing.
+      await expect(page.locator('.possbox').first()).toContainText(/ask the studio operator/i);
+    });
+  });
+
+  test('a stoppage needs no possession mode', async ({ page }) => {
+    await withPossession(page, [], async () => {
+      await page.goto(`/c/${GAME_ID}`);
+      const code = await page.evaluate(() => localStorage.getItem('uo-lines-code-702'));
+      await writePossession(page, { enabled: false, game: GAME_ID, code });
+
+      await page.goto(`/c/${GAME_ID}`);
+      await page.locator('#tabPlay').click();
+      await expect(page.locator('.possbox').first()).toContainText(/injury stoppage/i);
+    });
+  });
+});
+
 test.describe('injury stoppage', () => {
   test.beforeEach(async ({ page }) => { await loginAsAdmin(page, test); });
 
@@ -584,8 +614,20 @@ test.describe('following a field', () => {
   });
 
   test('the stage follows a field too', async ({ page }) => {
-    await page.goto('/s/field/1/overlay');
-    await expect(page.locator('.mount.shown').first()).toBeVisible({ timeout: 15000 });
+    // Needs a card on the stage to have anything to show, and must put one
+    // there rather than hoping one is configured.
+    await loginAsAdmin(page, test);
+    await page.goto('/s/');
+    const before = await readShow(page);
+    try {
+      await writeShow(page, [
+        { id: 'scoreboard', slot: 'lower-left', visible: true, params: {} },
+      ], { game: GAME_ID });
+      await page.goto('/s/field/1/overlay');
+      await expect(page.locator('.mount.shown').first()).toBeVisible({ timeout: 15000 });
+    } finally {
+      await writeShow(page, before.cards, { game: before.game, logo: before.logo });
+    }
   });
 });
 
