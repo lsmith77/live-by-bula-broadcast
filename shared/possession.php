@@ -69,24 +69,61 @@ final class Possession
     /**
      * The nominated code lives in a SEPARATE file, and that is not tidiness.
      *
-     * possession.json is served straight off disk by Apache so the scoreboard
-     * can poll it every second without PHP — which means everything in it is
-     * public. The code is what authorises a commentator to write, so publishing
-     * it beside the data it protects would hand the door key to anyone who
-     * fetched the file. It goes in a sibling that the .htaccess allowlist does
-     * not open.
+     * The public document is served straight off disk by Apache so the
+     * scoreboard can poll it every second without PHP — which means everything
+     * in it is public. The code is what authorises a commentator to write, so
+     * publishing it beside the data it protects would hand the door key to
+     * anyone who fetched the file. It goes in a sibling the .htaccess allowlist
+     * does not open.
      */
     private string $codePath;
 
-    public function __construct(?string $path = null)
+    private int $game;
+
+    /**
+     * ONE DOCUMENT PER GAME, and that is the whole point of this class's shape.
+     *
+     * It used to be a single global file. A tournament runs several fields at
+     * once and this project explicitly supports that — `/s/field/1/overlay`,
+     * `/s/field/2/overlay`, a stage per game — so a single document meant three
+     * things, all demonstrated before this was changed:
+     *
+     *   - A second field's desk WIPED the first's. Field 1 recorded three
+     *     possession changes; field 2 started tracking and field 1 was left with
+     *     none, its code silently replaced.
+     *   - Data crossed between games ON AIR. No consumer checked whose game the
+     *     document belonged to, so an injury stoppage flagged on game 703 at 8-6
+     *     appeared on game 702's scoreboard, which happened to also be at 8-6.
+     *     Two games at the same score is routine.
+     *   - The first point's gender ratio survived a round change and labelled
+     *     the next game's points with the previous game's ratio.
+     *
+     * Keyed by game, none of those are possible to write, which is worth more
+     * than any guard the consumers could have carried. Same shape as
+     * shared/lines.php, which was per game from the start.
+     */
+    public function __construct(int $game, ?string $dir = null)
     {
-        $this->path = $path ?? __DIR__ . '/../conf/possession.json';
-        $this->codePath = dirname($this->path) . '/possession-code.json';
+        if ($game <= 0) {
+            throw new \InvalidArgumentException('A possession store needs a game id.');
+        }
+        $this->game = $game;
+        $base = rtrim($dir ?? (__DIR__ . '/../conf'), '/');
+        // The public half is `possession-<game>.json`, which the .htaccess
+        // allowlist opens by pattern; the private half is deliberately NOT
+        // matched by it.
+        $this->path = $base . '/possession-' . $game . '.json';
+        $this->codePath = $base . '/possession-' . $game . '.private.json';
+    }
+
+    public function game(): int
+    {
+        return $this->game;
     }
 
     public static function defaults(): array
     {
-        return ['rev' => 0, 'enabled' => false, 'game' => null, 'code' => null,
+        return ['rev' => 0, 'enabled' => false, 'code' => null,
                 'ratio1' => null, 'events' => [], 'stoppage' => null, 'touched' => 0];
     }
 
@@ -137,7 +174,6 @@ final class Possession
         return [
             'rev' => (int) ($decoded['rev'] ?? 0),
             'enabled' => (bool) ($decoded['enabled'] ?? false),
-            'game' => isset($decoded['game']) ? (int) $decoded['game'] : null,
             'code' => $this->loadCode(),
             'ratio1' => isset($decoded['ratio1']) && is_string($decoded['ratio1'])
                 && self::isRatio($decoded['ratio1']) ? $decoded['ratio1'] : null,
@@ -201,14 +237,6 @@ final class Possession
     private function applyLocked(array $change): array
     {
         $state = $this->load();
-
-        if (array_key_exists('game', $change)) {
-            $game = $change['game'] === null ? null : (int) $change['game'];
-            if ($game !== $state['game']) {
-                $state['game'] = $game;
-                $state['events'] = [];
-            }
-        }
 
 
         if (array_key_exists('enabled', $change)) {
@@ -410,13 +438,12 @@ final class Possession
      * also turning on break chances — three unrelated things behind one switch.
      * The code is the link; each thing it unlocks decides its own conditions.
      */
-    public function allowsCode(?string $code, ?int $game): bool
+    public function allowsCode(?string $code): bool
     {
         $state = $this->load();
+        // No game check: this store IS one game's document, so a caller holding
+        // it is already asking about the right game.
         if ($state['code'] === null) {
-            return false;
-        }
-        if ($state['game'] !== null && $game !== null && $state['game'] !== $game) {
             return false;
         }
         return self::cleanCode($code) === $state['code'];

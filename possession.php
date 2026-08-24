@@ -29,9 +29,37 @@ use Overlays\Possession;
 header('Content-Type: application/json; charset=UTF-8');
 header('Cache-Control: no-store, must-revalidate');
 
-$store = new Possession();
 $config = (new ConfigManager())->getConfig()['config'] ?? [];
 $isAdmin = SeasonAccess::isLiveAdminAuthenticated($config);
+
+/**
+ * Every request names its game, because every game has its own document.
+ *
+ * There is no "current" game here any more. A tournament runs several fields at
+ * once, and one shared document meant a second field's desk wiped the first's
+ * and put its data on the wrong scoreboard — see shared/possession.php.
+ */
+$isPost = ($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST';
+$payload = [];
+if ($isPost) {
+    $payload = json_decode((string) file_get_contents('php://input'), true);
+    if (!is_array($payload)) {
+        http_response_code(400);
+        echo json_encode(['error' => 'Expected a JSON object.']);
+        exit;
+    }
+    $gameId = (int) ($payload['game'] ?? 0);
+} else {
+    $gameId = (int) (filter_input(INPUT_GET, 'game', FILTER_VALIDATE_INT) ?: 0);
+}
+
+if ($gameId <= 0) {
+    http_response_code(400);
+    echo json_encode(['error' => 'Missing or invalid game.']);
+    exit;
+}
+
+$store = new Possession($gameId);
 
 /**
  * @return never
@@ -42,17 +70,17 @@ $isAdmin = SeasonAccess::isLiveAdminAuthenticated($config);
  * actually presented. Returning the code to everyone would publish the thing
  * that authorises writing it.
  */
-function respond(Possession $store, bool $isAdmin, ?string $askedCode = null, ?int $askedGame = null): void
+function respond(Possession $store, bool $isAdmin, ?string $askedCode = null): void
 {
     $state = $store->load();
     $body = [
         'rev' => $state['rev'],
         'enabled' => $state['enabled'],
-        'game' => $state['game'],
+        'game' => $store->game(),
         'events' => $state['events'],
         'ratio1' => $state['ratio1'],
         'hasCode' => $state['code'] !== null,
-        'canTrack' => $askedCode !== null && $store->allowsCode($askedCode, $askedGame),
+        'canTrack' => $askedCode !== null && $store->allowsCode($askedCode),
         'connected' => $store->connectedCount(),
         'stoppage' => $state['stoppage'],
         'writable' => $store->isWritable(),
@@ -68,26 +96,18 @@ function respond(Possession $store, bool $isAdmin, ?string $askedCode = null, ?i
     exit;
 }
 
-if (($_SERVER['REQUEST_METHOD'] ?? 'GET') !== 'POST') {
+if (!$isPost) {
     $askedCode = filter_input(INPUT_GET, 'code') ?: null;
-    $askedGame = filter_input(INPUT_GET, 'game', FILTER_VALIDATE_INT) ?: null;
 
     // A commentator polling with the nominated code is a commentator present.
     // Only the nominated one counts: anyone can poll this endpoint, and a count
     // that included them would tell the operator nothing.
     $client = (string) (filter_input(INPUT_GET, 'client') ?: '');
-    if ($client !== '' && $askedCode !== null && $store->allowsCode($askedCode, $askedGame)) {
+    if ($client !== '' && $askedCode !== null && $store->allowsCode($askedCode)) {
         $store->touchClient($client, filter_input(INPUT_GET, 'name') ?: null);
     }
 
-    respond($store, $isAdmin, $askedCode, $askedGame);
-}
-
-$payload = json_decode((string) file_get_contents('php://input'), true);
-if (!is_array($payload)) {
-    http_response_code(400);
-    echo json_encode(['error' => 'Expected a JSON object.']);
-    exit;
+    respond($store, $isAdmin, $askedCode);
 }
 
 /**
@@ -105,8 +125,7 @@ if (!is_array($payload)) {
  * graphics. See docs/STUDIO.md section 3.5 on whose attention is spare.
  */
 $codeGiven = isset($payload['code']) ? (string) $payload['code'] : null;
-$gameGiven = isset($payload['game']) ? (int) $payload['game'] : null;
-$byCode = !$isAdmin && $codeGiven !== null && $store->allowsCode($codeGiven, $gameGiven);
+$byCode = !$isAdmin && $codeGiven !== null && $store->allowsCode($codeGiven);
 
 if (!$isAdmin && !$byCode) {
     http_response_code(403);
@@ -140,4 +159,4 @@ if (!$result['ok']) {
     exit;
 }
 
-respond($store, $isAdmin, $codeGiven, $gameGiven);
+respond($store, $isAdmin, $codeGiven);

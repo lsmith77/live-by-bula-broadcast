@@ -32,12 +32,12 @@
 # This lives here rather than in conf/.htaccess because conf/ is gitignored:
 # a rule inside it would exist only on the machine that created it.
 <IfModule mod_authz_core.c>
-    <FilesMatch "^(show|possession)\.json$">
+    <FilesMatch "^(show\.json|possession-[0-9]+\.json)$">
         Require all granted
     </FilesMatch>
 </IfModule>
 
-RedirectMatch 404 ^/live/overlays/conf/(?!(show|possession)\.json$).*$
+RedirectMatch 404 ^/live/overlays/conf/(?!(show\.json|possession-[0-9]+\.json)$).*$
 
 <IfModule mod_rewrite.c>
     RewriteEngine On
