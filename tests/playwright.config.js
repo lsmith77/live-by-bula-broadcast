@@ -36,6 +36,17 @@ module.exports = defineConfig({
   // Relative to THIS file, not the repo root -- Playwright resolves testDir
   // against the config's own location.
   testDir: './e2e',
+
+  /**
+   * Every run starts from a configured stage, not an empty one.
+   *
+   * These tests write to the files a real broadcast reads, so "empty" is not a
+   * state that occurs in practice and is not one worth testing against. Seeding
+   * a messy stage makes a test that reads state it did not set fail
+   * immediately, rather than three months later when something unrelated moves.
+   * See tests/global-setup.js.
+   */
+  globalSetup: require.resolve('../tests/global-setup.js'),
   // A broadcast overlay is a shared, stateful surface: two tests writing show
   // state at once would fight over conf/show.json and neither result would mean
   // anything. Correctness here is worth more than wall-clock.

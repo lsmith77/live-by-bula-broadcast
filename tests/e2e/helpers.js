@@ -83,6 +83,19 @@ async function writePossession(page, change) {
 }
 
 /**
+ * A game's possession document, emptied.
+ *
+ * Turning the mode ON does not clear the log — only turning it off does — so a
+ * test that asserts on an event count and does not do this is counting whatever
+ * an earlier run left behind. That is the single commonest way a test here has
+ * quietly stopped testing anything.
+ */
+async function resetPossession(page, game = GAME_ID) {
+  await writePossession(page, { enabled: false, game, code: null, ratio1: '' });
+  return writePossession(page, { enabled: true, game });
+}
+
+/**
  * Run a body with show state restored afterwards, pass or fail.
  *
  * Not a nicety: without it a failing test leaves an operator's stage rearranged,
@@ -133,6 +146,7 @@ module.exports = {
   readPossession,
   writePossession,
   withShowRestored,
+  resetPossession,
   contrastOf,
   expect,
 };
