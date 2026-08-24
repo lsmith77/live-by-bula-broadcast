@@ -310,7 +310,11 @@ What UltiOrganizer does *not* record is which ratio was chosen for point 1 — i
 
 The ratios themselves come from the season type: outdoor is 4MMP/3FMP against 3MMP/4FMP, indoor and beach 3MMP/2FMP against 2MMP/3FMP (`pdfscoresheet.php:461-471`). `seasoninfo.type` is in the game payload already.
 
-It shows the current point and the next three, because the useful call is "this one and the next are 4MMP/3FMP, then it flips" rather than a single value.
+It shows the current point and the next three, because the useful call is "this one and the next are 4MMP, then it flips" rather than a single value. Each is one line: the point number is a caption for the ratio, not a second fact.
+
+**Ratios are written as one side, not two.** `4MMP` rather than `4MMP/3FMP` — on a seven-a-side line four MMP means three FMP and there is nothing else it could be. The saving in characters is the smaller reason; the real one is that writing both halves forces a decision about which category is printed first, every time a ratio appears, and there is no good answer to that.
+
+**The selector for point 1 is in the toolbar**, with the code and the other setup. It is answered once per game and then never touched, so it has no business taking a block in the panel that is read between every point.
 
 ### 6c. Which ratio each side is winning
 
