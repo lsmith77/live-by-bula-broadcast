@@ -305,6 +305,145 @@ test.describe('correcting the possession log', () => {
   });
 });
 
+test.describe('the commentator link', () => {
+  test.beforeEach(async ({ page }) => { await loginAsAdmin(page, test); });
+
+  test('works without possession tracking being on', async ({ page }) => {
+    // These were one switch. Turning on break chances was the only way to get a
+    // code, so a desk could not be handed the gender ratio or a stoppage
+    // without also putting a graphic on air.
+    await withPossession(page, [], async () => {
+      await writePossession(page, { enabled: false, game: GAME_ID, code: 'new' });
+      const state = await readPossession(page);
+      expect(state.enabled).toBe(false);
+      expect(state.code).toMatch(/^[A-Z0-9]{5}$/);
+
+      // The ratio and a stoppage are both settable by the code holder.
+      const ratio = await writePossession(page,
+        { game: GAME_ID, code: state.code, ratio1: '4MMP/3FMP' });
+      expect(ratio.body.ratio1).toBe('4MMP/3FMP');
+
+      const sc = await scoreKey(page);
+      const stop = await writePossession(page,
+        { game: GAME_ID, code: state.code, score: sc, stoppage: true });
+      expect(stop.body.stoppage).toMatchObject({ score: sc });
+
+      // Possession is the one thing that still needs its own mode.
+      const poss = await writePossession(page,
+        { game: GAME_ID, code: state.code, score: sc, defence: true });
+      expect(poss.body.error).toMatch(/tracking is off/i);
+    });
+  });
+
+  test('names the desks rather than counting them', async ({ page }) => {
+    // "2 connected" answers the wrong question: the operator needs to know
+    // whether the RIGHT desk is on the code.
+    await withPossession(page, [], async () => {
+      const state = await writePossession(page, { game: GAME_ID, code: 'new' });
+      const code = state.body.code;
+      await page.evaluate(async ({ game, code }) => {
+        for (const [client, name] of [['aaa111bbb', 'Sam on colour'], ['ccc222ddd', 'Robin PBP']]) {
+          // eslint-disable-next-line no-await-in-loop
+          await fetch(`/index.php?view=live/overlays/possession&game=${game}`
+            + `&code=${code}&client=${client}&name=${encodeURIComponent(name)}`,
+          { credentials: 'same-origin' });
+        }
+      }, { game: GAME_ID, code });
+
+      const seen = await readPossession(page);
+      expect(seen.connected).toBe(2);
+      expect((seen.clients || []).map((c) => c.name).sort())
+        .toEqual(['Robin PBP', 'Sam on colour']);
+    });
+  });
+
+  test('a name is never returned to a commentator, only to the operator', async ({ page }) => {
+    // The roster exists to answer the operator's question. A commentator has no
+    // business enumerating who else is on the code.
+    await withPossession(page, [], async () => {
+      const state = await writePossession(page, { game: GAME_ID, code: 'new' });
+      const body = await page.evaluate(async ({ game, code }) => {
+        const r = await fetch(`/index.php?view=live/overlays/possession&game=${game}&code=${code}`,
+          { credentials: 'omit' });
+        return r.json();
+      }, { game: GAME_ID, code: state.body.code });
+      expect(body.clients).toBeUndefined();
+      expect(body.code).toBeUndefined();
+    });
+  });
+});
+
+test.describe('injury stoppage', () => {
+  test.beforeEach(async ({ page }) => { await loginAsAdmin(page, test); });
+
+  test('is declared, shown, and clears itself at the next goal', async ({ page }) => {
+    await withPossession(page, [], async () => {
+      const sc = await scoreKey(page);
+      await writePossession(page, { game: GAME_ID, score: sc, stoppage: true });
+
+      await page.goto(`/s/${GAME_ID}`);
+      await expect(page.locator('#scoreboard')).toBeVisible();
+      await expect(page.locator('.callout:not(.hide)').first())
+        .toContainText('Injury stoppage', { timeout: 8000 });
+
+      // Keyed by score, so a goal ends it without anyone remembering to.
+      const { declared } = require('../../shared/stoppage.js');
+      const [h, v] = sc.split('-').map(Number);
+      expect(declared({ score: sc }, h, v)).toMatchObject({ kind: 'injury' });
+      expect(declared({ score: sc }, h + 1, v)).toBeNull();
+
+      await writePossession(page, { game: GAME_ID, stoppage: false });
+    });
+  });
+
+  test('belongs to neither team, so it is centred', async ({ page }) => {
+    await withPossession(page, [], async () => {
+      const sc = await scoreKey(page);
+      await writePossession(page, { game: GAME_ID, score: sc, stoppage: true });
+      await page.goto(`/s/${GAME_ID}`);
+      await expect(page.locator('.callout.timeout')).toBeVisible({ timeout: 8000 });
+      await expect(page.locator('#calloutRow')).toHaveClass(/centred/);
+      await writePossession(page, { game: GAME_ID, stoppage: false });
+    });
+  });
+});
+
+test.describe('the summary card picks its own moment', () => {
+  test.beforeEach(async ({ page }) => { await loginAsAdmin(page, test); });
+
+  const CASES = [
+    [701, 'Coming up', 'a game that has not started'],
+    [700, 'Full time', 'a finished game'],
+    [GAME_ID, 'How it stands', 'a game in play past the half'],
+  ];
+
+  for (const [game, heading, what] of CASES) {
+    test(`reads ${what} as "${heading}"`, async ({ page }) => {
+      await withShowRestored(page, async () => {
+        await writeShow(page, [
+          { id: 'summary', slot: 'center', visible: true, params: {} },
+        ], { game });
+        await page.goto(`/s/${game}/overlay`);
+        await expect(page.locator('.summarycard')).toBeVisible({ timeout: 15000 });
+        await expect(page.locator('.summarycard .statcard-head')).toHaveText(heading);
+      });
+    });
+  }
+
+  test('an explicit moment still wins', async ({ page }) => {
+    // The case that needs it: full-time numbers during a break, which no rule
+    // can infer from a game still in play.
+    await withShowRestored(page, async () => {
+      await writeShow(page, [
+        { id: 'summary', slot: 'center', visible: true, params: { when: 'final' } },
+      ], { game: GAME_ID });
+      await page.goto(`/s/${GAME_ID}/overlay`);
+      await expect(page.locator('.summarycard .statcard-head'))
+        .toHaveText('Full time', { timeout: 15000 });
+    });
+  });
+});
+
 test.describe('the timeout tab', () => {
   /**
    * The window is unit-tested, not driven through the browser.

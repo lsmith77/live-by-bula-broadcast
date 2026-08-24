@@ -137,8 +137,17 @@ test.describe('summary cards', () => {
     const coordinated = names.slice(0, 4);
     expect(coordinated[0]).toBe('Scoreboard');
     coordinated.slice(1).forEach((n) => expect(n).toMatch(/^Last goal/));
-    expect(names.slice(4)).toEqual(
-      ['Score progression', 'Top scorers', 'Pre-game', 'Half time', 'Full time']);
+    // Everything from here down wants the middle of the frame or all of it.
+    // `Summary` reads the moment off the game; the three fixed ones below it are
+    // the same card pinned, kept so saved show states keep working.
+    // Everything from here down wants the middle of the frame or all of it.
+    // `Summary` leads the summary group and reads the moment off the game; the
+    // three fixed ones after it are the same card pinned, kept so saved show
+    // states keep working.
+    expect(names.slice(4)).toEqual([
+      'Score progression', 'Top scorers', 'Summary — picks its own moment',
+      'Pre-game', 'Half time', 'Full time',
+    ]);
   });
 
   test('each summary card offers only its own moment', async ({ page }) => {

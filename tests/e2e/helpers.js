@@ -32,7 +32,15 @@ async function readShow(page) {
   });
 }
 
-/** Replace show state wholesale, handling the optimistic-lock rev for you. */
+/**
+ * Replace show state wholesale, handling the optimistic-lock rev for you.
+ *
+ * **The logo defaults to off, not to whatever is currently set.** The tournament
+ * logo reserves its corner, so a test placing a card in `lower-left` silently
+ * lost it whenever the stage happened to have a bottom-left logo — four tests
+ * failed that way at once, none of them about logos. A test that cares about the
+ * logo passes it explicitly; every other test should be independent of it.
+ */
 async function writeShow(page, cards, extra = {}) {
   return page.evaluate(async ({ cards, extra }) => {
     const cur = await (await fetch('/index.php?view=live/overlays/show',
@@ -41,7 +49,7 @@ async function writeShow(page, cards, extra = {}) {
       method: 'POST',
       credentials: 'same-origin',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ rev: cur.rev, game: cur.game, logo: cur.logo, cards, ...extra }),
+      body: JSON.stringify({ rev: cur.rev, game: cur.game, logo: null, cards, ...extra }),
     });
     return { status: r.status, body: await r.json() };
   }, { cards, extra });
