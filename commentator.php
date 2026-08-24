@@ -170,7 +170,13 @@ try {
        the top — home over the left column, away over the right — labels every
        panel underneath and buys back the vertical space three repeated headings
        were costing. It sticks, so the label survives a scroll. */
-    .top { position: sticky; top: 0; z-index: 20; background: var(--bg);
+    /* The header and the toolbar stick as ONE block: the controls in the
+       toolbar are pressed every few seconds during a point, and sticking only
+       the header above them would have let them scroll away exactly when they
+       are in use. */
+    .stickyhead { position: sticky; top: 0; z-index: 20; background: var(--bg);
+                  padding-bottom: .4rem; }
+    .top { background: var(--bg);
            display: grid; grid-template-columns: 1fr auto 1fr; align-items: center;
            gap: .5rem 1rem; padding: .15rem 0 .55rem;
            border-bottom: var(--rule-strong) solid var(--line); }
@@ -196,6 +202,19 @@ try {
     .toolbar { display: flex; align-items: center; gap: 1rem; flex-wrap: wrap;
                padding: .55rem 0 0; }
     .toolbar .tabs { margin-left: auto; }
+    /* Live controls, beside the code that authorises them. Smaller than the
+       body buttons they replace, but always on screen and never scrolled past —
+       which matters more for something pressed without looking. */
+    .tracking { display: flex; align-items: center; gap: .4rem; flex-wrap: wrap; }
+    .tracking .tbtn { background: var(--panel-alt); border: 1px solid var(--line);
+                      color: var(--ink); font: inherit; font-weight: 700; font-size: .82rem;
+                      padding: .35rem .7rem; border-radius: 5px; cursor: pointer;
+                      white-space: nowrap; }
+    .tracking .tbtn.on { background: var(--accent); border-color: var(--accent);
+                         color: var(--accent-ink); }
+    .tracking .tbtn.d.on { background: var(--bad); border-color: var(--bad); color: #fff; }
+    .tracking .tbtn:disabled { opacity: .4; cursor: not-allowed; }
+    .tracking .note { font-size: .78rem; color: var(--ink-mute); }
     @media (max-width: 820px) {
         .top { grid-template-columns: 1fr auto; }
         .teamhead.away { grid-column: 1 / -1; flex-direction: row; justify-content: flex-start; text-align: left; }
@@ -311,7 +330,8 @@ try {
     .plogrow .abs { font-size: .78rem; color: var(--ink-mute); margin-left: auto; }
     .plogrow .chip.danger { border-color: var(--bad); color: var(--bad); }
     .plogrow .chip.danger:hover { background: var(--bad); color: #fff; }
-    .posscounts { display: flex; gap: 1.5rem; margin-top: .7rem; }
+    .possbox.slim { padding: .5rem .9rem; }
+    .posscounts { display: flex; gap: 1.5rem; }
     .posscount b { font-size: 1.3rem; font-weight: 800; font-variant-numeric: tabular-nums;
                    margin-right: .35rem; }
     .posscount span { font-size: .85rem; color: var(--ink-mute); }
@@ -415,6 +435,7 @@ try {
   that is visually the header text itself, and aria-labelledby on every panel
   below pointing back at it. One naming, two ways of reaching it.
 -->
+<div class="stickyhead">
 <header class="top">
     <h1 class="sr-only" id="fixture">Commentator</h1>
     <h2 class="teamhead home" id="headHome"></h2>
@@ -427,10 +448,12 @@ try {
 <div class="toolbar">
     <button id="themeBtn" class="chip" type="button" aria-pressed="false"></button>
     <div class="sync" id="sync"></div>
+    <div class="tracking" id="tracking" role="group" aria-label="Live tracking"></div>
     <div class="tabs" role="group" aria-label="View">
         <button id="tabPrep" type="button" aria-pressed="true">Prep</button>
         <button id="tabPlay" type="button" aria-pressed="false">Play-by-play</button>
     </div>
+</div>
 </div>
 
 <main id="body"><p class="muted">Loading…</p></main>
@@ -1674,95 +1697,109 @@ try {
      * somebody had already turned on a graphic. That is the same coupling the
      * store shed; the panel had kept it.
      */
-    function linkPanel() {
-        var box = el('div', 'possbox quiet');
-        var line = el('div', 'linkline');
-        if (possession.canTrack) {
-            line.append(el('b', 'code', syncCode));
-            line.append(el('span', 'muted', 'linked \u2014 you can track for this game'));
 
-            // A stoppage needs no mode: it is its own declared fact.
-            var stop = el('button', 'chip' + (stoppageOn() ? ' on' : ''),
-                stoppageOn() ? '\u25a0 End injury stoppage' : '\u2691 Injury stoppage');
-            stop.type = 'button';
-            stop.title = 'Keyboard: I';
-            stop.addEventListener('click', toggleStoppage);
-            line.append(stop);
-        } else {
-            line.append(el('span', 'muted', possession.hasCode
-                ? 'Another code is linked. To take over, ask the operator for '
-                : 'Not linked. Ask the Studio operator to enter '));
-            line.append(el('b', 'code', syncCode));
+    /**
+     * One section for everything the link unlocks.
+     *
+     * Injury stoppage and possession were two boxes stacked, which cost a whole
+     * band of vertical space on the screen that has least of it — the
+     * play-by-play view exists to show fourteen names large. They are one
+     * section now: the same link, the same desk, the same moment.
+     *
+     * The code is not repeated here either. It is in the header, permanently,
+     * next to the name; saying it twice was a line spent on something already on
+     * screen.
+     */
+    /**
+     * The live controls, rendered into the header beside the code.
+     *
+     * They were a panel in the body. On the play-by-play screen that is the
+     * wrong place twice over: it is the view with the least vertical space to
+     * spare — its whole job is fourteen names at a readable size — and these are
+     * the controls pressed most often, so they are the last thing that should
+     * scroll. In the sticky header they cost no body space and are never
+     * scrolled past.
+     */
+    function renderTracking() {
+        var box = document.getElementById('tracking');
+        if (!box) { return; }
+        box.replaceChildren();
+
+        if (!possession.canTrack) {
+            var ask = el('span', 'note');
+            ask.textContent = possession.hasCode
+                ? 'another code is linked'
+                : 'not linked \u2014 give the operator your code';
+            box.append(ask);
+            return;
         }
-        box.append(line);
-        return box;
-    }
 
-    function possessionPanel() {
-        var box = el('div', 'possbox');
-
-        if (!possession.canTrack) { return null; }
+        // A stoppage needs no mode: it is its own declared fact.
+        var stop = el('button', 'tbtn' + (stoppageOn() ? ' on d' : ''));
+        stop.type = 'button';
+        stop.textContent = stoppageOn() ? '\u25a0 Injury' : '\u2691 Injury';
+        stop.title = 'Injury stoppage. Keyboard: I';
+        stop.setAttribute('aria-pressed', stoppageOn() ? 'true' : 'false');
+        stop.addEventListener('click', toggleStoppage);
+        box.append(stop);
 
         if (!possession.enabled) {
-            box.className = 'possbox quiet';
-            box.append(el('span', 'muted',
-                'Possession tracking is off \u2014 the Studio operator turns it on. '
-                + 'The gender ratio and injury stoppages do not need it.'));
-            return box;
+            box.append(el('span', 'note', 'possession tracking off'));
+            return;
         }
 
+        var scNow = liveScore();
+        var Pn = window.Possession;
+        var dNow = scNow && Pn ? Pn.defenceHasDisc(possession.events, scNow.home, scNow.visitor) : false;
+        [['O', false], ['D', true]].forEach(function (spec) {
+            var active = (spec[1] === dNow);
+            var b = el('button', 'tbtn' + (active ? ' on' : '') + (spec[1] ? ' d' : ''));
+            b.type = 'button';
+            b.textContent = spec[0];
+            b.title = (spec[1] ? 'Defence' : 'Offence') + ' in possession. Keyboard: ' + spec[0];
+            b.setAttribute('aria-pressed', active ? 'true' : 'false');
+            b.disabled = !scNow;
+            b.addEventListener('click', function () { setDefence(spec[1]); });
+            box.append(b);
+        });
+
+        var logBtn = el('button', 'tbtn', '\u2637');
+        logBtn.type = 'button';
+        logBtn.title = 'Possession log and corrections. Keyboard: U';
+        logBtn.setAttribute('aria-label', 'Possession log');
+        logBtn.addEventListener('click', openLog);
+        box.append(logBtn);
+    }
+
+    /**
+     * What the tracking is telling you — not the controls for it.
+     *
+     * The buttons live in the sticky header now, so this is a single slim line
+     * of readings. "Four turnovers in this point already" is a sentence a
+     * commentator says; the previous point sits beside it because that is the
+     * comparison actually reached for.
+     */
+    function trackingPanel() {
+        if (!possession.canTrack || !possession.enabled) { return null; }
         var sc = liveScore();
         var P = window.Possession;
-        var d = sc && P ? P.defenceHasDisc(possession.events, sc.home, sc.visitor) : false;
+        if (!sc || !P) { return null; }
 
-        var btns = el('div', 'possbtns');
-        [['O', 'Offence', false], ['D', 'Defence', true]].forEach(function (spec) {
-            var active = (spec[2] === d);
-            var b = el('button', 'possbig' + (active ? ' on' : '') + (spec[2] ? ' d' : ''));
-            b.type = 'button';
-            b.disabled = !sc;
-            b.setAttribute('aria-pressed', active ? 'true' : 'false');
-            b.append(el('span', 'k', spec[0]));
-            b.append(el('span', 'w', spec[1]));
-            b.addEventListener('click', function () { setDefence(spec[2]); });
-            btns.append(b);
-        });
-        box.append(btns);
-
-        // One way in to the log, which is also the only place anything is
-        // deleted. Corrections do not sit beside the live keys: a button that
-        // removes data should not be adjacent to two that are being hit
-        // repeatedly without looking.
-        var pressed = sc && P ? P.eventsFor(possession.events, sc.key).length : 0;
-        var fixes = el('div', 'possfix');
-        var open = el('button', 'chip', '\u2637 Possession log');
-        open.type = 'button';
-        open.disabled = !pressed;
-        open.title = pressed ? 'Keyboard: U' : 'Nothing recorded this point yet';
-        open.addEventListener('click', openLog);
-        fixes.append(open);
-        box.append(fixes);
-
+        var box = el('div', 'possbox slim');
         var counts = el('div', 'posscounts');
-        var now = (sc && P) ? P.turnovers(possession.events, sc.home, sc.visitor) : 0;
+        var now = P.turnovers(possession.events, sc.home, sc.visitor);
         var prev = previousScore();
-        var was = (prev && P) ? P.turnovers(possession.events, prev.home, prev.visitor) : null;
+        var was = prev ? P.turnovers(possession.events, prev.home, prev.visitor) : null;
 
         var stat = function (label, value, cls) {
-            var d2 = el('div', 'posscount' + (cls ? ' ' + cls : ''));
-            d2.append(el('b', null, String(value)));
-            d2.append(el('span', null, label));
-            counts.append(d2);
+            var d = el('div', 'posscount' + (cls ? ' ' + cls : ''));
+            d.append(el('b', null, String(value)));
+            d.append(el('span', null, label));
+            counts.append(d);
         };
         stat('turnovers this point', now, now >= 3 ? 'hot' : '');
-        if (was !== null) {
-            stat('in the previous point', was, '');
-        }
+        if (was !== null) { stat('in the previous point', was, ''); }
         box.append(counts);
-
-        box.append(el('p', 'muted',
-            'Press O and D as the disc changes hands, U to undo. Resets to offence on every goal. '
-            + 'This drives BREAK CHANCE on the scoreboard.'));
         return box;
     }
 
@@ -1854,15 +1891,20 @@ try {
     function renderPlay() {
         body.replaceChildren();
         var s = sides();
-        body.append(teamStatsRow());
-        // Above the line picker as well as the on-field view: in step 1 it is
-        // how a commentator learns they are not authorised yet, which is worth
-        // finding out before the pull rather than during the point.
-        body.append(linkPanel());
+
+        // Ratio and tracking first, then the field, then team stats LAST.
+        //
+        // The opposite of the prep view, and deliberately: there the squads
+        // scroll and the short block belongs on top so it never leaves the
+        // screen. Here nothing scrolls and the ordering is about what is worth
+        // the top of the screen during a point — the ratio for the next line,
+        // the controls being pressed, and the names on the field. Season
+        // records do not change while a point is being played, so they go to the
+        // bottom where they can be scrolled to between points.
         var ratio = ratioPanel();
         if (ratio) { body.append(ratio); }
-        var poss = possessionPanel();
-        if (poss) { body.append(poss); }
+        var track = trackingPanel();
+        if (track) { body.append(track); }
 
         if (state.step === 1) {
             var bar = el('div', 'pickhead');
@@ -1894,6 +1936,8 @@ try {
             field.append(onFieldPanel(s[1], 'away'));
             body.append(field);
         }
+
+        body.append(teamStatsRow());
     }
 
     /* ---------------------------------------------------------------
@@ -1907,6 +1951,7 @@ try {
         document.getElementById('tabPrep').className = state.mode === 'prep' ? 'on' : '';
         document.getElementById('tabPlay').className = state.mode === 'play' ? 'on' : '';
         renderSync();
+        renderTracking();
         if (state.mode === 'play') { renderPlay(); } else { renderPrep(); }
     }
 
