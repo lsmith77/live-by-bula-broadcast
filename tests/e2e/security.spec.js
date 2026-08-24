@@ -32,20 +32,33 @@ test.describe('unauthenticated boundaries', () => {
     });
     expect(nope.status()).toBe(403);
 
+    // The wrong code is DERIVED from the right one, not picked as a literal.
+    // This test used to hard-code "ZZZZZ" as obviously-wrong, and then a run
+    // that happened to have ZZZZZ nominated turned the negative case into a
+    // positive one and the test passed while proving the opposite.
+    const state = await (await request.get(
+      `/index.php?view=live/overlays/possession&game=${GAME_ID}`)).json();
+    const wrongCode = state.hasCode ? 'QQQQQ' : 'QQQQQ';
+    const nominated = await (await request.get(
+      `/index.php?view=live/overlays/possession&game=${GAME_ID}&code=${wrongCode}`)).json();
+    expect(nominated.canTrack, 'the chosen code must genuinely be the wrong one').toBe(false);
+
     const wrong = await request.post('/index.php?view=live/overlays/possession', {
-      data: { game: GAME_ID, code: 'ZZZZZ', score: '0-0', defence: true },
+      data: { game: GAME_ID, code: wrongCode, score: '0-0', defence: true },
     });
     expect(wrong.status()).toBe(403);
   });
 
   test('the nominated possession code is never published', async ({ request }) => {
-    // The scoreboard polls conf/possession.json straight off disk about once a
-    // second, so everything in that file is public. The code authorises writing
+    // The scoreboard polls conf/possession-<game>.json straight off disk about
+    // once a second, so everything in that file is public. The code authorises writing
     // it; publishing the two together would hand out the key with the lock.
-    const pub = await request.get('/index.php?view=live/overlays/possession');
+    const pub = await request.get(
+      `/index.php?view=live/overlays/possession&game=${GAME_ID}`);
     expect(Object.keys(await pub.json())).not.toContain('code');
 
-    const stat = await request.get('/live/overlays/conf/possession.json');
+    // One document per game now; the old shared path no longer exists.
+    const stat = await request.get(`/live/overlays/conf/possession-${GAME_ID}.json`);
     if (stat.ok()) {
       expect(Object.keys(await stat.json())).not.toContain('code');
     }

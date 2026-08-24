@@ -12,7 +12,7 @@
 const { test, expect } = require('@playwright/test');
 const {
   GAME_ID, loginAsAdmin, readPossession, writePossession,
-  writeShow, withShowRestored, readShow,
+  writeShow, withShowRestored, readShow, resetPossession,
 } = require('./helpers');
 
 /** The mixed fixture game — the only one that can exercise gender ratio. */
@@ -96,12 +96,19 @@ test.describe('possession-derived numbers', () => {
   });
 
   test('an untracked game says nothing about turnovers', async ({ page }) => {
-    await writePossession(page, { enabled: false, game: GAME_ID });
-    await page.goto(`/s/${GAME_ID}`);
-    await expect(page.locator('#scoreboard')).toBeVisible();
-    await page.waitForTimeout(2500);
-    // Not "0 turnovers": nobody was watching, so there is nothing to report.
-    await expect(page.locator('#ribbon')).not.toContainText('turnover');
+    const before = await readPossession(page, GAME_ID);
+    try {
+      await writePossession(page, { enabled: false, game: GAME_ID });
+      await page.goto(`/s/${GAME_ID}`);
+      await expect(page.locator('#scoreboard')).toBeVisible();
+      await page.waitForTimeout(2500);
+      // Not "0 turnovers": nobody was watching, so there is nothing to report.
+      await expect(page.locator('#ribbon')).not.toContainText('turnover');
+    } finally {
+      // Restored even on failure: leaving tracking off is a state the next test
+      // then inherits and silently reads.
+      await writePossession(page, { enabled: before.enabled, game: GAME_ID });
+    }
   });
 
   test('a break chance survives into the compact bug', async ({ page }) => {
@@ -204,6 +211,12 @@ test.describe('one document per game', () => {
       // Both sides set explicitly, including the absence of a ratio on one:
       // asserting on a value this test did not set is how it would pass or fail
       // on whatever an earlier run happened to leave behind.
+      // Emptied first: turning the mode on does not clear a log, so without
+      // this the counts below are whatever the last run left plus what this
+      // test adds. Exactly how this test failed the first time it was run
+      // against a stage that had already been used.
+      await resetPossession(page, GAME_ID);
+      await resetPossession(page, OTHER);
       await writePossession(page, { enabled: true, game: GAME_ID, code: 'AAAAA', ratio1: '' });
       await writePossession(page, { enabled: true, game: OTHER, code: 'BBBBB', ratio1: '4MMP/3FMP' });
       for (const d of [true, false, true]) {

@@ -94,13 +94,19 @@ test.describe('stage', () => {
       { id: 'topplayers', slot: 'center', visible: false, params: {} },
     ], { game: GAME_ID });
 
-    await page.goto(`/s/${GAME_ID}/overlay`);
-    await page.waitForTimeout(2500);
-    const counts = await page.evaluate(() => ({
-      mounted: document.querySelectorAll('.mount').length,
-      shown: document.querySelectorAll('.mount.shown').length,
-    }));
-    await writeShow(page, before.cards, { game: before.game, logo: before.logo });
+    let counts;
+    try {
+      await page.goto(`/s/${GAME_ID}/overlay`);
+      await page.waitForTimeout(2500);
+      counts = await page.evaluate(() => ({
+        mounted: document.querySelectorAll('.mount').length,
+        shown: document.querySelectorAll('.mount.shown').length,
+      }));
+    } finally {
+      // In a finally, not after the assertions: a failure here used to leave the
+      // stage rearranged for every test that followed.
+      await writeShow(page, before.cards, { game: before.game, logo: before.logo });
+    }
 
     expect(counts.mounted).toBeGreaterThan(0);
     expect(counts.mounted).toBeGreaterThanOrEqual(counts.shown);
@@ -170,7 +176,9 @@ test.describe('stage', () => {
     // spans the whole canvas with the graphic painted somewhere inside it, so
     // comparing host boxes says every framed card overlaps everything -- which
     // is what the first version of this test wrongly reported.
-    const boxes = await page.evaluate(() => {
+    let boxes;
+    try {
+      boxes = await page.evaluate(() => {
       // EVERY box in canvas coordinates, and that is the whole point.
       //
       // `.stage-canvas` is CSS-transformed to fit the window, so an element
@@ -210,9 +218,13 @@ test.describe('stage', () => {
       // The logo is not a card, and is exactly what was overlapping.
       const logo = document.querySelector('.tourney-logo.shown');
       if (logo) out.push({ label: 'tournament logo', ...toCanvas(logo) });
-      return out;
-    });
-    await writeShow(page, before.cards, { game: before.game, logo: before.logo });
+        return out;
+      });
+    } finally {
+      // In a finally: a failing overlap assertion used to leave the stage
+      // rearranged for everything that ran after it.
+      await writeShow(page, before.cards, { game: before.game, logo: before.logo });
+    }
 
     expect(boxes.length).toBeGreaterThan(1);
 
