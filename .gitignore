@@ -1,5 +1,7 @@
 # Operator state, written by the web server. Per installation, not code:
-# what is on air, kit colours, and shared line-selection rooms.
+# what is on air, kit colours, shared line-selection rooms, and the commentary
+# desk's prepared notes -- which are notes about named players and must not
+# reach a repository under any circumstances.
 /conf/
 
 # Team logos are an installation's own data — the file being there IS the
