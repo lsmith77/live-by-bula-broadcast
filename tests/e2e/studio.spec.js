@@ -126,8 +126,10 @@ test.describe('studio', () => {
         // so it would carry the admin session and this would quietly test that
         // an admin can do admin things -- which is not the question. The first
         // version of this test did exactly that and passed for the wrong reason.
-        expect((await (await request.get('/index.php?view=live/overlays/possession')).json()).admin,
-          'the anonymous context must not be logged in').toBe(false);
+        // Every request names a game now: the store is one document per game.
+        expect((await (await request.get(
+          `/index.php?view=live/overlays/possession&game=${GAME_ID}`)).json()).admin,
+        'the anonymous context must not be logged in').toBe(false);
 
         // The one thing the code is for.
         const ok = await request.post('/index.php?view=live/overlays/possession', {
@@ -139,15 +141,15 @@ test.describe('studio', () => {
         await request.post('/index.php?view=live/overlays/possession', {
           data: { game: GAME_ID, code: 'ABCDE', enabled: false, code2: 'XXXXX' },
         });
-        const state = await page.evaluate(async () => {
-          const r = await fetch('/index.php?view=live/overlays/possession',
+        const state = await page.evaluate(async (game) => {
+          const r = await fetch(`/index.php?view=live/overlays/possession&game=${game}`,
             { credentials: 'same-origin' });
           return r.json();
-        });
+        }, GAME_ID);
         expect(state.enabled, 'a code holder must not be able to disable the mode').toBe(true);
         expect(state.code, 'nor rename it').toBe('ABCDE');
       } finally {
-        await writePossession(page, { enabled: false, code: null });
+        await writePossession(page, { enabled: false, game: GAME_ID, code: null });
       }
     });
   });

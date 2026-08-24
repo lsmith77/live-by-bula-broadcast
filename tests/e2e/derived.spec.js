@@ -149,7 +149,8 @@ test.describe('several people tracking possession at once', () => {
             body: JSON.stringify({ game, score: sc, defence: true }),
           },
         )));
-        const r = await fetch('/index.php?view=live/overlays/possession', { credentials: 'same-origin' });
+        const r = await fetch(`/index.php?view=live/overlays/possession&game=${game}`,
+          { credentials: 'same-origin' });
         return (await r.json()).events.length;
       }, { sc, game: GAME_ID });
       expect(stored).toBe(1);
@@ -169,7 +170,8 @@ test.describe('several people tracking possession at once', () => {
             body: JSON.stringify({ game, score: sc, defence: i % 2 === 0 }),
           });
         }
-        const r = await fetch('/index.php?view=live/overlays/possession', { credentials: 'same-origin' });
+        const r = await fetch(`/index.php?view=live/overlays/possession&game=${game}`,
+          { credentials: 'same-origin' });
         return (await r.json()).events.length;
       }, { sc, game: GAME_ID });
       expect(stored).toBe(6);
@@ -185,6 +187,65 @@ test.describe('several people tracking possession at once', () => {
     expect(turnovers(log(true, true, true), 8, 6)).toBe(1);
     expect(turnovers(log(true, true, false, false), 8, 6)).toBe(2);
     expect(turnovers(log(true, false, true, false), 8, 6)).toBe(4);
+  });
+});
+
+test.describe('one document per game', () => {
+  test.beforeEach(async ({ page }) => { await loginAsAdmin(page, test); });
+
+  test('two games are tracked at once without touching each other', async ({ page }) => {
+    // The store was a single global document. A tournament runs several fields
+    // at once and this project supports that, so one document meant a second
+    // field's desk wiped the first's — measured at the time: three events
+    // became zero and the code was silently replaced.
+    const OTHER = 703;
+    await page.goto('/s/');
+    try {
+      // Both sides set explicitly, including the absence of a ratio on one:
+      // asserting on a value this test did not set is how it would pass or fail
+      // on whatever an earlier run happened to leave behind.
+      await writePossession(page, { enabled: true, game: GAME_ID, code: 'AAAAA', ratio1: '' });
+      await writePossession(page, { enabled: true, game: OTHER, code: 'BBBBB', ratio1: '4MMP/3FMP' });
+      for (const d of [true, false, true]) {
+        // eslint-disable-next-line no-await-in-loop
+        await writePossession(page, { game: GAME_ID, score: '8-6', defence: d });
+      }
+      await writePossession(page, { game: OTHER, score: '5-4', defence: true });
+
+      const a = await readPossession(page, GAME_ID);
+      const b = await readPossession(page, OTHER);
+      expect(a.events).toHaveLength(3);
+      expect(b.events).toHaveLength(1);
+      expect(a.code).toBe('AAAAA');
+      expect(b.code).toBe('BBBBB');
+      // The first point's ratio used to survive a game change and label the
+      // next game's points with the previous game's ratio.
+      expect(a.ratio1).toBeNull();
+      expect(b.ratio1).toBe('4MMP/3FMP');
+    } finally {
+      await writePossession(page, { enabled: false, game: GAME_ID, code: null });
+      await writePossession(page, { enabled: false, game: OTHER, code: null, ratio1: '' });
+    }
+  });
+
+  test('a request without a game is refused', async ({ page }) => {
+    const status = await page.evaluate(async () => {
+      const r = await fetch('/index.php?view=live/overlays/possession',
+        { credentials: 'same-origin' });
+      return r.status;
+    });
+    expect(status).toBe(400);
+  });
+
+  test('the private half of a game document is never served', async ({ page, request }) => {
+    // The code authorises writing. Publishing it beside the data it protects
+    // would hand out the door key.
+    const open = await request.get('/live/overlays/conf/possession-702.json');
+    const shut = await request.get('/live/overlays/conf/possession-702.private.json');
+    const lock = await request.get('/live/overlays/conf/possession-702.json.lock');
+    expect(open.status()).toBe(200);
+    expect(shut.status()).toBe(404);
+    expect(lock.status()).toBe(404);
   });
 });
 

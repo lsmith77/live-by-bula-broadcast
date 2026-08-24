@@ -55,11 +55,19 @@ async function writeShow(page, cards, extra = {}) {
   }, { cards, extra });
 }
 
-async function readPossession(page) {
-  return page.evaluate(async () => {
-    const r = await fetch('/index.php?view=live/overlays/possession', { credentials: 'same-origin' });
+/**
+ * One document per game, so every call names one.
+ *
+ * The store used to be a single global file, which meant a second field's desk
+ * wiped the first's and put its data on the wrong scoreboard. Tests default to
+ * GAME_ID rather than omitting it, because omitting it is now a 400.
+ */
+async function readPossession(page, game = GAME_ID) {
+  return page.evaluate(async (g) => {
+    const r = await fetch(`/index.php?view=live/overlays/possession&game=${g}`,
+      { credentials: 'same-origin' });
     return r.json();
-  });
+  }, game);
 }
 
 async function writePossession(page, change) {
@@ -68,7 +76,7 @@ async function writePossession(page, change) {
       method: 'POST',
       credentials: 'same-origin',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(change),
+      body: JSON.stringify({ game: change.game ?? 702, ...change }),
     });
     return { status: r.status, body: await r.json() };
   }, change);
