@@ -32,6 +32,33 @@ test.describe('studio', () => {
     await expect(page.locator('#authAction a')).toBeVisible();
   });
 
+  test('the commentator code is masked on the operator station', async ({ page }) => {
+    // Larger consequence than on the commentator page: this code authorises
+    // writing possession, and possession reaches air. An operator's station is
+    // walked past all day, and five characters are memorable at a glance.
+    //
+    // Deliberately outside the logged-in block. The field renders (disabled) for
+    // an anonymous visitor, so masking is observable without a password -- and a
+    // test that only runs when ADMIN_PASS happens to be set is a test that mostly
+    // does not run.
+    await page.goto('/s/');
+    const code = page.locator('.codein');
+    await expect(code).toHaveAttribute('type', 'password');
+    await expect(code).toHaveAttribute('autocomplete', 'off');
+
+    // Nothing behind the mask for an anonymous visitor either: the nominated code
+    // is never published in the first place.
+    expect(await code.inputValue()).toBe('');
+
+    const peek = page.locator('.stagebar.possession .peek');
+    await expect(peek).toHaveAttribute('aria-pressed', 'false');
+    await peek.click();
+    await expect(code).toHaveAttribute('type', 'text');
+    await expect(peek).toHaveAttribute('aria-pressed', 'true');
+    await peek.click();
+    await expect(code).toHaveAttribute('type', 'password');
+  });
+
   test.describe('logged in', () => {
     test.beforeEach(async ({ page }) => {
       await loginAsAdmin(page, test);

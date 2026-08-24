@@ -277,6 +277,7 @@ $json = static fn ($v): string => json_encode($v, JSON_UNESCAPED_SLASHES | JSON_
 <script src="<?= htmlspecialchars($assetUrl('shared/possession.js'), ENT_QUOTES) ?>"></script>
 <script src="<?= htmlspecialchars($assetUrl('shared/ratio.js'), ENT_QUOTES) ?>"></script>
 <script src="<?= htmlspecialchars($assetUrl('shared/tracking.js'), ENT_QUOTES) ?>"></script>
+<script src="<?= htmlspecialchars($assetUrl('shared/secret.js'), ENT_QUOTES) ?>"></script>
 <script>
 (function () {
     'use strict';
@@ -1046,12 +1047,23 @@ $json = static fn ($v): string => json_encode($v, JSON_UNESCAPED_SLASHES | JSON_
             var v = codeIn.value.toUpperCase().trim();
             postPossession({ game: show.game || null, code: v || null })
                 .then(function (state) {
-                    flash(state.code ? 'Code ' + state.code + ' can now track.'
+                    // Deliberately does not echo the code back. The operator just
+                    // typed it, so repeating it tells them nothing and only puts
+                    // it on screen a second time.
+                    flash(state.code ? 'That code can now track.'
                         : 'Commentator tracking revoked.');
                 })
                 .catch(function (e) { alert(e.message); });
         });
         bar.append(codeIn);
+
+        // Masked by default, for the same reason as on the commentator page: an
+        // operator's station is walked past all day, and this code authorises
+        // writing possession, which reaches air. Here the consequence of a
+        // shoulder-read is larger than a shared reference panel.
+        var peek = el('button', 'undo peek');
+        window.Secret.guard(codeIn, peek, { label: 'commentator room code' });
+        bar.append(peek);
 
         var gen = el('button', 'undo', '\u21ba New code');
         gen.type = 'button';
@@ -1059,6 +1071,10 @@ $json = static fn ($v): string => json_encode($v, JSON_UNESCAPED_SLASHES | JSON_
         gen.title = 'Generate one to read out. Left to invent a code people pick "12345".';
         gen.addEventListener('click', function () {
             postPossession({ game: show.game || null, code: 'new' })
+                // The confirmation carries the code for six seconds and then
+                // clears itself, which is all the operator needs to read it out.
+                // The field itself stays masked: revealing it too would be a
+                // second copy of the same thing, on screen for longer.
                 .then(function (state) { flash('Code is ' + state.code + '.'); })
                 .catch(function (e) { alert(e.message); });
         });
