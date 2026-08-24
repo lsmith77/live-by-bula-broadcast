@@ -290,6 +290,23 @@ try {
     .possbig.d.on { background: var(--bad); border-color: var(--bad); color: #fff; }
     .possbig.d.on .w { color: #fff; }
     .possbig:disabled { opacity: .45; cursor: not-allowed; }
+    .possfix { display: flex; gap: .5rem; margin-top: .6rem; }
+
+    /* ---- possession log ----
+       Rows are spaced in proportion to the time between them, so the shape of a
+       point is visible before any number is read: a cluster is a scramble, a
+       long gap is a settled possession. */
+    .plog { margin: .8rem 0; }
+    .plogrow { display: flex; align-items: baseline; gap: .6rem; padding: .4rem .6rem;
+               border-radius: 5px; background: var(--panel-alt);
+               border-left: 4px solid var(--accent); }
+    /* Defence in possession is the state that puts a tab on air. */
+    .plogrow.d { border-left-color: var(--bad); }
+    .plogrow b { min-width: 4.6rem; font-weight: 700; }
+    .plogrow .gap { font-variant-numeric: tabular-nums; font-weight: 700; }
+    .plogrow .abs { font-size: .78rem; color: var(--ink-mute); margin-left: auto; }
+    .plogrow .chip.danger { border-color: var(--bad); color: var(--bad); }
+    .plogrow .chip.danger:hover { background: var(--bad); color: #fff; }
     .posscounts { display: flex; gap: 1.5rem; margin-top: .7rem; }
     .posscount b { font-size: 1.3rem; font-weight: 800; font-variant-numeric: tabular-nums;
                    margin-right: .35rem; }
@@ -1208,6 +1225,156 @@ try {
             .catch(function () { /* transient */ });
     }
 
+    /**
+     * The possession log for the point being played.
+     *
+     * Reading it is the point, not correcting it. "Four changes, and three of
+     * them inside eight seconds" is a sentence about how scrappy a point is, and
+     * the gaps carry that better than the count does — so each row is spaced
+     * from the one above it in proportion to the time between them, and a long
+     * settled possession looks long.
+     *
+     * Corrections live here rather than beside the keys, and every deletion is
+     * confirmed. The keys are pressed repeatedly without looking; nothing that
+     * removes data belongs next to them.
+     */
+    var LOG_MIN_GAP = 6;      // px, so consecutive changes still read as rows
+    var LOG_PX_PER_SEC = 4;   // a 15s possession is 60px of air
+    var LOG_MAX_GAP = 120;
+
+    function pointStartedAt() {
+        // Approximate, and only offered when there is a clock. The point began
+        // at the previous goal, whose time is on the GAME clock, so it has to be
+        // put back on the wall clock to compare with a possession timestamp.
+        var r = (state.payload && state.payload.game_result) || {};
+        var goals = ((state.payload && state.payload.goals) || []).slice()
+            .sort(function (a, b) { return a.num - b.num; });
+        var start = Number(r.timer_start);
+        if (!start || !goals.length) { return null; }
+        var lastGoal = goals[goals.length - 1];
+        return start + (Number(lastGoal.time) || 0) + (Number(r.timer_paused_duration) || 0);
+    }
+
+    /**
+     * The point's start, but only when it can be believed.
+     *
+     * Derived from the last goal's position on the game clock, which assumes the
+     * clock is at or past that goal. It usually is — but a clock corrected
+     * backwards, or a goal entered late, puts the computed start after events
+     * that have already been recorded, and the honest response is to stop
+     * claiming a point-relative time rather than to print a negative one.
+     */
+    function usablePointStart(rows) {
+        var began = pointStartedAt();
+        if (!began || !rows.length) { return null; }
+        return began <= rows[0].t ? began : null;
+    }
+
+    function openLog() {
+        var sc = liveScore();
+        if (!sc || !window.Possession) { return; }
+        var rows = window.Possession.eventsFor(possession.events, sc.key);
+
+        var card = document.getElementById('sheetCard');
+        card.replaceChildren();
+        card.append(el('h3', null, 'Possession \u00b7 point at ' + sc.key));
+
+        var began = usablePointStart(rows);
+        card.append(el('div', 'sub', rows.length + (rows.length === 1 ? ' change' : ' changes')
+            + (began ? ' \u00b7 timed from the last goal' : ' \u00b7 timed from the first change')));
+
+        if (!rows.length) {
+            card.append(el('p', 'muted', 'Nothing recorded for this point.'));
+        }
+
+        var base = began || (rows.length ? rows[0].t : 0);
+        var list = el('div', 'plog');
+        rows.forEach(function (e, i) {
+            var prev = i === 0 ? base : rows[i - 1].t;
+            var gap = Math.max(0, e.t - prev);
+
+            var row = el('div', 'plogrow' + (e.d ? ' d' : ''));
+            // Spacing IS the data: how far apart these happened, to scale.
+            row.style.marginTop = i === 0 ? '0'
+                : Math.min(LOG_MAX_GAP, LOG_MIN_GAP + gap * LOG_PX_PER_SEC) + 'px';
+
+            row.append(el('b', null, e.d ? 'Defence' : 'Offence'));
+            // Sub-second gaps are the interesting ones -- a scramble reads as
+            // "+0.4s" rather than collapsing to "+0s" as it did at whole-second
+            // resolution. Longer gaps do not need the decimal.
+            var showGap = gap < 10 ? (Math.round(gap * 10) / 10) : Math.round(gap);
+            row.append(el('span', 'gap', i === 0 && !began ? 'first change' : '+' + showGap + 's'));
+            row.append(el('span', 'abs', began
+                ? Math.round(e.t - began) + 's into the point' : ''));
+
+            var del = el('button', 'chip danger', 'Delete');
+            del.type = 'button';
+            del.addEventListener('click', function () { confirmDelete(e, sc); });
+            row.append(del);
+            list.append(row);
+        });
+        card.append(list);
+
+        if (rows.length > 1) {
+            var clr = el('button', 'barbtn', 'Clear the whole point');
+            clr.type = 'button';
+            clr.addEventListener('click', function () { confirmClear(sc, rows.length); });
+            card.append(clr);
+        }
+
+        var foot = el('footer');
+        var close = el('button', 'barbtn', 'Close');
+        close.type = 'button';
+        close.addEventListener('click', closeSheet);
+        foot.append(close);
+        card.append(foot);
+        sheet.classList.add('open');
+    }
+
+    /**
+     * Nothing is removed without being confirmed.
+     *
+     * These numbers are on air the moment they change, and the person deleting
+     * is doing it mid-game with a hand on the keyboard.
+     */
+    function confirmDelete(e, sc) {
+        var what = (e.d ? 'Defence' : 'Offence') + ' in possession';
+        if (!window.confirm('Delete this change?\n\n' + what
+            + '\n\nThe turnover count for this point changes immediately.')) { return; }
+        correct({ at: e.t }, sc);
+    }
+
+    function confirmClear(sc, n) {
+        if (!window.confirm('Clear all ' + n + ' changes for point ' + sc.key + '?\n\n'
+            + 'The point reads as offence throughout afterwards.')) { return; }
+        correct({ clearPoint: true }, sc);
+    }
+
+    /** Apply a correction, then redraw the log so the result is visible. */
+    function correct(what, forScore) {
+        if (!possession.canTrack) { return; }
+        var sc = forScore || liveScore();
+        if (!sc) { return; }
+        var body = { game: CONFIG.gameId, code: syncCode, score: sc.key };
+        Object.keys(what).forEach(function (k) { body[k] = what[k]; });
+        fetch(CONFIG.possessionUrl, {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body)
+        })
+            .then(function (r) { return r.ok ? r.json() : null; })
+            .then(function (state) {
+                if (!state) { return; }
+                possession = state;
+                render();
+                // Redraw the log underneath, so the correction is seen landing
+                // rather than leaving the reader to reopen and check.
+                if (sheet.classList.contains('open')) { openLog(); }
+            })
+            .catch(function () { /* transient */ });
+    }
+
     function setDefence(hasDisc) {
         if (!possession.canTrack) { return; }
         var sc = liveScore();
@@ -1255,9 +1422,13 @@ try {
         var tag = (e.target && e.target.tagName) || '';
         if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA' || e.target.isContentEditable) { return; }
         var key = (e.key || '').toLowerCase();
-        if (key !== 'o' && key !== 'd') { return; }
+        if (key !== 'o' && key !== 'd' && key !== 'u') { return; }
         if (state.mode !== 'play' || !possession.canTrack) { return; }
         e.preventDefault();
+        // U opens the log rather than deleting outright: one key still reaches
+        // the fix at the speed the mistake was made, but nothing goes without
+        // being seen and confirmed first.
+        if (key === 'u') { openLog(); return; }
         setDefence(key === 'd');
     });
 
@@ -1461,6 +1632,20 @@ try {
         });
         box.append(btns);
 
+        // One way in to the log, which is also the only place anything is
+        // deleted. Corrections do not sit beside the live keys: a button that
+        // removes data should not be adjacent to two that are being hit
+        // repeatedly without looking.
+        var pressed = sc && P ? P.eventsFor(possession.events, sc.key).length : 0;
+        var fixes = el('div', 'possfix');
+        var open = el('button', 'chip', '\u2637 Possession log');
+        open.type = 'button';
+        open.disabled = !pressed;
+        open.title = pressed ? 'Keyboard: U' : 'Nothing recorded this point yet';
+        open.addEventListener('click', openLog);
+        fixes.append(open);
+        box.append(fixes);
+
         var counts = el('div', 'posscounts');
         var now = (sc && P) ? P.turnovers(possession.events, sc.home, sc.visitor) : 0;
         var prev = previousScore();
@@ -1479,7 +1664,7 @@ try {
         box.append(counts);
 
         box.append(el('p', 'muted',
-            'Press O and D as the disc changes hands. Resets to offence on every goal. '
+            'Press O and D as the disc changes hands, U to undo. Resets to offence on every goal. '
             + 'This drives BREAK CHANCE on the scoreboard.'));
         return box;
     }

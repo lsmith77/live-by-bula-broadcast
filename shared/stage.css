@@ -412,8 +412,22 @@
     position: absolute;
     z-index: 6;
     display: none;
-    max-width: 340px;
-    padding: 10px 14px;
+
+    /* Sized so it always fits BESIDE a centre-anchored card rather than needing
+       the corner to itself.
+
+       The scoreboard bug is `width: max-content` capped at 1520px, so at a
+       centre position its worst case leaves (1920 - 1520) / 2 = 200px each
+       side, and 146px of that once the 54px title-safe inset is taken. A logo
+       that fits 146px can sit flush against the widest bug there will ever be,
+       which is what buys back the centre positions: only the logo's own corner
+       has to be reserved, not the whole edge.
+
+       Sized for the worst case rather than the measured one on purpose. The
+       bug's width follows the team names, so a logo fitted to the game in front
+       of it would be a different size every round. */
+    max-width: 146px;
+    padding: 8px 12px;
     background: var(--bug-bg);
     border-radius: var(--bug-radius);
     box-shadow: 0 6px 24px rgb(0 0 0 / 45%);
@@ -427,7 +441,10 @@
     display: block;
     width: auto;
     max-width: 100%;
-    height: 52px;
+    /* Height follows, so a wide wordmark keeps its aspect instead of being
+       squashed into the narrower box. */
+    height: auto;
+    max-height: 52px;
     object-fit: contain;
 }
 

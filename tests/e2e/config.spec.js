@@ -80,7 +80,11 @@ test.describe('stage configuration file', () => {
         { id: 'lastplay', slot: 'with-scoreboard', visible: true, params: { auto: { on: 'goal', for: 15 } } },
         { id: 'topplayers', slot: 'center', visible: false, params: { auto: { on: 'halftime', for: 30 } } },
       ];
-      await writeShow(page, wanted);
+      // Logo pinned off: these cases are about export and import, and
+      // `lower-left` is a slot the tournament logo reserves when it sits in that
+      // corner. Inheriting whatever corner the stage happened to be set to made
+      // this test's fixture depend on unrelated state.
+      await writeShow(page, wanted, { logo: null });
       await page.reload();
 
       const download = await Promise.race([
@@ -132,7 +136,7 @@ test.describe('stage configuration file', () => {
         { id: '../../etc/passwd', slot: 'center', visible: true },
         { id: 'topplayers', slot: 'not-a-slot', visible: true },
         { id: 'scoreboard', slot: 'lower-left', visible: true },
-      ]);
+      ], { logo: null });
       expect(res.body.cards.map((c) => c.id)).toEqual(['scoreboard']);
     });
   });

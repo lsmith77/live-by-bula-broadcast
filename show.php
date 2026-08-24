@@ -57,6 +57,7 @@ function respond(Show $store, bool $isAdmin, ?string $warning = null): void
         'knownCards' => Show::cardIds(),
         'cardSlots' => (object) Show::CARDS,
         'logoCorners' => Show::LOGO_CORNERS,
+        'logoBlocks' => (object) Show::LOGO_BLOCKS,
         'warning' => $warning,
     ]);
     exit;
@@ -103,7 +104,8 @@ if (!$result['ok']) {
 // explanation — an unknown id or a doubled-up slot is a UI bug worth surfacing.
 $warning = count($result['state']['cards']) < count($payload['cards'])
     ? 'Some cards were dropped: unknown id, a position that card does not fit, '
-        . 'a slot used twice, or hidden by a fullscreen takeover.'
+        . 'a slot used twice, a position the tournament logo occupies, '
+        . 'or hidden by a fullscreen takeover.'
     : null;
 
 respond($store, true, $warning);

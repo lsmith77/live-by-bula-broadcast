@@ -116,9 +116,11 @@ if (!$isAdmin && !$byCode) {
 // A code holder may set the ratio as well as possession: they are the one
 // watching the game with the scoresheet in front of them, and it is the same
 // kind of fact -- something true about the game that nothing records.
+// Corrections sit with the presses: whoever can record possession can fix what
+// they recorded, and needs to be able to do it in the next second.
 $allowed = $isAdmin
-    ? ['enabled', 'game', 'code', 'score', 'defence', 'ratio1']
-    : ['score', 'defence', 'ratio1'];
+    ? ['enabled', 'game', 'code', 'score', 'defence', 'ratio1', 'undo', 'clearPoint', 'at']
+    : ['score', 'defence', 'ratio1', 'undo', 'clearPoint', 'at'];
 
 $change = [];
 foreach ($allowed as $key) {

@@ -8,7 +8,7 @@
  */
 const { test } = require('@playwright/test');
 const {
-  GAME_ID, expect, loginAsAdmin, writeShow, withShowRestored,
+  GAME_ID, expect, loginAsAdmin, readShow, writeShow, withShowRestored,
 } = require('./helpers');
 
 test.describe('scoreboard', () => {
@@ -92,6 +92,47 @@ test.describe('stage', () => {
     expect(counts.mounted).toBeGreaterThanOrEqual(counts.shown);
   });
 
+  test('the tournament logo reserves its corner and nothing else', async ({ page }) => {
+    // The logo does not move out of the way — it owns its corner, and the store
+    // refuses to place a card there. The centre of the same edge stays usable
+    // because the logo is sized to sit flush beside the widest possible bug.
+    await loginAsAdmin(page, test);
+    await page.goto('/s/');
+    const before = await readShow(page);
+    try {
+      const corner = await writeShow(page, [
+        { id: 'scoreboard', slot: 'lower-left', visible: true, params: {} },
+      ], { game: GAME_ID, logo: 'bottom-left' });
+      expect(corner.body.cards).toHaveLength(0);
+
+      const centre = await writeShow(page, [
+        { id: 'scoreboard', slot: 'lower-center', visible: true, params: {} },
+      ], { game: GAME_ID, logo: 'bottom-left' });
+      expect(centre.body.cards.map((c) => c.slot)).toEqual(['lower-center']);
+
+      // And the two must actually clear each other on the canvas.
+      await page.goto(`/s/${GAME_ID}/overlay`);
+      await expect(page.locator('.tourney-logo.shown')).toBeVisible({ timeout: 15000 });
+      const gap = await page.evaluate(() => {
+        const canvas = document.querySelector('.stage-canvas');
+        const cr = canvas.getBoundingClientRect();
+        const scale = (cr.width / 1920) || 1;
+        const toCanvas = (el) => {
+          const r = el.getBoundingClientRect();
+          return { x: (r.left - cr.left) / scale, right: (r.right - cr.left) / scale };
+        };
+        const logo = toCanvas(document.querySelector('.tourney-logo.shown'));
+        const frame = document.querySelector('.mount.shown iframe');
+        const f = toCanvas(frame);
+        const b = frame.contentDocument.getElementById('scoreboard').getBoundingClientRect();
+        return Math.round((f.x + b.left) - logo.right);
+      });
+      expect(gap).toBeGreaterThanOrEqual(0);
+    } finally {
+      await writeShow(page, before.cards, { game: before.game, logo: before.logo });
+    }
+  });
+
   test('no two visible cards overlap', async ({ page }) => {
     // The companion card once sat 22px on top of the scoreboard because the
     // bug's height was hard-coded at 138px when it was really 160px. It is
@@ -116,25 +157,45 @@ test.describe('stage', () => {
     // comparing host boxes says every framed card overlaps everything -- which
     // is what the first version of this test wrongly reported.
     const boxes = await page.evaluate(() => {
+      // EVERY box in canvas coordinates, and that is the whole point.
+      //
+      // `.stage-canvas` is CSS-transformed to fit the window, so an element
+      // inside it reports scaled viewport pixels, while an element inside a
+      // card's iframe reports its own untransformed document's pixels — which
+      // are canvas pixels. Adding one to the other, as this test used to, is
+      // meaningless anywhere except a window exactly 1920 CSS px wide. The
+      // tournament logo shipped on top of the scoreboard for exactly that
+      // reason, and this test could not see it.
+      const canvas = document.querySelector('.stage-canvas');
+      const cr = canvas.getBoundingClientRect();
+      const scale = (cr.width / 1920) || 1;
+      const toCanvas = (el) => {
+        const r = el.getBoundingClientRect();
+        return {
+          x: (r.left - cr.left) / scale, y: (r.top - cr.top) / scale,
+          w: r.width / scale, h: r.height / scale,
+        };
+      };
+
       const out = [];
       document.querySelectorAll('.mount.shown').forEach((m) => {
         const frame = m.querySelector('iframe');
         if (frame) {
-          // Same-origin, so the real graphic is reachable. Offset the inner box
-          // by the frame's own position on the canvas.
           const doc = frame.contentDocument;
           const board = doc && doc.getElementById('scoreboard');
           if (!board) return;
-          const f = frame.getBoundingClientRect();
+          const f = toCanvas(frame);
           const b = board.getBoundingClientRect();
-          out.push({ label: 'scoreboard', x: f.x + b.x, y: f.y + b.y, w: b.width, h: b.height });
+          out.push({ label: 'scoreboard', x: f.x + b.left, y: f.y + b.top, w: b.width, h: b.height });
           return;
         }
-        const r = m.getBoundingClientRect();
-        if (r.width > 0 && r.height > 0) {
-          out.push({ label: m.parentElement.className, x: r.x, y: r.y, w: r.width, h: r.height });
-        }
+        const r = toCanvas(m);
+        if (r.w > 0 && r.h > 0) out.push({ label: m.parentElement.className, ...r });
       });
+
+      // The logo is not a card, and is exactly what was overlapping.
+      const logo = document.querySelector('.tourney-logo.shown');
+      if (logo) out.push({ label: 'tournament logo', ...toCanvas(logo) });
       return out;
     });
     await writeShow(page, before.cards, { game: before.game, logo: before.logo });

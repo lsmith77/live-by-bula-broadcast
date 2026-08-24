@@ -106,6 +106,32 @@ final class Show
      * for an event and then left alone, so putting it on the URL would mean
      * every switcher had to carry it and every operator had to remember it.
      */
+    /**
+     * Slots the tournament logo takes out of use, by corner.
+     *
+     * The logo owns its corner and does not move. Anything that would collide
+     * with it is simply not placeable there — which is a rule an operator can
+     * hold in their head, unlike a graphic that repositions itself.
+     *
+     * **Only the matching corner, and the centre stays available.** That is not
+     * free: the scoreboard bug is `width: max-content` capped at 1520px, so at a
+     * centre position it leaves 200px each side in the worst case and 146px once
+     * the title-safe inset is taken. The logo is capped to that width
+     * (shared/stage.css) so it can sit flush against the widest bug there will
+     * ever be. It costs the logo about a quarter of its width and buys back both
+     * centre positions, which is the better trade — the alternative was blocking
+     * the two most useful scoreboard positions on every edge the logo sits on.
+     *
+     * `with-scoreboard` is not listed: those cards ride with the scoreboard and
+     * inherit whichever slot it is allowed to occupy.
+     */
+    public const LOGO_BLOCKS = [
+        'top-left' => ['upper-left'],
+        'top-right' => ['upper-right'],
+        'bottom-left' => ['lower-left'],
+        'bottom-right' => ['lower-right'],
+    ];
+
     public const LOGO_CORNERS = ['top-left', 'top-right', 'bottom-left', 'bottom-right'];
 
     /** @return string[] */
@@ -156,11 +182,14 @@ final class Show
             return self::defaults();
         }
 
+        // Resolved first: which slots exist for cards depends on it.
+        $logo = self::cleanLogo($decoded['logo'] ?? null);
+
         return [
             'rev' => max(0, (int) ($decoded['rev'] ?? 0)),
             'game' => self::cleanGame($decoded['game'] ?? null),
-            'logo' => self::cleanLogo($decoded['logo'] ?? null),
-            'cards' => self::cleanCards($decoded['cards'] ?? []),
+            'logo' => $logo,
+            'cards' => self::cleanCards($decoded['cards'] ?? [], $logo),
         ];
     }
 
@@ -204,15 +233,18 @@ final class Show
             ];
         }
 
+        // Absent means unchanged: a card write must not silently clear a setting
+        // that belongs to the whole event. Resolved before the cards, because
+        // moving the logo can take a slot out of use under them.
+        $logo = self::cleanLogo(
+            array_key_exists('logo', $incoming) ? $incoming['logo'] : $current['logo']
+        );
+
         $next = [
             'rev' => $current['rev'] + 1,
             'game' => self::cleanGame($incoming['game'] ?? $current['game']),
-            // Absent means unchanged: a card write must not silently clear a
-            // setting that belongs to the whole event.
-            'logo' => self::cleanLogo(
-                array_key_exists('logo', $incoming) ? $incoming['logo'] : $current['logo']
-            ),
-            'cards' => self::cleanCards($incoming['cards'] ?? []),
+            'logo' => $logo,
+            'cards' => self::cleanCards($incoming['cards'] ?? [], $logo),
         ];
 
         if (!$this->write($next)) {
@@ -258,11 +290,18 @@ final class Show
      *
      * @return array<int,array{id:string,slot:string,visible:bool,params:array}>
      */
-    private static function cleanCards(mixed $raw): array
+    /** @return string[] */
+    public static function blockedSlots(?string $logoCorner): array
+    {
+        return self::LOGO_BLOCKS[(string) $logoCorner] ?? [];
+    }
+
+    private static function cleanCards(mixed $raw, ?string $logoCorner = null): array
     {
         if (!is_array($raw)) {
             return [];
         }
+        $blocked = self::blockedSlots($logoCorner);
 
         $clean = [];
         $placed = [];
@@ -277,6 +316,12 @@ final class Show
 
             // Slot must exist *and* the card must fit in it.
             if (!in_array($slot, self::slotsFor($id), true)) {
+                continue;
+            }
+            // The tournament logo owns its corner; nothing is placed into it.
+            // Enforced here rather than only in the control page, so a stale tab
+            // or a direct POST cannot put a card under the logo.
+            if (in_array($slot, $blocked, true)) {
                 continue;
             }
             // One home per card: a card in two places at once is a UI bug, and

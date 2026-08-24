@@ -104,6 +104,21 @@ final class Possession
         return (bool) preg_match('/^[1-9]MMP\/[1-9]FMP$/', $value);
     }
 
+    /**
+     * An event timestamp, to the millisecond.
+     *
+     * Whole seconds were not enough to tell two events apart: three presses in
+     * one second all carried the same `t`, and since the log screen deletes the
+     * row somebody is looking at BY its timestamp, deleting the third change
+     * removed the first. Milliseconds also make the gaps on that screen honest —
+     * two changes a third of a second apart are a scramble, and at one-second
+     * resolution they were both "+0s".
+     */
+    private static function now(): float
+    {
+        return round(microtime(true), 3);
+    }
+
     /** A score key. Both readers and writers must agree on this exact shape. */
     public static function scoreKey(int $home, int $visitor): string
     {
@@ -237,7 +252,7 @@ final class Possession
             }
 
             if ($last === null || $last['d'] !== $d) {
-                $state['events'][] = ['score' => $score, 'd' => $d, 't' => time()];
+                $state['events'][] = ['score' => $score, 'd' => $d, 't' => self::now()];
                 $state['events'] = self::cleanEvents($state['events']);
             }
         }
@@ -263,6 +278,56 @@ final class Possession
                 $state['ratio1'] = $raw;
             } else {
                 return ['ok' => false, 'error' => 'A ratio looks like "4MMP/3FMP".', 'state' => $state];
+            }
+        }
+
+        /**
+         * Undo the last press, or wipe the point and start it again.
+         *
+         * Both are scoped to ONE point, named by its score, and that is the
+         * safety property rather than a limitation. A correction to the point
+         * being played changes a number nobody has read out yet; a correction to
+         * an earlier point silently rewrites a turnover count that was already
+         * on air and a conversion figure a commentator may have quoted. If an
+         * older point really is wrong, that is worth a deliberate decision, not
+         * a button next to the live ones.
+         *
+         * Available to whoever can set possession, because the person who
+         * mis-pressed is the person who needs to fix it, immediately.
+         */
+        if (!empty($change['undo']) || !empty($change['clearPoint']) || isset($change['at'])) {
+            $score = trim((string) ($change['score'] ?? ''));
+            if (!preg_match('/^\d{1,3}-\d{1,3}$/', $score)) {
+                return ['ok' => false, 'error' => 'A score key looks like "9-6".', 'state' => $state];
+            }
+
+            if (isset($change['at'])) {
+                // Delete one named entry rather than "the last one". The log is
+                // read on screen before anything is removed, so the thing being
+                // removed is the row somebody is looking at -- identified by
+                // when it happened, which does not shift under a concurrent
+                // write the way an index would.
+                $at = (float) $change['at'];
+                foreach ($state['events'] as $i => $event) {
+                    if ($event['score'] === $score && abs((float) $event['t'] - $at) < 0.0005) {
+                        array_splice($state['events'], $i, 1);
+                        break;
+                    }
+                }
+            } elseif (!empty($change['clearPoint'])) {
+                $state['events'] = array_values(array_filter(
+                    $state['events'],
+                    static fn (array $e): bool => $e['score'] !== $score,
+                ));
+            } else {
+                // Drop only the last press of that point, so a mis-key costs one
+                // press to make and one to unmake.
+                for ($i = count($state['events']) - 1; $i >= 0; $i--) {
+                    if ($state['events'][$i]['score'] === $score) {
+                        array_splice($state['events'], $i, 1);
+                        break;
+                    }
+                }
             }
         }
 
@@ -425,7 +490,7 @@ final class Possession
                 continue;
             }
             $score = (string) ($event['score'] ?? '');
-            $when = (int) ($event['t'] ?? 0);
+            $when = (float) ($event['t'] ?? 0);
             if (!preg_match('/^\d{1,3}-\d{1,3}$/', $score) || $when < $cutoff) {
                 continue;
             }

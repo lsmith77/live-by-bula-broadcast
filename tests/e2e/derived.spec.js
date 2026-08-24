@@ -188,6 +188,123 @@ test.describe('several people tracking possession at once', () => {
   });
 });
 
+test.describe('correcting the possession log', () => {
+  test.beforeEach(async ({ page }) => { await loginAsAdmin(page, test); });
+
+  test('deletes one named entry, leaving other points alone', async ({ page }) => {
+    await withPossession(page, [], async () => {
+      const sc = await scoreKey(page);
+      const result = await page.evaluate(async ({ sc, game }) => {
+        const post = (body) => fetch('/index.php?view=live/overlays/possession', {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ game, ...body }),
+        }).then((r) => r.json());
+
+        // An earlier point, then three changes on this one.
+        await post({ score: '1-0', defence: true });
+        await post({ score: sc, defence: true });
+        await post({ score: sc, defence: false });
+        let state = await post({ score: sc, defence: true });
+
+        const mine = state.events.filter((e) => e.score === sc);
+        // Remove the MIDDLE one, named by when it happened.
+        state = await post({ score: sc, at: mine[1].t });
+        return {
+          thisPoint: state.events.filter((e) => e.score === sc).map((e) => (e.d ? 'D' : 'O')).join(''),
+          earlierPointKept: state.events.some((e) => e.score === '1-0'),
+        };
+      }, { sc, game: GAME_ID });
+
+      expect(result.thisPoint).toBe('DD');
+      // A correction to one point must not touch another: an earlier point's
+      // numbers may already have been read out.
+      expect(result.earlierPointKept).toBe(true);
+    });
+  });
+
+  test('clearing a point leaves the rest of the game', async ({ page }) => {
+    await withPossession(page, [], async () => {
+      const sc = await scoreKey(page);
+      const left = await page.evaluate(async ({ sc, game }) => {
+        const post = (body) => fetch('/index.php?view=live/overlays/possession', {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ game, ...body }),
+        }).then((r) => r.json());
+        await post({ score: '1-0', defence: true });
+        await post({ score: sc, defence: true });
+        await post({ score: sc, defence: false });
+        const state = await post({ score: sc, clearPoint: true });
+        return state.events.map((e) => e.score);
+      }, { sc, game: GAME_ID });
+      expect(left).toEqual(['1-0']);
+    });
+  });
+
+  test('a stranger cannot correct the log', async ({ page }) => {
+    const status = await page.evaluate(async (game) => {
+      const r = await fetch('/index.php?view=live/overlays/possession', {
+        method: 'POST',
+        // Omitted deliberately: fetch sends same-origin cookies BY DEFAULT, so
+        // without this the request carries the admin session this test just
+        // logged in with and proves nothing. It returned 200 for exactly that
+        // reason before.
+        credentials: 'omit',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ game, score: '1-0', clearPoint: true }),
+      });
+      return r.status;
+    }, GAME_ID);
+    expect(status).toBe(403);
+  });
+
+  test('nothing is deleted without confirmation', async ({ page }) => {
+    // The log is where deletions happen precisely so they are deliberate: a
+    // declined confirmation must leave it exactly as it was.
+    await page.goto(`/c/${GAME_ID}`);
+    const code = await page.evaluate(() => localStorage.getItem('uo-lines-code-702'));
+
+    await writePossession(page, { enabled: false, game: GAME_ID });
+    await writePossession(page, { enabled: true, game: GAME_ID, code });
+    try {
+      await page.evaluate(async ({ game, code }) => {
+        const r = await fetch(`/index.php?view=live/api&entity=games&id=${game}`,
+          { credentials: 'same-origin' });
+        const d = await r.json();
+        const score = `${d.game_result.homescore}-${d.game_result.visitorscore}`;
+        for (const defence of [true, false, true]) {
+          // eslint-disable-next-line no-await-in-loop
+          await fetch('/index.php?view=live/overlays/possession', {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ game, code, score, defence }),
+          });
+        }
+      }, { game: GAME_ID, code });
+
+      await page.goto(`/c/${GAME_ID}`);
+      await page.locator('#tabPlay').click();
+      await page.locator('.possfix .chip').click();
+      await expect(page.locator('.plogrow')).toHaveCount(3);
+
+      page.once('dialog', (d) => d.dismiss());
+      await page.locator('.plogrow .chip.danger').first().click();
+      await page.waitForTimeout(900);
+      await expect(page.locator('.plogrow')).toHaveCount(3);
+
+      page.once('dialog', (d) => d.accept());
+      await page.locator('.plogrow .chip.danger').first().click();
+      await expect(page.locator('.plogrow')).toHaveCount(2);
+    } finally {
+      await writePossession(page, { enabled: false, game: GAME_ID }).catch(() => {});
+    }
+  });
+});
+
 test.describe('the timeout tab', () => {
   /**
    * The window is unit-tested, not driven through the browser.

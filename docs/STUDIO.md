@@ -492,6 +492,25 @@ Three details that are not obvious:
 
 **On latency.** The card appears when the *stage learns* of the goal, which can be up to 30 seconds after it happened (`CACHE_SECONDS_GAME_DETAIL_ONGOING`). That is not a defect to engineer around: the scoreboard is on the same poll, so the card appears at the same instant the score ticks over on screen. The two are consistent with each other and with what the viewer sees, which matters more than either being early. Measured end to end against a real goal: card up at t+42s, down at t+57s — 15 seconds exactly.
 
+### 9.03 The tournament logo owns its corner
+
+The logo does not move. The stage refuses to place a card in the corner it occupies, and that is the whole rule — visible in the position picker as a blocked cell, and enforced in the store so a stale tab or a direct write cannot get a card underneath it.
+
+**It used to step out of the way instead, and that was worse in two ways.** A branding mark that repositions itself is not doing its job, and the avoidance was quietly broken for most of its life: it compared the logo's *viewport* rectangle against the scoreboard's *canvas* rectangle. `.stage-canvas` is CSS-transformed to fit the window, so an element inside it reports scaled pixels, while an element inside a card's iframe reports its own untransformed document's pixels. The two agree only in a window exactly 1920 CSS pixels wide. Everywhere else the collision went undetected and the logo sat on top of the bug — which is exactly what was reported from the field.
+
+**Only the matching corner is blocked, not the whole edge**, and that took a deliberate trade. The scoreboard bug is `width: max-content` capped at 1520px, so at a *centre* position it leaves 200px each side in the worst case and 146px once the 54px title-safe inset is taken — narrower than the logo was. Blocking the centre too would have cost the two most useful scoreboard positions on whichever edge the logo sits. Instead the logo is capped to 146px wide so it can sit flush beside the widest bug there will ever be. It costs the logo about a quarter of its width and keeps every centre position available.
+
+Sized for the worst case rather than the measured one, deliberately: the bug's width follows the team names, so a logo fitted to the game in front of it would be a different size every round.
+
+| logo corner | blocked | why the rest is fine |
+|---|---|---|
+| `top-left` | `upper-left` | the logo fits beside a centre-anchored card |
+| `top-right` | `upper-right` | same |
+| `bottom-left` | `lower-left` | same |
+| `bottom-right` | `lower-right` | same |
+
+`with-scoreboard` is never blocked: those cards ride with the scoreboard and inherit whichever slot it is allowed to occupy.
+
 ### 9.04 Several people tracking possession
 
 More than one person may press O and D at once, and that is safe by construction rather than by coordination.

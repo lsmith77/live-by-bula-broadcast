@@ -1278,7 +1278,6 @@ $json = static fn ($v): string => json_encode($v, JSON_UNESCAPED_SLASHES | JSON_
     var logoEl = document.getElementById('tourneyLogo');
     var logoReady = false;
     var logoCorner = '';
-    var logoFloor = 0;      // high-water offset; see placeLogo
 
     function loadTourneyLogo() {
         if (!logoEl || logoReady) { return; }
@@ -1319,28 +1318,6 @@ $json = static fn ($v): string => json_encode($v, JSON_UNESCAPED_SLASHES | JSON_
      * change height at runtime: a callout row appears, a ribbon is switched off.
      */
     /** Every visible card's drawn box, in canvas coordinates. */
-    function contentBoxes() {
-        var boxes = [];
-        Object.keys(mounted).forEach(function (key) {
-            var m = mounted[key];
-            if (!m.visible || !m.ready) { return; }
-            var content = m.host.querySelector('.card') || m.host.querySelector('iframe');
-            if (!content) { return; }
-
-            // A framed card fills the frame, so measure what it actually draws
-            // rather than the iframe, which is always the whole 1920x1080.
-            if (content.tagName === 'IFRAME') {
-                try {
-                    var inner = content.contentDocument
-                        && content.contentDocument.getElementById('scoreboard');
-                    if (inner) { boxes.push(inner.getBoundingClientRect()); }
-                } catch (e) { /* cross-origin: skip rather than fail */ }
-            } else {
-                boxes.push(content.getBoundingClientRect());
-            }
-        });
-        return boxes;
-    }
 
     /**
      * Apply the corner from the show state.
@@ -1353,7 +1330,6 @@ $json = static fn ($v): string => json_encode($v, JSON_UNESCAPED_SLASHES | JSON_
         corner = corner || '';
         if (corner === logoCorner) { return; }
         logoCorner = corner;
-        logoFloor = 0;      // a new corner has its own obstacles
         logoEl.className = 'tourney-logo' + (corner ? ' ' + corner : '')
             + (logoEl.firstChild && corner ? ' shown' : '');
         // A corner change moves it, so clear the old offsets before replacing.
@@ -1362,50 +1338,25 @@ $json = static fn ($v): string => json_encode($v, JSON_UNESCAPED_SLASHES | JSON_
         placeLogo();
     }
 
+    /**
+     * Put the logo in its corner and leave it there.
+     *
+     * It used to step out of the way of whatever shared its corner, walking up
+     * the frame until it found clear air. That is gone. The stage now refuses to
+     * place a card where the logo is (shared/show.php LOGO_BLOCKS), so there is
+     * nothing to avoid — and a branding mark that stays exactly where it was put
+     * is worth more than one that finds its own space.
+     *
+     * The avoidance was also quietly broken for most of its life: it compared
+     * the logo's viewport rect against the scoreboard's canvas rect, which agree
+     * only in a window exactly 1920 CSS pixels wide. Everywhere else it saw no
+     * collision and did nothing, which is how the logo came to be sitting on top
+     * of the bug. Reserving the corner needs no measurement at all.
+     */
     function placeLogo() {
         if (!logoEl || !logoCorner || !logoEl.firstChild) { return; }
         logoEl.classList.add('shown');
-
-        var fromTop = logoCorner.indexOf('top') === 0;
-        var EDGE = 54;          // title-safe, matching the grid
-        var GAP = 18;
-        var side = fromTop ? 'top' : 'bottom';
-
-        var boxes = contentBoxes();
-        var offset = Math.max(EDGE, logoFloor);
-
-        // Resolve collisions by stepping, not by taking the furthest reach in
-        // the column. An earlier version pushed past anything sharing the
-        // logo's column, which sent a top-corner logo below a bottom-anchored
-        // scoreboard — clear of it, and completely wrong. Only something the
-        // logo would actually touch should move it.
-        for (var pass = 0; pass < 6; pass += 1) {
-            logoEl.style[side] = Math.round(offset) + 'px';
-            var mine = logoEl.getBoundingClientRect();
-
-            var hit = null;
-            for (var i = 0; i < boxes.length; i += 1) {
-                var b = boxes[i];
-                if (b.right > mine.left && b.left < mine.right
-                    && b.bottom > mine.top && b.top < mine.bottom) {
-                    hit = b;
-                    break;
-                }
-            }
-            if (!hit) { break; }
-
-            offset = (fromTop ? hit.bottom : (1080 - hit.top)) + GAP;
-        }
-
-        // Remember the furthest it has had to go, and never come back.
-        //
-        // Without this the logo would slide toward its corner whenever a card
-        // went off air and slide out again when one returned — a branding mark
-        // twitching around the frame every time the operator touches anything.
-        // Holding the high-water mark costs a few idle pixels and keeps it
-        // still, which is what a logo is for.
-        logoFloor = Math.max(logoFloor, offset);
-        logoEl.style[side] = Math.round(logoFloor) + 'px';
+        logoEl.style[logoCorner.indexOf('top') === 0 ? 'top' : 'bottom'] = '54px';
     }
 
     function anchorCompanion(state) {
@@ -1437,7 +1388,6 @@ $json = static fn ($v): string => json_encode($v, JSON_UNESCAPED_SLASHES | JSON_
         // a transient callout row from making the logo twitch WITHIN a
         // configuration; across configurations it would just leave the logo
         // drifted permanently outward after a card moved away.
-        logoFloor = 0;
 
         // Every PLACED card is taken, whether or not it is switched on. Skipping
         // the hidden ones would mean each one loaded at the moment it was

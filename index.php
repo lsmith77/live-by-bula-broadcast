@@ -153,6 +153,10 @@ $json = static fn ($v): string => json_encode($v, JSON_UNESCAPED_SLASHES | JSON_
     .picker .cell.here { background: #38bdf8; border-color: #7dd3fc; }
     .picker .cell.taken { background: #334155; }
     .picker .cell.unfit { background: #0b1220; border-style: dashed; border-color: #1e293b; }
+    /* Taken by the logo — a different thing from "does not fit", so it looks
+       different: occupied rather than unavailable. */
+    .picker .cell.blocked { background: repeating-linear-gradient(45deg,
+        #1e293b 0 3px, #0b1220 3px 6px); border-color: #334155; }
     .picker .cell:disabled { cursor: not-allowed; opacity: .55; }
 
     /* Possession: two states, one key each, sized to be hit without looking. */
@@ -165,6 +169,9 @@ $json = static fn ($v): string => json_encode($v, JSON_UNESCAPED_SLASHES | JSON_
        the one that must never be mistaken for the other at a glance. */
     .poss.d.on { background: #b91c1c; border-color: #f87171; }
     .poss:disabled { opacity: .4; cursor: not-allowed; }
+    /* A correction is not a state, so it does not get a state colour. */
+    .poss.undo { font-weight: 600; color: #94a3b8; border-color: #334155; }
+    .poss.undo:not(:disabled):hover { color: #e2e8f0; border-color: #64748b; }
     .connected { font-size: .78rem; color: #64748b; white-space: nowrap; }
     .connected.on { color: #4ade80; }
     .codein { width: 5.6rem; background: #0b1220; border: 1px solid #334155; color: #7dd3fc;
@@ -650,6 +657,19 @@ $json = static fn ($v): string => json_encode($v, JSON_UNESCAPED_SLASHES | JSON_
     function autoChoices(cardId) { return AUTO_FOR[cardId] || null; }
 
     /**
+     * Does the tournament logo take this position out of use?
+     *
+     * Same table as the store, sent with the show state so the two cannot drift.
+     * The centre of an edge is blocked as well as the matching corner, because
+     * the scoreboard bug is 78% of the frame wide and reaches the far corner
+     * from the middle — see LOGO_BLOCKS in shared/show.php.
+     */
+    function logoBlocks(slot) {
+        var blocked = (show.logoBlocks || {})[show.logo || ''] || [];
+        return blocked.indexOf(slot) !== -1;
+    }
+
+    /**
      * The two ratios in play, or null when the question does not arise.
      *
      * Mixed divisions only, decided by the division name exactly as
@@ -906,6 +926,26 @@ $json = static fn ($v): string => json_encode($v, JSON_UNESCAPED_SLASHES | JSON_
             .catch(function (e) { alert(e.message); });
     }
 
+    /**
+     * Undo the last press, or clear the point.
+     *
+     * Scoped to the point on the clock, which is what makes it safe to put
+     * beside the live controls: it changes a number nobody has read out yet.
+     */
+    function correct(what) {
+        var key = currentScoreKey();
+        if (!key) { return; }
+        var body = { game: show.game || null, score: key };
+        Object.keys(what).forEach(function (k) { body[k] = what[k]; });
+        postPossession(body)
+            .then(function () {
+                flash(what.clearPoint
+                    ? 'Point ' + key + ' cleared.'
+                    : 'Last press undone.');
+            })
+            .catch(function (e) { alert(e.message); });
+    }
+
     function setDefence(hasDisc) {
         if (!possession.enabled) { return; }
         var key = currentScoreKey();
@@ -937,9 +977,12 @@ $json = static fn ($v): string => json_encode($v, JSON_UNESCAPED_SLASHES | JSON_
         var tag = (e.target && e.target.tagName) || '';
         if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA' || e.target.isContentEditable) { return; }
         var key = (e.key || '').toLowerCase();
-        if (key !== 'o' && key !== 'd') { return; }
+        if (key !== 'o' && key !== 'd' && key !== 'u') { return; }
         if (!showCanEdit() || !possession.enabled) { return; }
         e.preventDefault();
+        // U undoes, because a mis-key needs unmaking at the same speed it was
+        // made -- reaching for a mouse mid-point is how the wrong thing stays up.
+        if (key === 'u') { correct({ undo: true }); return; }
         setDefence(key === 'd');
     });
 
@@ -1074,6 +1117,37 @@ $json = static fn ($v): string => json_encode($v, JSON_UNESCAPED_SLASHES | JSON_
             b.addEventListener('click', function () { setDefence(spec[2]); });
             bar.append(b);
         });
+
+        // Corrections, next to the presses they correct.
+        //
+        // A mis-key on air is the ordinary case, not the exceptional one, and
+        // until now the only remedy was to press the right thing instead --
+        // which fixes the current state but leaves the wrong flip in the log,
+        // inflating that point's turnover count for good.
+        var pressed = key && window.Possession
+            ? window.Possession.eventsFor(possession.events, key).length : 0;
+
+        var undo = el('button', 'poss undo');
+        undo.type = 'button';
+        undo.textContent = '\u21b6 Undo';
+        undo.disabled = !showCanEdit() || !pressed;
+        undo.title = pressed
+            ? 'Remove the last press of this point'
+            : 'Nothing pressed this point';
+        undo.addEventListener('click', function () { correct({ undo: true }); });
+        bar.append(undo);
+
+        if (pressed > 1) {
+            // Only once there is a mess worth clearing; with one press, undo is
+            // the same thing and less alarming.
+            var clr = el('button', 'poss undo');
+            clr.type = 'button';
+            clr.textContent = 'Clear point';
+            clr.disabled = !showCanEdit();
+            clr.title = 'Forget all ' + pressed + ' presses of this point and start it again';
+            clr.addEventListener('click', function () { correct({ clearPoint: true }); });
+            bar.append(clr);
+        }
 
         var trackers = Number(possession.connected) || 0;
         if (possession.code && trackers > 1) {
@@ -1214,19 +1288,28 @@ $json = static fn ($v): string => json_encode($v, JSON_UNESCAPED_SLASHES | JSON_
                 // store rejects the rest anyway, so offering them would just
                 // produce a silent no-op.
                 var fits = fitsIn(id, slot);
+                // The tournament logo owns its corner and does not move out of
+                // the way, so the positions it blocks are shown as blocked. The
+                // store refuses them regardless; without this the operator would
+                // click, see nothing happen, and have to read a warning to find
+                // out why.
+                var blocked = fits && logoBlocks(slot);
                 var b = el('button', 'cell'
                     + (placed === slot ? ' here' : '')
                     + (fits ? '' : ' unfit')
-                    + (fits && onAirIn(slot, id) ? ' taken' : '')
+                    + (blocked ? ' blocked' : '')
+                    + (fits && !blocked && onAirIn(slot, id) ? ' taken' : '')
                     + (slot === 'center' ? ' span' : ''));
                 b.type = 'button';
-                b.disabled = !showCanEdit() || !fits;
+                b.disabled = !showCanEdit() || !fits || blocked;
 
                 // Sharing a position costs nothing — several cards live there
                 // and the operator flips between them — so this only reports it.
                 var shared = fits ? sharing(slot, id) : 0;
                 b.title = !fits
                     ? slot.replace('-', ' ') + ' — too small for this card'
+                    : blocked
+                    ? slot.replace('-', ' ') + ' — the tournament logo is in this corner'
                     : slot.replace('-', ' ')
                         + (shared ? ' — shared with ' + shared + ' other card'
                             + (shared > 1 ? 's' : '') : '');
