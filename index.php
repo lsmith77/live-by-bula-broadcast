@@ -645,6 +645,7 @@ $json = static fn ($v): string => json_encode($v, JSON_UNESCAPED_SLASHES | JSON_
         lastgoal: ['off', 'goal'],
         lastassist: ['off', 'goal'],
         lastplay: ['off', 'goal'],
+        summary: ['off', 'pregame', 'halftime', 'final', 'goal'],
         progression: ['off', 'halftime', 'final'],
         topplayers: ['off', 'halftime', 'final', 'pregame'],
         // Each of these has exactly one moment. Offering the others would only
@@ -856,6 +857,7 @@ $json = static fn ($v): string => json_encode($v, JSON_UNESCAPED_SLASHES | JSON_
     function labelOf(cardId) {
         return ({
             scoreboard: 'Scoreboard',
+            summary: 'Summary — picks its own moment',
             progression: 'Score progression',
             topplayers: 'Top scorers',
             lastgoal: 'Last goal — scorer',
@@ -946,6 +948,18 @@ $json = static fn ($v): string => json_encode($v, JSON_UNESCAPED_SLASHES | JSON_
             .catch(function (e) { alert(e.message); });
     }
 
+    /** Flag or clear an injury stoppage for the point on the clock. */
+    function toggleStoppage() {
+        var key = currentScoreKey();
+        if (!key) { flash('No live score for this game yet.'); return; }
+        var on = Boolean(possession.stoppage && possession.stoppage.score === key);
+        postPossession({ game: show.game || null, score: key, stoppage: !on })
+            .then(function () {
+                flash(on ? 'Stoppage ended.' : 'Injury stoppage on air.');
+            })
+            .catch(function (e) { alert(e.message); });
+    }
+
     function setDefence(hasDisc) {
         if (!possession.enabled) { return; }
         var key = currentScoreKey();
@@ -977,14 +991,82 @@ $json = static fn ($v): string => json_encode($v, JSON_UNESCAPED_SLASHES | JSON_
         var tag = (e.target && e.target.tagName) || '';
         if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA' || e.target.isContentEditable) { return; }
         var key = (e.key || '').toLowerCase();
-        if (key !== 'o' && key !== 'd' && key !== 'u') { return; }
-        if (!showCanEdit() || !possession.enabled) { return; }
+        if (key !== 'o' && key !== 'd' && key !== 'u' && key !== 'i') { return; }
+        if (!showCanEdit()) { return; }
+        // I is independent of possession tracking: a stoppage is its own fact.
+        if (key === 'i') { e.preventDefault(); toggleStoppage(); return; }
+        if (!possession.enabled) { return; }
         e.preventDefault();
         // U undoes, because a mis-key needs unmaking at the same speed it was
         // made -- reaching for a mouse mid-point is how the wrong thing stays up.
         if (key === 'u') { correct({ undo: true }); return; }
         setDefence(key === 'd');
     });
+
+    /**
+     * The commentary link: one code, and who is on it.
+     *
+     * Separate from what is being tracked, and that separation is the point. The
+     * code used to be created as a side effect of turning break chances on,
+     * which meant an operator could not hand the desk the gender ratio or an
+     * injury stoppage without also switching on a graphic they might not want.
+     * The link is now its own thing; each trackable fact decides its own
+     * conditions.
+     */
+    function linkBar() {
+        var bar = el('div', 'stagebar possession');
+        bar.append(el('span', 'muted', 'Commentator link'));
+
+        var codeIn = document.createElement('input');
+        codeIn.type = 'text';
+        codeIn.className = 'codein';
+        codeIn.maxLength = 5;
+        codeIn.placeholder = '\u2014\u2014\u2014\u2014\u2014';
+        codeIn.value = possession.code || '';
+        codeIn.disabled = !showCanEdit();
+        codeIn.setAttribute('aria-label', 'Commentator room code');
+        codeIn.title = 'The 5-character code shown on the commentator page. '
+            + 'Only that code may track anything; clear the field to take it back.';
+        codeIn.addEventListener('change', function () {
+            var v = codeIn.value.toUpperCase().trim();
+            postPossession({ game: show.game || null, code: v || null })
+                .then(function (state) {
+                    flash(state.code ? 'Code ' + state.code + ' can now track.'
+                        : 'Commentator tracking revoked.');
+                })
+                .catch(function (e) { alert(e.message); });
+        });
+        bar.append(codeIn);
+
+        var gen = el('button', 'undo', '\u21ba New code');
+        gen.type = 'button';
+        gen.disabled = !showCanEdit();
+        gen.title = 'Generate one to read out. Left to invent a code people pick "12345".';
+        gen.addEventListener('click', function () {
+            postPossession({ game: show.game || null, code: 'new' })
+                .then(function (state) { flash('Code is ' + state.code + '.'); })
+                .catch(function (e) { alert(e.message); });
+        });
+        bar.append(gen);
+
+        // Who is actually out there, BY NAME. "2 connected" answers the wrong
+        // question: the operator needs to know whether the right desk is on this
+        // code, which a count cannot tell them.
+        var clients = possession.clients || [];
+        if (!possession.code) {
+            bar.append(el('span', 'connected', 'no code set'));
+        } else if (!clients.length) {
+            bar.append(el('span', 'connected', 'nobody connected'));
+        } else {
+            var list = el('span', 'connected on');
+            list.textContent = clients.map(function (c) {
+                return c.name || 'unnamed desk';
+            }).join(' \u00b7 ');
+            list.title = 'Commentator pages polling with this code right now.';
+            bar.append(list);
+        }
+        return bar;
+    }
 
     function possessionBar() {
         var bar = el('div', 'stagebar possession');
@@ -1044,7 +1126,6 @@ $json = static fn ($v): string => json_encode($v, JSON_UNESCAPED_SLASHES | JSON_
         if (!on) {
             bar.append(el('span', 'muted',
                 'Off: the scoreboard shows ON DEFENCE, which is always true but never an event.'));
-            return bar;
         }
 
         // Hand tracking to the commentary desk by naming their room code.
@@ -1053,42 +1134,6 @@ $json = static fn ($v): string => json_encode($v, JSON_UNESCAPED_SLASHES | JSON_
         // watching the play IS their job, whereas the operator is choosing and
         // timing graphics. Naming one code rather than accepting any is what
         // keeps this a single-entry allowlist: clearing the field revokes it.
-        var codeWrap = el('span', 'kitside');
-        codeWrap.append(el('span', 'muted', 'Commentator code'));
-        var codeIn = document.createElement('input');
-        codeIn.type = 'text';
-        codeIn.className = 'codein';
-        codeIn.maxLength = 5;
-        codeIn.placeholder = '\u2014\u2014\u2014\u2014\u2014';
-        codeIn.value = possession.code || '';
-        codeIn.disabled = !showCanEdit();
-        codeIn.title = 'The 5-character room code shown on the commentator page. '
-            + 'Only that code may set possession; clear the field to take it back.';
-        codeIn.addEventListener('change', function () {
-            var v = codeIn.value.toUpperCase().trim();
-            postPossession({ game: show.game || null, code: v || null })
-                .then(function (state) {
-                    flash(state.code
-                        ? 'Commentator ' + state.code + ' can now set possession.'
-                        : 'Commentator tracking revoked.');
-                })
-                .catch(function (e) { alert(e.message); });
-        });
-        codeWrap.append(codeIn);
-
-        // Who is actually out there. Without this the operator has typed a code
-        // into a box and has no idea whether anyone is on the other end of it,
-        // which is the whole question they care about before kick-off.
-        var n = Number(possession.connected) || 0;
-        var who = el('span', 'connected' + (n ? ' on' : ''));
-        who.textContent = n === 0
-            ? 'nobody connected'
-            : (n === 1 ? '1 commentator connected' : n + ' commentators connected');
-        who.title = n
-            ? 'Commentator pages currently polling with this code.'
-            : 'No commentator page is using this code yet. They enter it as their sync code.';
-        codeWrap.append(who);
-        bar.append(codeWrap);
 
         var key = currentScoreKey();
         var d = defenceHasDisc();
@@ -1148,6 +1193,19 @@ $json = static fn ($v): string => json_encode($v, JSON_UNESCAPED_SLASHES | JSON_
             clr.addEventListener('click', function () { correct({ clearPoint: true }); });
             bar.append(clr);
         }
+
+        // Injury stoppage: the third declared fact, and independent of the other
+        // two. Nothing records these, so somebody flags it; keyed by score, so
+        // it clears itself at the next goal.
+        var stopOn = Boolean(key && possession.stoppage && possession.stoppage.score === key);
+        var stop = el('button', 'poss' + (stopOn ? ' on d' : ''));
+        stop.type = 'button';
+        stop.disabled = !showCanEdit() || !key;
+        stop.setAttribute('aria-pressed', stopOn ? 'true' : 'false');
+        stop.textContent = stopOn ? '\u25a0 End stoppage' : '\u2691 Injury stoppage';
+        stop.title = 'Keyboard: I';
+        stop.addEventListener('click', toggleStoppage);
+        bar.append(stop);
 
         var trackers = Number(possession.connected) || 0;
         if (possession.code && trackers > 1) {
@@ -1450,6 +1508,7 @@ $json = static fn ($v): string => json_encode($v, JSON_UNESCAPED_SLASHES | JSON_
         flashNode.setAttribute('aria-live', 'polite');
         bottom.append(flashNode);
         stagePanel.append(bottom);
+        stagePanel.append(linkBar());
         stagePanel.append(possessionBar());
 
         var note = el('p', 'muted');

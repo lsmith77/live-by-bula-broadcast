@@ -379,6 +379,16 @@ body {
     color: #f8fafc;
 }
 
+/* A stoppage belongs to no team, so its row is centred across the whole bug
+   rather than sitting over one side. */
+.callout-row.centred {
+    justify-content: center;
+}
+
+.callout-row.centred .callout-cell {
+    flex: 0 0 auto;
+}
+
 .callout.brk {
     background: #b91c1c;
     color: #fff;

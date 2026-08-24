@@ -290,6 +290,11 @@ try {
     .possbig.d.on { background: var(--bad); border-color: var(--bad); color: #fff; }
     .possbig.d.on .w { color: #fff; }
     .possbig:disabled { opacity: .45; cursor: not-allowed; }
+    .namefield { display: flex; align-items: center; gap: .5rem; margin-bottom: .6rem; }
+    .namefield label { font-size: .8rem; color: var(--ink-mute); }
+    .namefield input { flex: 1; max-width: 16rem; background: var(--panel-alt);
+                       border: 1px solid var(--line); color: var(--ink); font: inherit;
+                       font-size: .85rem; border-radius: 4px; padding: .3rem .5rem; }
     .possfix { display: flex; gap: .5rem; margin-top: .6rem; }
 
     /* ---- possession log ----
@@ -1206,11 +1211,30 @@ try {
         try { window.localStorage.setItem(CLIENT_KEY, clientId); } catch (e) { /* private mode */ }
     }
 
+    /**
+     * A display name, sent with the poll so the operator can tell desks apart.
+     *
+     * The Studio otherwise shows "2 commentators connected", which answers the
+     * wrong question — the operator needs to know whether the RIGHT desk is on
+     * the code, not how many are. Typed here, kept in this browser, shown only
+     * to the operator, and gone as soon as this page stops polling.
+     */
+    var NAME_KEY = 'uo-commentator-name';
+    var myName = '';
+    try { myName = window.localStorage.getItem(NAME_KEY) || ''; } catch (e) { myName = ''; }
+
+    function setMyName(v) {
+        myName = String(v || '').slice(0, 24);
+        try { window.localStorage.setItem(NAME_KEY, myName); } catch (e) { /* private mode */ }
+        pollPossession();
+    }
+
     function possessionUrl(extra) {
         return CONFIG.possessionUrl
             + '&game=' + encodeURIComponent(CONFIG.gameId)
             + '&code=' + encodeURIComponent(syncCode)
             + '&client=' + encodeURIComponent(clientId)
+            + (myName ? '&name=' + encodeURIComponent(myName) : '')
             + (extra || '');
     }
 
@@ -1350,6 +1374,52 @@ try {
         correct({ clearPoint: true }, sc);
     }
 
+    /** Who this desk is, for the operator's roster. */
+    function nameField() {
+        var wrap = el('div', 'namefield');
+        var label = el('label', null, 'Your name');
+        var input = document.createElement('input');
+        input.type = 'text';
+        input.maxLength = 24;
+        input.value = myName;
+        input.placeholder = 'shown to the operator';
+        input.id = 'commentatorName';
+        label.htmlFor = input.id;
+        input.addEventListener('change', function () { setMyName(input.value); });
+        wrap.append(label, input);
+        return wrap;
+    }
+
+    /** Is a declared stoppage running for the point on the clock? */
+    function stoppageOn() {
+        var sc = liveScore();
+        return Boolean(sc && possession.stoppage && possession.stoppage.score === sc.key);
+    }
+
+    /**
+     * Flag or clear an injury stoppage.
+     *
+     * Nothing in UltiOrganizer records these, so it is declared like possession
+     * and the gender ratio — three separate facts behind one link, which is why
+     * the link is no longer tied to break-chance mode.
+     */
+    function toggleStoppage() {
+        if (!possession.canTrack) { return; }
+        var sc = liveScore();
+        if (!sc) { return; }
+        var on = stoppageOn();
+        fetch(CONFIG.possessionUrl, {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ game: CONFIG.gameId, code: syncCode,
+                                   score: sc.key, stoppage: !on })
+        })
+            .then(function (r) { return r.ok ? r.json() : null; })
+            .then(function (state) { if (state) { possession = state; render(); } })
+            .catch(function () { /* transient */ });
+    }
+
     /** Apply a correction, then redraw the log so the result is visible. */
     function correct(what, forScore) {
         if (!possession.canTrack) { return; }
@@ -1422,9 +1492,10 @@ try {
         var tag = (e.target && e.target.tagName) || '';
         if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA' || e.target.isContentEditable) { return; }
         var key = (e.key || '').toLowerCase();
-        if (key !== 'o' && key !== 'd' && key !== 'u') { return; }
+        if (key !== 'o' && key !== 'd' && key !== 'u' && key !== 'i') { return; }
         if (state.mode !== 'play' || !possession.canTrack) { return; }
         e.preventDefault();
+        if (key === 'i') { toggleStoppage(); return; }
         // U opens the log rather than deleting outright: one key still reaches
         // the fix at the speed the mistake was made, but nothing goes without
         // being seen and confirmed first.
@@ -1602,6 +1673,9 @@ try {
 
         if (!possession.canTrack) {
             box.className = 'possbox quiet';
+            // Your name goes here even before you are linked: it is what the
+            // operator reads when deciding whose code to enter.
+            box.append(nameField());
             var ask = el('span', 'muted');
             ask.append(document.createTextNode(
                 possession.hasCode
@@ -1617,6 +1691,18 @@ try {
         var sc = liveScore();
         var P = window.Possession;
         var d = sc && P ? P.defenceHasDisc(possession.events, sc.home, sc.visitor) : false;
+
+        box.append(nameField());
+
+        // Injury stoppage sits with possession because it is the same kind of
+        // thing: a fact about the game that nothing records, declared by whoever
+        // is watching. It is not part of break-chance mode and does not need it.
+        var stop = el('button', 'chip' + (stoppageOn() ? ' on' : ''),
+            stoppageOn() ? '\u25a0 End injury stoppage' : '\u2691 Injury stoppage');
+        stop.type = 'button';
+        stop.title = 'Keyboard: I';
+        stop.addEventListener('click', toggleStoppage);
+        box.append(stop);
 
         var btns = el('div', 'possbtns');
         [['O', 'Offence', false], ['D', 'Defence', true]].forEach(function (spec) {
