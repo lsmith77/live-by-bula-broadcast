@@ -10,6 +10,10 @@ Three surfaces, for three different people:
 
 Everything reads through Live!'s public JSON API. No overlay touches the database, which is what makes this a drop-in that survives a Live! upgrade.
 
+![A full frame, as a switcher receives it](docs/images/stage.png)
+
+*What actually reaches the switcher: a 1920×1080 frame, transparent everywhere except the graphics. The bug sits inside a title-safe inset with a companion strip above it, and the rest of the frame is left alone — which is the point.*
+
 ![The scoreboard bug](docs/images/scoreboard.png)
 
 ![The scoreboard through a point](docs/images/scoreboard.gif)
@@ -18,6 +22,8 @@ Everything reads through Live!'s public JSON API. No overlay touches the databas
 
 | | |
 |---|---|
+| ![Score progression](docs/images/progression-card.png) | ![Summary card](docs/images/summary-card.png) |
+| **Score progression** — the traditional staircase: right when the home team scores, down when the away team does. In a mixed division each step carries the gender ratio it was played at, by dash as well as colour | **Summary** — one card that works out for itself whether it is before the pull, at the half, mid-game or full time |
 | ![Studio](docs/images/studio.png) | ![Commentator](docs/images/commentator-daylight.png) |
 | **Studio** — what is on air, and where | **Commentator** — daylight by default, because the job happens beside a pitch |
 | ![Player sheet](docs/images/player-sheet.png) | ![Commentator at night](docs/images/commentator-night.png) |

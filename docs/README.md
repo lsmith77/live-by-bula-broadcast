@@ -167,6 +167,10 @@ Tests needing the Live! admin session skip themselves without `ADMIN_PASS`, and 
 
 [`../tests/selftest.php`](../tests/selftest.php) is a different thing: the switcher diagnostic described above, a routed page rather than part of the suite, because it has to be loadable by the device it is diagnosing.
 
+**Every run starts from a configured stage, not an empty one.** `tests/global-setup.js` seeds a logo in a corner, cards placed and on air, both fixture games tracked with a code, a gender ratio and a live stoppage — what a stage looks like ten minutes into a tournament.
+
+That is not decoration. These tests write to the files a real broadcast reads, so "empty" is not a state that occurs in practice, and a test that reads state it did not set passes or fails on history rather than on the code. Eight did over this project's life, each found only when something unrelated moved. Seeding makes the ninth fail immediately. `resetPossession()` is the helper for the commonest case: turning the mode on does not clear a log, so a test asserting on an event count must empty it first.
+
 UltiOrganizer's own harness (`ktolonen/ultiorganizer-tests`) covers UltiOrganizer, not this directory.
 
 ### Two rules that keep biting

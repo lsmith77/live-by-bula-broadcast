@@ -24,7 +24,7 @@ Runtime code sits at the top level, because a routed view's path *is* its URL �
 |---|---|
 | `scoreboard.php` `stage.php` `commentator.php` `index.php` | routed pages |
 | `show.php` `colors.php` `lines.php` | routed JSON endpoints |
-| `shared/` | CSS, JS, and the PHP stores behind those endpoints |
+| `shared/` | CSS, the PHP stores behind those endpoints, and the JS modules every surface shares: `possession.js` `stoppage.js` `field.js` `ratio.js` `tracking.js` |
 | `conf/` | operator state written by the web server — **gitignored** |
 | `logos/` | per-installation team logos — **contents gitignored** |
 | `docs/` `tests/` `fixtures/` `install/` | not served to viewers |
@@ -99,11 +99,15 @@ Not a nicety here, for two reasons specific to this project.
 
 **A test, because the failure mode is on air.** These surfaces are watched live by people who cannot refresh, and the characteristic bug is not a crash but a graphic quietly asserting something untrue — a tab outliving its point, a rate without its denominator, a field-following overlay silently showing the wrong game. Those look completely normal in a screenshot. `tests/e2e/derived.spec.js` is the model: it asserts as hard on what a feature *refuses* to claim as on what it shows.
 
+**And put a PROTOCOL there too, not only a derivation.** `shared/tracking.js` holds the one way to talk to the collected-facts store: the API's error contract (`readJson`) plus every write. The Studio and the commentator page had grown their own copies of all of it — `readJson`, `setDefence`, `toggleStoppage`, `correct` — the same protocol written twice, differing only in where the game id and the authorising code came from. Each caller now supplies those two answers and nothing else.
+
 **Put a derivation in `shared/` and test it there.** Anything that decides what goes on air from data — the possession log, the field lookup, the stoppage window — is a pure function, and a pure function tested directly is worth more than the same logic tested through a page. Testing the stoppage window through the browser meant moving the game clock and losing to Live!'s 30-second payload cache: one run asked for a moment 20 seconds into a timeout and was served one 131 seconds in, measuring the previous clock while appearing to measure this one. Moved into `shared/stoppage.js` and tested directly, the same suite immediately found a real bug — the window picked the event with the greatest timestamp rather than the last one that had happened, which put a timeout on a post-production frame eighteen minutes before it was called. Keep one browser test for the wiring; test the logic where it lives.
 
 **Measure in one coordinate space, and say which.** `.stage-canvas` carries a CSS transform, so an element inside it reports scaled viewport pixels while an element inside a card's iframe reports canvas pixels. Comparing the two agrees only in a window exactly 1920 CSS px wide — which is how the tournament logo came to sit on top of the scoreboard everywhere except a full-size browser, and why the test that should have caught it did not.
 
 Modules in `shared/` publish to `window` **and** `module.exports`, because they are loaded both ways. Do not rely on top-level `this`: it is `module.exports` under plain CommonJS but `undefined` under the loader Playwright uses, and it fails at import rather than at use.
+
+**A test must set the state it asserts on.** The suite writes to the files a broadcast reads, so it begins from whatever the last run left — and `tests/global-setup.js` now deliberately seeds a messy stage so that dependence fails immediately instead of months later. Eight tests here had quietly stopped testing anything this way: measuring whatever cards happened to be placed, counting a possession log without emptying it, using a hard-coded "obviously wrong" code that a seeded run had made the right one. Restore in a `finally`, not after the assertions — a failure otherwise leaves the stage rearranged for everything that follows.
 
 Where a test genuinely cannot be written — it needs hardware, or data no fixture has — say so in the pull request and in the doc, and write the check that *can* run. "Untestable" is a claim to justify, not a default.
 
