@@ -111,6 +111,96 @@ test.describe('unauthenticated boundaries', () => {
     expect(after.ok()).toBe(true);
   });
 
+  test('the room code is not readable over a shoulder', async ({ page }) => {
+    // The code is the only thing between a passer-by and a desk's shared state --
+    // the line selection and the prepared notes, which are notes about named
+    // players. A commentary booth is one of the most-walked-past screens at a
+    // tournament, and five characters are memorable at a glance, so a code on
+    // permanent display is not an unguessable namespace but a published one.
+    await page.goto(`/c/${GAME_ID}`);
+    await expect(page.locator('.roster').first()).toBeVisible();
+
+    const code = page.locator('.sync .code');
+    await expect(code).toHaveAttribute('type', 'password');
+    // Masked, but still present -- this must hide the code, not lose it.
+    expect((await code.inputValue()).length).toBe(5);
+
+    const peek = page.locator('.sync .peek');
+    await expect(peek).toHaveAttribute('aria-pressed', 'false');
+    await peek.click();
+    await expect(code).toHaveAttribute('type', 'text');
+    await expect(peek).toHaveAttribute('aria-pressed', 'true');
+    await peek.click();
+    await expect(code).toHaveAttribute('type', 'password');
+
+    // A password manager must not be invited to keep it.
+    await expect(code).toHaveAttribute('autocomplete', 'off');
+  });
+
+  test('a revealed code hides itself again', async ({ page }) => {
+    // This is the load-bearing half. A manual toggle alone would spend a
+    // tournament in the revealed state, which is no better than plain text --
+    // and it is what makes "reveal it for them" a convenience rather than a
+    // safeguard anywhere else in the UI.
+    await page.goto(`/c/${GAME_ID}`);
+    await expect(page.locator('.roster').first()).toBeVisible();
+
+    // Shorten the window rather than waiting 30s for it.
+    await page.evaluate(() => {
+      const input = document.querySelector('.sync .code');
+      const button = document.querySelector('.sync .peek');
+      const fresh = button.cloneNode(true);      // drop the original listener
+      button.replaceWith(fresh);
+      window.Secret.guard(input, fresh, { label: 'sync code', hideAfterMs: 600 });
+    });
+
+    const code = page.locator('.sync .code');
+    await page.locator('.sync .peek').click();
+    await expect(code).toHaveAttribute('type', 'text');
+    await expect(code).toHaveAttribute('type', 'password', { timeout: 5000 });
+    await expect(page.locator('.sync .peek')).toHaveAttribute('aria-pressed', 'false');
+  });
+
+  test('prepared notes are never served as files', async ({ request }) => {
+    // These are one person's notes about named players. conf/ is default-closed
+    // with two files allowlisted by name, and this asserts a note room is not one
+    // of them -- the directory is the only thing standing between a room code and
+    // a readable file of personal data.
+    await request.post('/index.php?view=live/overlays/notes', {
+      data: { code: 'DDDDD', player: 1, text: 'private' },
+    });
+    const direct = await request.get('/live/overlays/conf/notes/DDDDD.json');
+    expect(direct.status(), 'a note room must not be servable').toBe(404);
+    // And not by walking up to the directory either.
+    const dir = await request.get('/live/overlays/conf/notes/');
+    expect([403, 404]).toContain(dir.status());
+  });
+
+  test('one note cannot be arbitrarily long', async ({ request }) => {
+    // The text is the only unbounded thing a caller controls here, and the room
+    // document is the product of this cap and the players-per-room cap.
+    const r = await request.post('/index.php?view=live/overlays/notes', {
+      data: { code: 'EEEEE', player: 1, text: 'x'.repeat(9000) },
+    });
+    expect(r.ok()).toBe(true);
+    const body = await r.json();
+    expect(body.players['1'].text.length).toBeLessThanOrEqual(1000);
+  });
+
+  test('one note room cannot accumulate unbounded players', async ({ request }) => {
+    // Same shape as the line-room bug: a per-entry cap says nothing about how
+    // many entries there are, and save() merges one player into whatever the room
+    // already holds. Without a second cap the room grows one request at a time.
+    for (let player = 1; player <= 110; player += 1) {
+      await request.post('/index.php?view=live/overlays/notes', {
+        data: { code: 'FFFFF', player, text: `note ${player}` },
+      });
+    }
+    const body = await (await request.get(
+      '/index.php?view=live/overlays/notes&code=FFFFF')).json();
+    expect(Object.keys(body.players).length).toBeLessThanOrEqual(100);
+  });
+
   test('one line room cannot accumulate unbounded teams', async ({ request }) => {
     // saveTeam() merges a team into whatever the room holds. MAX_PER_TEAM caps
     // one team's array and says nothing about how many teams there are, so

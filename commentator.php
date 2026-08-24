@@ -32,8 +32,10 @@ if (!defined('UO_ROUTED_VIEW')) {
 
 require_once __DIR__ . '/../conf/LocalConfig.php';
 require_once __DIR__ . '/shared/lines.php';
+require_once __DIR__ . '/shared/notes.php';
 
 use Overlays\Lines;
+use Overlays\Notes;
 
 $gameId = filter_input(INPUT_GET, 'game', FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
 
@@ -411,6 +413,59 @@ try {
     .sheet footer { display: flex; gap: .6rem; align-items: center; margin-top: 1rem; }
     .sheet footer .barbtn { margin-left: auto; }
 
+    /* ---- prepared notes ----
+       A talking-points box, filled in before the game from whatever the teams
+       hand over. Monospace would be wrong: this is prose to be read aloud, not
+       a code. It gets real height because a two-line box invites two lines. */
+    .note textarea { width: 100%; min-height: 6.5rem; resize: vertical; font: inherit;
+                     font-size: .92rem; line-height: 1.45; padding: .5rem .6rem;
+                     background: var(--bg); color: var(--ink); border: 1px solid var(--line);
+                     border-radius: 5px; }
+    .note textarea:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+    .note .meta { display: flex; gap: .6rem; align-items: baseline; margin-top: .3rem;
+                  font-size: .76rem; color: var(--ink-mute); }
+    .note .meta .state { margin-left: auto; }
+    .note .meta .state.saved { color: var(--ok); }
+    .note .meta .state.failed { color: var(--bad); }
+    /* ---- bio export / import ----
+       Prep-time actions, so they sit under the roster rather than in the
+       toolbar: nobody does this during a point. */
+    .flashline { display: none; }
+    .flashline.on { display: block; margin: .6rem 0 0; padding: .5rem .8rem;
+                    background: var(--accent-soft); border-left: 3px solid var(--accent);
+                    border-radius: 4px; font-size: .88rem; font-weight: 600; }
+    .biobar { display: flex; gap: .4rem; align-items: center; flex-wrap: wrap;
+              margin-top: .5rem; font-size: .8rem; }
+    .biobar .barbtn { font-size: .76rem; padding: .3rem .6rem; }
+    .biobar input[type="file"] { position: absolute; width: 1px; height: 1px;
+                                 padding: 0; margin: -1px; overflow: hidden;
+                                 clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+    /* The import preview. Every row the file did not apply is listed: a silent
+       import is how the wrong biography ends up being read out. */
+    .tally { display: grid; grid-template-columns: auto 1fr; gap: .2rem .7rem;
+             font-size: .9rem; font-variant-numeric: tabular-nums; margin: .6rem 0; }
+    .tally .n { font-weight: 700; text-align: right; }
+    .tally .n.no { color: var(--bad); }
+    .tally .n.yes { color: var(--ok); }
+    .rejects { max-height: 30vh; overflow-y: auto; margin-top: .4rem;
+               border-top: 1px solid var(--sunk); }
+    .rejects div { padding: .3rem 0; border-bottom: 1px solid var(--sunk);
+                   font-size: .84rem; display: flex; gap: .6rem; }
+    .rejects .ln { color: var(--ink-mute); font-variant-numeric: tabular-nums;
+                   min-width: 3.4rem; }
+    .rejects .why { color: var(--bad); }
+
+    /* The roster marker for "this player has a note". A dot, not a word: the
+       column is 28 rows tall and the name is what the eye is scanning for.
+
+       --link, not --accent. Accent is a FILL colour — it is the background of a
+       pressed button with white text on it — so in the night theme it is a dark
+       blue that measured 2.59:1 against the panel behind this dot. That fails the
+       3:1 floor for a meaningful graphic, and this dot is the only visual signal
+       that a player has anything written about them. --link is the token that is
+       legible against the page in both themes, which is exactly what is wanted. */
+    .roster .who .dot { color: var(--link); font-weight: 700; margin-left: .3rem; }
+
     /* Room code: shown, not asked for. A random one is generated on first load
        so two commentary pairs at one tournament cannot both pick "12345". */
     .sync { display: flex; align-items: center; gap: .4rem; font-size: .8rem; }
@@ -418,6 +473,9 @@ try {
                   border-radius: 4px; padding: .3rem .45rem; font-weight: 700;
                   letter-spacing: .12em; text-transform: uppercase;
                   font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+    /* Masked by default; this reveals it long enough to read out. Small, because
+       it is pressed once a game and sits beside the field it belongs to. */
+    .sync .peek { padding: .25rem .5rem; font-size: .72rem; }
     /* A 28-player squad needs its own scroll; the panel header stays visible. */
     .scroll { max-height: 46vh; overflow-y: auto; overscroll-behavior: contain; }
     .scroll table { width: 100%; }
@@ -463,6 +521,12 @@ try {
 </div>
 </div>
 
+<!--
+  Import result. A live region rather than an alert: it confirms something the
+  reader just asked for and must not interrupt them to do it.
+-->
+<div id="importFlash" class="flashline" role="status" aria-live="polite"></div>
+
 <main id="body"><p class="muted">Loading…</p></main>
 
 <div class="sheet" id="sheet" role="dialog" aria-modal="true" aria-labelledby="sheetName">
@@ -472,6 +536,9 @@ try {
 <script src="<?= $base ?>/live/overlays/shared/possession.js"></script>
 <script src="<?= $base ?>/live/overlays/shared/ratio.js"></script>
 <script src="<?= $base ?>/live/overlays/shared/tracking.js"></script>
+<script src="<?= $base ?>/live/overlays/shared/secret.js"></script>
+<script src="<?= $base ?>/live/overlays/shared/csv.js"></script>
+<script src="<?= $base ?>/live/overlays/shared/bios.js"></script>
 <script>
 (function () {
     'use strict';
@@ -482,9 +549,12 @@ try {
         gameId: <?= $json($gameId ?: null) ?>,
         mode: <?= $json($mode) ?>,
         linesUrl: <?= $json($base . '/index.php?view=live/overlays/lines') ?>,
+        notesUrl: <?= $json($base . '/index.php?view=live/overlays/notes') ?>,
         possessionUrl: <?= $json($base . '/index.php?view=live/overlays/possession') ?>,
         suggestedCode: <?= $json($suggestedCode) ?>,
-        codeLength: <?= (int) Lines::CODE_LENGTH ?>
+        codeLength: <?= (int) Lines::CODE_LENGTH ?>,
+        noteMax: <?= (int) Notes::MAX_TEXT ?>,
+        noteDays: <?= (int) round(Notes::STALE_SECONDS / 86400) ?>
     };
 
     var el = function (tag, cls, text) {
@@ -836,8 +906,18 @@ try {
             var who = el('td', 'who');
             var btn = el('button', null, p.name);
             btn.type = 'button';
-            btn.title = 'Details';
+            // Say whether opening this player is worth it. The notes live in the
+            // detail overlay, which means they are invisible from the list —
+            // and a commentator is not going to open 28 players one at a time to
+            // find out which three have anything written about them.
+            //
+            // Presence only, never a preview: the marker is scanned down a
+            // column of 28 rows, and the name is what the eye is there for.
             btn.addEventListener('click', function () { openSheet(p, side); });
+            // The marker is stamped by markNote() rather than built here, so the
+            // same code runs on first render and on every later change.
+            btn.setAttribute('data-player', p.id);
+            markNote(btn, noteFor(p.id));
             who.append(btn);
             tr.append(who);
 
@@ -857,6 +937,7 @@ try {
         panel.append(el('p', 'muted',
             list.length + ' players · G / A / Pts are this game, Tot is the tournament'
             + (blocks ? ', Blk is tournament blocks from completed games' : '')));
+        panel.append(bioBar(side));
         return panel;
     }
 
@@ -885,6 +966,360 @@ try {
         var cols = el('div', 'cols');
         sides().forEach(function (s) { cols.append(rosterPanel(s)); });
         body.append(cols);
+    }
+
+    /* ---------------------------------------------------------------
+       Prepared notes
+
+       Talking points about a player, typed in before the game and shared with
+       whoever holds the room code.
+
+       This is the lowest-hanging thing on the page. `docs/COMMENTATOR.md`
+       section 5 asks upstream for structured, self-declared fields on the player
+       profile, and that remains the right destination — but at a smaller
+       tournament the commentary position exists only for the finals, and the way
+       material actually arrives is that somebody asks the two teams for
+       something to say and is handed it an hour before the pull. There is no
+       UltiOrganizer surface for that and there will not be one before the game
+       starts, so the commentator types it here.
+
+       Keyed by PLAYER and by CODE, never by game: a note is worth the same in
+       the final as in the quarter, and a desk that had to retype everything each
+       round would stop doing it by lunchtime.
+       --------------------------------------------------------------- */
+
+    /** player id -> {text, by, at}, as last read from the room. */
+    var notes = {};
+    var lastNoteWrite = 0;
+
+    function noteFor(playerId) {
+        return notes[String(playerId)] || null;
+    }
+
+    /**
+     * Stamp one roster button with whether that player has a note.
+     *
+     * Presence only, never a preview: this is scanned down a column of 28 rows
+     * and the name is what the eye is there for. The dot is decorative and says
+     * so; the meaning is carried in text as well, because colour and shape reach
+     * neither a screen reader nor a reader who cannot separate the two hues.
+     */
+    function markNote(btn, note) {
+        var existing = btn.querySelector('.dot');
+        var spoken = btn.querySelector('.sr-only');
+        btn.title = note ? 'Details · has talking points' : 'Details';
+        if (note && !existing) {
+            var dot = el('span', 'dot', '●');
+            dot.setAttribute('aria-hidden', 'true');
+            btn.append(dot);
+            btn.append(el('span', 'sr-only', ' — has talking points'));
+        } else if (!note && existing) {
+            existing.remove();
+            if (spoken) { spoken.remove(); }
+        }
+    }
+
+    /**
+     * Bring every visible marker up to date, in place.
+     *
+     * Deliberately not a re-render. The roster scrolls inside its panel and a
+     * 28-player squad is taller than the panel, so rebuilding it to add one dot
+     * would throw the reader back to the top of the list — and the moment this
+     * runs is exactly when somebody has just finished writing a note and is
+     * looking at the row they wrote it for.
+     */
+    function syncNoteMarkers() {
+        var buttons = document.querySelectorAll('.roster td.who button[data-player]');
+        Array.prototype.forEach.call(buttons, function (btn) {
+            markNote(btn, noteFor(btn.getAttribute('data-player')));
+        });
+    }
+
+    function pullNotes() {
+        if (!syncCode) { return; }
+        // A local edit wins for a moment, so a poll in flight cannot pull the
+        // text out from under somebody who has just typed it.
+        if (Date.now() - lastNoteWrite < 2500) { return; }
+
+        fetch(CONFIG.notesUrl + '&code=' + encodeURIComponent(syncCode),
+            { credentials: 'same-origin' })
+            .then(function (r) { return r.ok ? r.json() : null; })
+            .catch(function () { return null; })
+            .then(function (b) {
+                if (!b || !b.players) { return; }
+                notes = b.players;
+                syncNoteMarkers();
+            });
+    }
+
+    /**
+     * Save one player's note.
+     *
+     * Best-effort, like the line push: sharing failing must not cost the
+     * commentator the text in front of them. `onDone` reports which way it went
+     * so the sheet can say so rather than leaving someone guessing whether their
+     * partner will see it.
+     */
+    function pushNote(playerId, text, onDone) {
+        if (!syncCode || !playerId) { return; }
+        lastNoteWrite = Date.now();
+        var key = String(playerId);
+        var trimmed = String(text || '').trim();
+
+        // Reflect it locally first. The roster marker and a sheet reopened
+        // straight away should agree with what was just typed, whatever the
+        // network is doing.
+        if (trimmed) {
+            notes[key] = { text: trimmed, by: myName, at: Math.floor(Date.now() / 1000) };
+        } else {
+            delete notes[key];
+        }
+        // Immediately, not on the next poll. The marker is the only sign from the
+        // roster that a note exists, and a commentator who has just written one
+        // and closed the sheet should not have to wonder for fifteen seconds
+        // whether it took.
+        syncNoteMarkers();
+
+        fetch(CONFIG.notesUrl, {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                code: syncCode, player: Number(playerId),
+                text: trimmed, by: myName
+            })
+        })
+            .then(window.Tracking.readJson)
+            .then(function (b) {
+                if (b && b.players) { notes = b.players; }
+                if (onDone) { onDone(true); }
+            })
+            .catch(function () { if (onDone) { onDone(false); } });
+    }
+
+    /* ---------------------------------------------------------------
+       The bio round trip
+
+           export CSV (identifier + name, empty prompt columns)
+             -> the team puts it in a shared sheet
+             -> each player fills in their own row
+             -> export CSV
+             -> import here
+
+       The value of the round trip is that the PLAYER writes their own entry:
+       self-declared rather than second-hand (§5), and a real chance to adapt or
+       remove it before the game. The decisions live in shared/bios.js, tested
+       directly, because "which player does this row name" is a question asked
+       about a file an entire team could edit.
+       --------------------------------------------------------------- */
+
+    function bioFileName(side) {
+        var name = (side.team.name || 'team').toLowerCase()
+            .replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+        return (name || 'team') + '-bios.csv';
+    }
+
+    function exportBios(side) {
+        var rows = window.Bios.exportRows(rosterByNumber(side));
+        var text = window.Csv.stringify(window.Bios.exportHeaders(), rows);
+        // A Blob and a temporary link: the file is built here and never goes near
+        // the server, which is also why this works with the network down.
+        var blob = new Blob([text], { type: 'text/csv;charset=utf-8' });
+        var url = URL.createObjectURL(blob);
+        var a = document.createElement('a');
+        a.href = url;
+        a.download = bioFileName(side);
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        window.setTimeout(function () { URL.revokeObjectURL(url); }, 0);
+    }
+
+    /** What this desk has already written, as plain text per player id. */
+    function notesAsText() {
+        var out = {};
+        Object.keys(notes).forEach(function (k) { out[k] = notes[k].text; });
+        return out;
+    }
+
+    function importBios(side, input) {
+        var file = input.files && input.files[0];
+        if (!file) { return; }
+        var reader = new FileReader();
+        reader.onerror = function () {
+            input.value = '';
+            openImportPreview(side, { fatal: 'That file could not be read.' });
+        };
+        reader.onload = function () {
+            // Cleared so that picking the SAME file again fires another change
+            // event -- otherwise a reader who fixes their spreadsheet and
+            // re-exports it appears to have a dead button.
+            input.value = '';
+            var parsed = window.Csv.parse(String(reader.result || ''));
+            var report = window.Bios.match(parsed, rosterByNumber(side), notesAsText());
+            openImportPreview(side, report);
+        };
+        // UTF-8, which is what every spreadsheet exports and what the BOM in our
+        // own export declares.
+        reader.readAsText(file);
+    }
+
+    /**
+     * Show what the file would do, and only then offer to do it.
+     *
+     * The failure this exists for is a squad list imported against the wrong
+     * team: every row would carry a real name and a real-looking biography, and
+     * the first sign of trouble would be a commentator reading one out. A tally
+     * makes it obvious in the moment.
+     */
+    function openImportPreview(side, report) {
+        var card = document.getElementById('sheetCard');
+        card.replaceChildren();
+
+        var title = el('h3', null, 'Import for ' + (side.team.name || 'this team'));
+        title.id = 'sheetName';
+        card.append(title);
+
+        if (report.fatal) {
+            card.append(el('p', 'err', report.fatal));
+        } else {
+            card.append(el('div', 'sub',
+                report.total + (report.total === 1 ? ' row' : ' rows') + ' read'
+                + (report.contentHeaders.length
+                    ? ' · ' + report.contentHeaders.join(' · ')
+                    : '')));
+
+            var tally = el('div', 'tally');
+            var line = function (n, label, cls) {
+                tally.append(el('div', 'n' + (cls ? ' ' + cls : ''), String(n)));
+                tally.append(el('div', null, label));
+            };
+            line(report.accepted.length, 'to import', report.accepted.length ? 'yes' : '');
+            if (report.kept.length) {
+                line(report.kept.length, 'already written here, kept');
+            }
+            if (report.empty) { line(report.empty, 'blank in the file, nothing to import'); }
+            if (report.rejected.length) {
+                line(report.rejected.length, 'not imported', 'no');
+            }
+            card.append(tally);
+
+            if (report.rejected.length) {
+                card.append(el('h4', null, 'Not imported'));
+                var list = el('div', 'rejects');
+                report.rejected.forEach(function (r) {
+                    var row = el('div');
+                    row.append(el('span', 'ln', 'row ' + r.line));
+                    row.append(el('span', null, r.name || '(no name)'));
+                    row.append(el('span', 'why', r.why));
+                    list.append(row);
+                });
+                card.append(list);
+                card.append(el('p', 'muted',
+                    'A row is refused when its identifier is not on this roster, or when '
+                    + 'the name beside it does not match. Both mean the row cannot safely '
+                    + 'say who it is about.'));
+            }
+        }
+
+        var foot = el('footer');
+        var close = el('button', 'barbtn', report.fatal ? 'Close' : 'Cancel');
+        close.type = 'button';
+        close.addEventListener('click', closeSheet);
+
+        if (!report.fatal && report.accepted.length) {
+            var apply = el('button', 'barbtn primary',
+                'Import ' + report.accepted.length);
+            apply.type = 'button';
+            apply.addEventListener('click', function () {
+                apply.disabled = true;
+                apply.textContent = 'Importing…';
+                applyImport(report.accepted, function (ok, written) {
+                    if (!ok) {
+                        apply.disabled = false;
+                        apply.textContent = 'Retry';
+                        card.append(el('p', 'err', 'Nothing was imported — the room '
+                            + 'could not be written.'));
+                        return;
+                    }
+                    closeSheet();
+                    flashCount(written);
+                });
+            });
+            foot.append(apply);
+        }
+        foot.append(close);
+        card.append(foot);
+
+        sheet.classList.add('open');
+        lastFocus = document.activeElement;
+        close.focus();
+    }
+
+    /**
+     * One request for the whole import.
+     *
+     * Not a loop of single saves: the store throttles repeated writes to a room,
+     * which is right for debounced typing and would silently discard most of a
+     * twenty-eight player import while reporting success.
+     */
+    function applyImport(accepted, done) {
+        fetch(CONFIG.notesUrl, {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                code: syncCode,
+                by: myName,
+                players: accepted.map(function (a) {
+                    return { player: a.player, text: a.text };
+                })
+            })
+        })
+            .then(window.Tracking.readJson)
+            .then(function (b) {
+                if (b && b.players) { notes = b.players; }
+                syncNoteMarkers();
+                done(true, (b && b.written) || 0);
+            })
+            .catch(function () { done(false, 0); });
+    }
+
+    function flashCount(written) {
+        var box = document.getElementById('importFlash');
+        if (!box) { return; }
+        box.textContent = written + (written === 1 ? ' note imported.' : ' notes imported.');
+        box.className = 'flashline on';
+        window.setTimeout(function () { box.className = 'flashline'; }, 6000);
+    }
+
+    function bioBar(side) {
+        var bar = el('div', 'biobar');
+
+        var out = el('button', 'barbtn', 'Export CSV');
+        out.type = 'button';
+        out.title = 'One row per player, with an identifier and empty columns to fill in. '
+            + 'Share it with the team and let the players write their own.';
+        out.addEventListener('click', function () { exportBios(side); });
+        bar.append(out);
+
+        // A visually-hidden file input with a label styled as a button: the input
+        // stays keyboard-reachable and announced, which a div-plus-click is not.
+        var id = 'bioimport-' + side.key;
+        var input = document.createElement('input');
+        input.type = 'file';
+        input.id = id;
+        input.accept = '.csv,text/csv';
+        input.addEventListener('change', function () { importBios(side, input); });
+
+        var label = el('label', 'barbtn', 'Import CSV');
+        label.setAttribute('for', id);
+        label.title = 'Read the filled-in export back in. Nothing is written until '
+            + 'you have seen what it would do.';
+
+        bar.append(input, label);
+        bar.append(el('span', 'muted', 'players fill it in; import fills empty notes only'));
+        return bar;
     }
 
     /* ---------------------------------------------------------------
@@ -935,6 +1370,98 @@ try {
         return { goals: goals, assists: assists, callahans: callahans, partners: partners };
     }
 
+    /**
+     * The talking-points box for one player.
+     *
+     * Placed ABOVE the statistics, which is the opposite of how the sheet was
+     * built and deliberate. Before a game the numbers are mostly zeros and this
+     * is the only reason to open a player at all; during a game a commentator is
+     * reading the roster row, not this dialog. So the thing the sheet is opened
+     * for goes at the top.
+     *
+     * Saved on a pause in typing rather than on a button, because there is no
+     * good failure mode for a Save button here: a commentator who has typed a
+     * paragraph and closes the sheet has lost it, and they will not find out
+     * until the moment they wanted to read it out.
+     */
+    function noteBox(p) {
+        var box = el('div', 'note');
+        var existing = noteFor(p.id);
+
+        box.append(el('h4', null, 'Talking points'));
+
+        var area = document.createElement('textarea');
+        area.value = existing ? existing.text : '';
+        area.maxLength = CONFIG.noteMax;
+        area.placeholder = 'What the team told you about this player — background, '
+            + 'other sports, how they came to ultimate, anything worth saying on air.';
+        area.setAttribute('aria-label', 'Prepared talking points for ' + p.name);
+        box.append(area);
+
+        var meta = el('div', 'meta');
+        var who = el('span', 'by');
+        var stateLabel = el('span', 'state');
+        meta.append(who, stateLabel);
+        box.append(meta);
+
+        /**
+         * Say who wrote it and when.
+         *
+         * These are somebody else's words about a named person, and a
+         * commentator about to repeat them on air should be able to tell whether
+         * they came from their partner an hour ago or from themselves last week.
+         * The same provenance argument section 5a makes for the upstream fields,
+         * applied to a note that has no verification path whatever.
+         */
+        function renderMeta() {
+            var n = noteFor(p.id);
+            if (!n) {
+                // Say both things up front. Somebody typing notes about a named
+                // player should know who can read them and that they do not last
+                // — an expiry nobody was told about is indistinguishable from
+                // losing data.
+                who.textContent = 'Shared with anyone holding the room code. '
+                    + 'Deleted ' + CONFIG.noteDays + ' days after the last edit.';
+                return;
+            }
+            var when = n.at ? new Date(n.at * 1000) : null;
+            who.textContent = 'Written by ' + (n.by || 'someone on this code')
+                + (when ? ' · ' + when.toLocaleDateString() + ' '
+                    + when.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                    : '');
+        }
+        renderMeta();
+
+        var timer = null;
+        var pending = false;
+
+        function flush() {
+            if (!pending) { return; }
+            pending = false;
+            if (timer) { window.clearTimeout(timer); timer = null; }
+            stateLabel.className = 'state';
+            stateLabel.textContent = 'Saving…';
+            pushNote(p.id, area.value, function (ok) {
+                stateLabel.className = 'state ' + (ok ? 'saved' : 'failed');
+                stateLabel.textContent = ok ? 'Saved' : 'Not shared — kept on this screen';
+                renderMeta();
+            });
+        }
+
+        area.addEventListener('input', function () {
+            pending = true;
+            stateLabel.className = 'state';
+            stateLabel.textContent = 'Unsaved';
+            if (timer) { window.clearTimeout(timer); }
+            timer = window.setTimeout(flush, 900);
+        });
+        // Blur and close are both flushes rather than saves in their own right,
+        // so a fast typist who closes the sheet mid-pause still keeps the text.
+        area.addEventListener('blur', flush);
+        box.flushNote = flush;
+        return box;
+    }
+
     function openSheet(p, side) {
         var card = document.getElementById('sheetCard');
         card.replaceChildren();
@@ -943,6 +1470,8 @@ try {
         card.append(name);
         card.append(el('div', 'sub',
             [side.team.name, p.division].filter(Boolean).join(' · ')));
+
+        card.append(noteBox(p));
 
         // Blocks earn a column here on the same condition as the roster, so the
         // sheet and the list never disagree about whether the number exists.
@@ -1051,6 +1580,11 @@ try {
 
     function closeSheet() {
         if (!sheet.classList.contains('open')) { return; }
+        // Closing is the last chance to keep what was typed. A commentator who
+        // types a paragraph and hits Escape mid-pause must not lose it, and the
+        // 900ms debounce means there is very often something still pending.
+        var box = sheet.querySelector('.note');
+        if (box && box.flushNote) { box.flushNote(); }
         sheet.classList.remove('open');
         if (lastFocus && lastFocus.focus) { lastFocus.focus(); }
         lastFocus = null;
@@ -1058,9 +1592,15 @@ try {
 
     // Keep Tab inside the dialog while it is open. Without this, tabbing walks
     // out into the roster behind it, which is still visible but not reachable.
+    //
+    // The textarea has to be in this list, not just in the DOM. It is focusable
+    // either way, but the trap sends focus back to `first` on leaving `last`, so
+    // anything the selector misses becomes unreachable by keyboard entirely —
+    // which for the notes box would mean the one part of this dialog anybody
+    // types into could only be reached with a mouse.
     sheet.addEventListener('keydown', function (e) {
         if (e.key !== 'Tab') { return; }
-        var focusable = sheet.querySelectorAll('a[href], button:not([disabled])');
+        var focusable = sheet.querySelectorAll('a[href], button:not([disabled]), textarea');
         if (!focusable.length) { return; }
         var first = focusable[0], last = focusable[focusable.length - 1];
         if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
@@ -1503,6 +2043,22 @@ try {
      * Regenerating on every load would be worse than useless: a commentator who
      * reloaded mid-game would silently leave the room and stop seeing their
      * partner's changes, with nothing on screen to say so.
+     *
+     * PER GAME, and a new game gets a NEW random code. An earlier revision had a
+     * game with no code of its own inherit the last code this browser used, so
+     * that prepared notes — which are keyed by the code alone — would follow a
+     * desk from one round to the next. That was the wrong trade, for a reason
+     * that has nothing to do with notes: this same code is the possession-write
+     * credential (see the Tracking client above), and possession reaches air.
+     * Making it sticky across fixtures means a desk nominated to write possession
+     * on one game arrives at the next already holding the code, so a convenience
+     * for a private reference panel had quietly widened what can change a
+     * broadcast. The gate should match the consequence, and here two different
+     * consequences ride one value.
+     *
+     * Carrying notes between games is therefore a deliberate act: type the code
+     * you used before. Explicitly re-entering it is the same gesture as sharing
+     * it with a partner, and it cannot happen by accident.
      */
     var syncCode = storedCode();
     if (!syncCode) {
@@ -1578,7 +2134,8 @@ try {
         input.spellcheck = false;
         input.autocapitalize = 'characters';
         input.title = 'Share this code with the other commentator, or type theirs. '
-            + 'The room is this code plus this game.';
+            + 'It is what protects the line selection and the prepared notes.';
+        input.setAttribute('aria-label', 'Sync code');
         input.addEventListener('change', function () {
             var v = input.value.trim().toUpperCase();
             if (v.length !== CONFIG.codeLength) { input.value = syncCode; return; }
@@ -1586,10 +2143,21 @@ try {
             rememberCode(v);
             input.value = v;
             state.line = {};       // a different room is a different selection
+            notes = {};            // ... and a different set of prepared notes
             pullLines();
+            pullNotes();
             render();
         });
         box.append(input);
+
+        // Masked by default. A commentary booth is one of the most-walked-past
+        // screens at a tournament, and this code is what protects the line
+        // selection and the prepared notes — which are notes about named
+        // players. A five-character code on permanent display is not a namespace
+        // nobody can guess; it is a published one.
+        var peek = el('button', 'barbtn peek');
+        window.Secret.guard(input, peek, { label: 'sync code' });
+        box.append(peek);
     }
 
     function pickPanel(side) {
@@ -2082,6 +2650,12 @@ try {
         // a line changes far more often than a score.
         pullLines();
         setInterval(pullLines, 2000);
+        // Prepared notes change while two people split the squads before a game
+        // and essentially never once it starts, so this is the slowest poll on
+        // the page. Nothing here is time-critical: a note arriving fifteen
+        // seconds late costs nobody anything.
+        pullNotes();
+        setInterval(pullNotes, 15000);
         // Possession is the fastest-moving thing on this page and the only one
         // that reaches air, so it gets its own tick rather than riding the 10s
         // game refresh.

@@ -41,6 +41,38 @@ test.describe('commentator', () => {
     }
   });
 
+  test('the notes box and its roster marker clear AAA too', async ({ page }) => {
+    // The marker was first drawn in --accent, which is a FILL colour: it is the
+    // background of a pressed button, with white text on top. Against the panel
+    // it measured 2.59:1 in the night theme -- below even the 3:1 floor for a
+    // meaningful graphic, for the only visual sign that a player has a note.
+    // Pin the room. Without this the page generates a fresh random code per run
+    // and every run leaves a new room behind on disk.
+    await page.evaluate((g) => {
+      localStorage.setItem(`uo-lines-code-${g}`, 'ZTEST');
+    }, GAME_ID);
+    await page.reload();
+    await expect(page.locator('.roster').first()).toBeVisible();
+
+    await page.locator('.roster td.who button').first().click();
+    await page.locator('#sheet .note textarea').fill('contrast probe');
+    await page.locator('#sheet .note textarea').blur();
+    await expect(page.locator('#sheet .note .state')).toHaveText('Saved');
+    await page.keyboard.press('Escape');
+
+    for (const sel of ['.note textarea', '.note .meta .by', '.roster .who .dot']) {
+      const ratio = await contrastOf(page, sel);
+      expect(ratio, `${sel} must be measurable`).not.toBeNull();
+      expect(ratio, `${sel} contrast`).toBeGreaterThanOrEqual(AAA);
+    }
+
+    // Leave the room as it was found; this spec shares its code with any desk.
+    await page.locator('.roster td.who button').first().click();
+    await page.locator('#sheet .note textarea').fill('');
+    await page.locator('#sheet .note textarea').blur();
+    await expect(page.locator('#sheet .note .state')).toHaveText('Saved');
+  });
+
   test('the theme choice survives a reload and applies before first paint', async ({ page }) => {
     await page.locator('#themeBtn').click();
     expect(await page.getAttribute('html', 'data-theme')).toBe('night');
