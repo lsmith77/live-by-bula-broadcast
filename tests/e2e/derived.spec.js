@@ -373,6 +373,30 @@ test.describe('the commentator link', () => {
   });
 });
 
+test.describe('how a ratio is written', () => {
+  const R = require('../../shared/ratio.js');
+
+  test('names the majority side only, so neither category is printed first', () => {
+    // Writing both halves forces a decision about ordering that has no good
+    // answer. The majority side identifies the ratio on its own.
+    expect(R.short('4MMP/3FMP')).toBe('4MMP');
+    expect(R.short('3MMP/4FMP')).toBe('4FMP');
+    expect(R.short('3MMP/2FMP')).toBe('3MMP');
+    expect(R.short('2MMP/3FMP')).toBe('3FMP');
+  });
+
+  test('is one rule, shared, so the surfaces cannot drift', () => {
+    // The pattern and the pair were duplicated between the commentator page and
+    // the progression card, which is how the card came to be printing the long
+    // form after the commentator had moved to the short one.
+    expect(Array.from({ length: 13 }, (_, i) => R.slot(i + 1)).join('')).toBe('ABBAABBAABBAA');
+    expect(R.pair('outdoor')).toEqual(['4MMP/3FMP', '3MMP/4FMP']);
+    expect(R.pair('beach')).toEqual(['3MMP/2FMP', '2MMP/3FMP']);
+    expect(R.isMixed('Mixed Pool')).toBe(true);
+    expect(R.isMixed('Open')).toBe(false);
+  });
+});
+
 test.describe('the commentator panel', () => {
   test.beforeEach(async ({ page }) => { await loginAsAdmin(page, test); });
 
@@ -763,9 +787,12 @@ test.describe('gender ratio', () => {
       // home 3 away 2; B points are 2, 3, 6, 7 -> 2 all.
       const rows = panel.locator('.abbasplitrow');
       await expect(rows).toHaveCount(2);
-      await expect(rows.nth(0)).toContainText('4MMP/3FMP');
+      // One side, not two: `4MMP` says 4MMP/3FMP without deciding which
+      // category gets printed first.
+      await expect(rows.nth(0)).toContainText('4MMP');
+      await expect(rows.nth(0)).not.toContainText('/');
       await expect(rows.nth(0).locator('.sc')).toHaveText('3 – 2');
-      await expect(rows.nth(1)).toContainText('3MMP/4FMP');
+      await expect(rows.nth(1)).toContainText('4FMP');
       await expect(rows.nth(1).locator('.sc')).toHaveText('2 – 2');
     });
   });
@@ -779,9 +806,11 @@ test.describe('gender ratio', () => {
 
       const panel = page.locator('.abba');
       await expect(panel).toBeVisible({ timeout: 10000 });
-      // No ratio named anywhere until somebody sets it.
-      await expect(panel).toContainText('Ratio on point 1');
+      // No ratio named anywhere until somebody sets it, and the panel points at
+      // the control rather than carrying one — the selector is in the toolbar.
+      await expect(panel).toContainText(/ratio for point 1|ratio for point 1 yet/i);
       await expect(panel.locator('.abbasplitrow')).toHaveCount(0);
+      await expect(page.locator('#tracking .tsel')).toHaveCount(1);
     });
   });
 
