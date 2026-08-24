@@ -682,6 +682,10 @@ $json = static fn ($value): string => json_encode($value, JSON_UNESCAPED_SLASHES
                 text: outcome.kind === 'brk' ? 'Break' : (outcome.clean ? 'Clean hold' : 'Hold'),
                 cls: outcome.kind
             };
+        } else if (declaredStoppage()) {
+            // Above a timeout: if both are somehow live, the injury is the more
+            // important thing on screen and the one a viewer needs explained.
+            showing = { side: null, text: 'Injury stoppage', cls: 'timeout' };
         } else if (activeTimeout()) {
             // Above break chance on purpose: during a timeout nobody has the
             // disc, so claiming a break chance would be asserting something that
@@ -700,7 +704,9 @@ $json = static fn ($value): string => json_encode($value, JSON_UNESCAPED_SLASHES
         [['home', el.homeCallout], ['away', el.awayCallout]].forEach(function (pair) {
             var key = pair[0] === 'home' ? 'home' : 'visitor';
             var node = pair[1];
-            var active = showing && showing.side === key;
+            // A sideless callout paints in the home cell, centred by CSS.
+            var active = showing && (showing.side === key
+                || (showing.side === null && key === 'home'));
 
             var next = 'callout' + (active ? (showing.cls ? ' ' + showing.cls : '') : ' hide');
             var changed = node.className.replace(' enter', '') !== next;
@@ -714,7 +720,12 @@ $json = static fn ($value): string => json_encode($value, JSON_UNESCAPED_SLASHES
             }
         });
 
-        el.calloutRow.className = 'callout-row' + (showing ? '' : ' hide');
+        // A stoppage belongs to neither team, so its row is centred rather than
+        // sitting over one side. Set here with the rest of the class, not before
+        // it: this assignment replaces the whole attribute.
+        el.calloutRow.className = 'callout-row'
+            + (showing ? '' : ' hide')
+            + (showing && showing.side === null ? ' centred' : '');
     }
 
     function setPossession(result, goals, gameEvents) {
@@ -784,218 +795,22 @@ $json = static fn ($value): string => json_encode($value, JSON_UNESCAPED_SLASHES
      */
     var live = { events: null, clockState: null, timeoutLen: 0 };
 
-    /** The stoppage in progress, if any. Window logic lives in shared/stoppage.js. */
+    /**
+     * A declared stoppage — an injury, or anything else halting play.
+     *
+     * Nothing in UltiOrganizer records these, so somebody flags it: the operator
+     * or a commentator holding the code, with the I key. Keyed by score, so it
+     * ends itself at the next goal rather than relying on anyone to clear it.
+     */
+    function declaredStoppage() {
+        if (!window.Stoppage || !possession.live || !shownScore) { return null; }
+        return window.Stoppage.declared(declared.stoppage, shownScore.home, shownScore.visitor);
+    }
+
+    /** The timeout in progress, if any. Window logic lives in shared/stoppage.js. */
     function activeTimeout() {
         if (!window.Stoppage || !live.clockState) { return null; }
         return window.Stoppage.active(live.events, elapsedSeconds(live.clockState), live.timeoutLen);
-    }
-
-    /** Is the defence holding the disc right now, according to the log? */
-    function breakChanceNow() {
-        if (!declared.enabled || !possession.live || !window.Possession || !shownScore) { return false; }
-        return window.Possession.defenceHasDisc(declared.events, shownScore.home, shownScore.visitor);
-    }
-
-    /**
-     * Was the point that just ended a CLEAN hold — the defence never touching it?
-     *
-     * Asked of the score BEFORE the goal, which is the point being classified.
-     * Only claimable while the log was actually running: an untracked point is
-     * unknown, not clean, and "Clean hold" is an assertion that over-claims if
-     * it is wrong. So it upgrades a hold only on positive evidence.
-     */
-    function wasCleanHold(latest, goals) {
-        if (!declared.enabled || !latest || latest.kind !== 'hold' || !window.Possession) { return false; }
-        var ordered = (goals || []).slice().sort(function (a, b) { return a.num - b.num; });
-        var home = 0, visitor = 0;
-        for (var i = 0; i < ordered.length; i += 1) {
-            if (ordered[i].num === latest.num) { break; }
-            if (Number(ordered[i].ishomegoal) === 1) { home += 1; } else { visitor += 1; }
-        }
-        var seen = window.Possession.eventsFor(declared.events,
-            window.Possession.scoreKey(home, visitor)).length > 0;
-        return seen && !window.Possession.defenceTouched(declared.events, home, visitor);
-    }
-    var lastGoalNum = null;
-
-    /** Restart a CSS animation that is already on the element. */
-    function retrigger(node, cls) {
-        node.classList.remove(cls);
-        // Forcing layout is what makes the removal take effect before the re-add.
-        void node.offsetWidth;
-        node.classList.add(cls);
-    }
-
-    /**
-     * Classify the most recent goal as a hold or a break.
-     *
-     * Mirrors classifyPoints() in overlay-client.js: walk the goals in order,
-     * tracking who receives, and report the last one. Returns null when it
-     * cannot be known — no recorded starting offence, or a gap in the sequence.
-     */
-    function lastGoalOutcome(goals, gameEvents) {
-        var ordered = Array.isArray(goals) ? goals.slice().sort(function (a, b) {
-            return a.num - b.num;
-        }) : [];
-        if (ordered.length === 0) { return null; }
-
-        var receiving = startingOffence(gameEvents);
-        var expected = ordered[0].num;
-        var result = null;
-
-        for (var i = 0; i < ordered.length; i += 1) {
-            var g = ordered[i];
-            var scoredBy = Number(g.ishomegoal) === 1 ? 'home' : 'visitor';
-
-            result = (receiving === null || g.num !== expected)
-                ? null
-                : { side: scoredBy, kind: scoredBy === receiving ? 'hold' : 'brk', num: g.num };
-
-            receiving = scoredBy === 'home' ? 'visitor' : 'home';
-            expected = g.num + 1;
-        }
-        return result;
-    }
-
-    function paintCallouts() {
-        var showing;
-        if (outcome) {
-            showing = {
-                side: outcome.side,
-                text: outcome.kind === 'brk' ? 'Break' : (outcome.clean ? 'Clean hold' : 'Hold'),
-                cls: outcome.kind
-            };
-        } else if (activeTimeout()) {
-            // Above break chance on purpose: during a timeout nobody has the
-            // disc, so claiming a break chance would be asserting something that
-            // is not happening. It is also the more useful thing to say -- it
-            // explains why the picture has stopped moving.
-            showing = { side: activeTimeout().side, text: 'Timeout', cls: 'timeout' };
-        } else if (breakChanceNow() && possession.breaking) {
-            // A declared, transient event — the real thing, not the standing tag.
-            showing = { side: possession.breaking, text: 'Break chance', cls: 'brk chance' };
-        } else if (possession.live && possession.breaking) {
-            showing = { side: possession.breaking, text: 'On defence', cls: 'standing' };
-        } else {
-            showing = null;
-        }
-
-        [['home', el.homeCallout], ['away', el.awayCallout]].forEach(function (pair) {
-            var key = pair[0] === 'home' ? 'home' : 'visitor';
-            var node = pair[1];
-            var active = showing && showing.side === key;
-
-            var next = 'callout' + (active ? (showing.cls ? ' ' + showing.cls : '') : ' hide');
-            var changed = node.className.replace(' enter', '') !== next;
-
-            node.className = next;
-            if (active) {
-                node.textContent = showing.text;
-                // Only animate a tab that just appeared or just changed meaning,
-                // so a steady BREAK CHANCE does not re-pop on every poll.
-                if (changed) { retrigger(node, 'enter'); }
-            }
-        });
-
-        el.calloutRow.className = 'callout-row' + (showing ? '' : ' hide');
-    }
-
-    function setPossession(result, goals, gameEvents) {
-        var live = Number(result.isongoing) === 1;
-        shownScore = (result.homescore === undefined || result.homescore === null)
-            ? null
-            : { home: Number(result.homescore) || 0, visitor: Number(result.visitorscore) || 0 };
-        var offence = live ? currentOffence(goals, gameEvents) : null;
-        possession = {
-            live: live,
-            // The defending side is the one that would break by scoring.
-            breaking: offence === 'home' ? 'visitor' : (offence === 'visitor' ? 'home' : null)
-        };
-
-        // A goal that lands while the overlay is on air gets the outcome tab.
-        // On first paint the whole game history arrives at once, so the last
-        // goal is old news and must not be announced.
-        var latest = lastGoalOutcome(goals, gameEvents);
-        var num = latest ? latest.num : null;
-
-        if (painted && live && latest && num !== lastGoalNum) {
-            outcome = latest;
-            outcome.clean = wasCleanHold(latest, goals);
-            if (outcomeTimer) { clearTimeout(outcomeTimer); }
-            outcomeTimer = setTimeout(function () {
-                outcome = null;
-                paintCallouts();
-            }, FLASH_MS);
-        }
-        lastGoalNum = num;
-
-        if (!live) {
-            outcome = null;
-            if (outcomeTimer) { clearTimeout(outcomeTimer); outcomeTimer = null; }
-        }
-
-        paintCallouts();
-    }
-
-    /* ---------------------------------------------------------------------
-       Clock
-
-       UltiOrganizer stores an absolute start instant, so the clock is derived
-       locally and ticks every second rather than waiting on the 30s poll. The
-       arithmetic mirrors GameClockState() in lib/game.functions.php:1042:
-
-           elapsed = now - timer_start - timer_paused_duration
-           if paused: elapsed -= now - timer_pause_start
-
-       `timer_start` is unix SECONDS (written by time() at
-       lib/game.functions.php:2436), not milliseconds.
-       --------------------------------------------------------------------- */
-
-    // The elapsed time is measured against the server's clock, so a client whose
-    // clock is off by minutes would show a wrong game time. Every payload
-    // carries when the server generated it; the difference is the correction.
-    var serverSkew = 0;
-    var timer = null;
-
-    /**
-     * Enough of the live game to answer "is a timeout running right now".
-     *
-     * Set on every payload and read by the callout painter, which runs on the
-     * clock tick rather than only on the 30s poll -- a timeout that ended has to
-     * come off the air within a second or two of ending, not whenever the next
-     * fetch happens to land.
-     */
-    var live = { events: null, clockState: null, timeoutLen: 0 };
-
-    /**
-     * The timeout in progress, if there is one.
-     *
-     * The window is measured on the GAME clock, which handles both scorekeeping
-     * habits without needing to know which one is in use:
-     *
-     *   - Clock paused for the timeout (the common case): the game clock does
-     *     not advance, so the age stays put and the tab stays up for exactly as
-     *     long as play is stopped. The pause IS the window.
-     *   - Clock left running: the age grows and the tab drops off after the
-     *     configured timeout length.
-     *
-     * Only the most recent event counts. An earlier timeout in the same game is
-     * history, and a goal or a cap since means play restarted.
-     */
-    function activeTimeout() {
-        var events = live.events;
-        if (!Array.isArray(events) || !events.length || !live.clockState) { return null; }
-
-        var last = null;
-        events.forEach(function (e) {
-            if (last === null || Number(e.time) >= Number(last.time)) { last = e; }
-        });
-        if (!last || last.type !== 'timeout') { return null; }
-
-        var age = elapsedSeconds(live.clockState) - (Number(last.time) || 0);
-        if (age < 0 || age >= live.timeoutLen) { return null; }
-
-        return { side: Number(last.ishome) === 1 ? 'home' : 'visitor' };
     }
 
     function serverNow() {
