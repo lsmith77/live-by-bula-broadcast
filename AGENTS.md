@@ -23,8 +23,8 @@ Runtime code sits at the top level, because a routed view's path *is* its URL �
 | path | what |
 |---|---|
 | `scoreboard.php` `stage.php` `commentator.php` `index.php` | routed pages |
-| `show.php` `colors.php` `lines.php` | routed JSON endpoints |
-| `shared/` | CSS, the PHP stores behind those endpoints, and the JS modules every surface shares: `possession.js` `stoppage.js` `field.js` `ratio.js` `tracking.js` |
+| `show.php` `colors.php` `lines.php` `notes.php` | routed JSON endpoints |
+| `shared/` | CSS, the PHP stores behind those endpoints, and the JS modules every surface shares: `possession.js` `stoppage.js` `field.js` `ratio.js` `tracking.js` `secret.js` |
 | `conf/` | operator state written by the web server — **gitignored** |
 | `logos/` | per-installation team logos — **contents gitignored** |
 | `docs/` `tests/` `fixtures/` `install/` | not served to viewers |
@@ -40,7 +40,7 @@ Runtime code sits at the top level, because a routed view's path *is* its URL �
 - **Placement is non-exclusive; visibility is exclusive per slot.** Several cards may be *placed* in one position, armed and waiting; at most one may be *on air*. Switching one on takes the slot from the other.
 - **The store is the authority, not the UI.** `shared/show.php` drops unknown cards, cards in slots they do not fit, second-visible-in-a-slot, and anything under a fullscreen takeover. Never enforce a rule only in `index.php`.
 - **State that belongs to a game is stored per game.** A tournament runs several fields at once, so a single shared document lets one field silently destroy another's data and put it on the wrong scoreboard — both demonstrated before the possession store was keyed by game. Prefer a shape where the mistake cannot be written over a guard that every future reader has to remember.
-- **`LOCK_EX` on a temp file locks nothing.** The stores write via temp-file-and-rename, which gives *readers* atomicity — never half a document — and no mutual exclusion whatever, because each writer holds the lock on its own private temp file. A read-modify-write needs `flock` on a shared lock file across the whole cycle; all four stores now have one.
+- **`LOCK_EX` on a temp file locks nothing.** The stores write via temp-file-and-rename, which gives *readers* atomicity — never half a document — and no mutual exclusion whatever, because each writer holds the lock on its own private temp file. A read-modify-write needs `flock` on a shared lock file across the whole cycle. `show.php`, `colors.php`, `possession.php` and `notes.php` have one; **`lines.php` does not**, and its `saveTeam()` is a read-modify-write — two commentators saving lines for different teams in the same moment can still lose one of them. Known gap, not a design decision.
 - **Writes use optimistic locking.** Send the `rev` you read; the store rejects a stale one with 409 and returns current state to reapply.
 - **Never block a click to prevent a consequence — show the consequence first.** Displacing a card is usually intended. Warn on hover, on the card that would lose; do not disable.
 
@@ -72,7 +72,9 @@ Checked against real payloads, not assumed. `docs/STUDIO.md` §3 is the full acc
 
 ## Security
 
-- **`lines.php` is the only unauthenticated write in the project.** The room code is a namespace, not a credential — nothing there reaches a viewer. Everything else that writes is behind `SeasonAccess::isLiveAdminAuthenticated()`.
+- **`lines.php` and `notes.php` are the only unauthenticated writes in the project.** The room code is a namespace, not a credential — nothing there reaches a viewer. Everything else that writes is behind `SeasonAccess::isLiveAdminAuthenticated()`.
+- **A room code is never on permanent display.** `shared/secret.js` masks the code field on both the commentator page and the Studio, revealing on demand and re-masking after 30s. A namespace nobody can guess is what the unauthenticated stores rest on, and a five-character code printed on a booth screen all day is not unguessable — it is published. The auto-hide is the load-bearing part: "reveal, read it out, forget to hide it" is the actual failure mode. It also retires a whole class of argument — once the auto-hide makes "left revealed" unreachable, no feature can be justified by "otherwise they will leave it revealed". That reasoning is what put a redundant auto-reveal on the Studio's New code button.
+- **`notes.php` holds personal data, which none of the other stores do.** It is a commentator's own notes about named players, so three things are load-bearing rather than tidy: `conf/` stays default-closed so a note room is never a servable file, the rooms expire after 14 days, and every note records who wrote it. A guessed line room exposes a line-up; a guessed note room exposes what a desk wrote about people. Same mechanism, larger consequence. `docs/COMMENTATOR.md` §5a.
 - **Bound what the attacker controls, not what a caller is expected to send.** Both original caps in `lines.php` were wrong this way: rooms-per-game bounded nothing because game ids are unvalidated integers, and players-per-team bounded nothing because teams-per-room was uncapped. `docs/COMMENTATOR.md` §6 records both.
 - **Encode on output.** `json_encode` with `JSON_HEX_TAG | JSON_HEX_AMP` into `<script>`, `htmlspecialchars(..., ENT_QUOTES)` into markup, integers cast. `htmlspecialchars` does *not* protect a CSS context — validate those values instead.
 - **Whitelist every URL parameter** against a fixed list or a regex. Never interpolate one into a class attribute or a path.
@@ -129,7 +131,7 @@ Fixtures: `fixtures/dev-fixture.sql` (idempotent — two 28-player squads, one f
 - `docs/README.md` — index, install, URLs. Start here.
 - `docs/PLAN.md` — platform, request flow, payload field names, the scoreboard itself.
 - `docs/STUDIO.md` — the stage, slots, cards, show state, and the full account of what the data supports.
-- `docs/COMMENTATOR.md` — the second screen, line sharing, and the naming/pronunciation questions.
+- `docs/COMMENTATOR.md` — the second screen, line sharing, prepared talking points (§5a), the naming/pronunciation questions, and the federation idea (§8a).
 - `docs/POSTPRODUCTION.md` — adding an overlay to a game that was recorded without a switcher: alignment, anchors, and what is not solved.
 
 Keep them in sync with the code. When a doc and the code disagree, the doc is a bug — this project's docs are load-bearing, because most of what they record is *why* something is the way it is, which the code cannot say.

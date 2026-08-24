@@ -32,7 +32,7 @@ Everything reads through Live!'s public JSON API. **No overlay touches the datab
 
 There is no build step and nothing to compile. The directory is the installation.
 
-1. **Make `conf/` writable by the web server.** It holds operator-authored state — what is on air, kit colours, shared line selections — and is gitignored because it is per-installation runtime data, not code:
+1. **Make `conf/` writable by the web server.** It holds operator-authored state — what is on air, kit colours, shared line selections, and the commentary desk's prepared notes about players — and is gitignored because it is per-installation runtime data, not code. It must stay unreadable over HTTP as well as writable: the `.htaccess` here serves two files by name and 404s the rest, which is what keeps the notes out of a browser.
 
    ```
    mkdir -p live/overlays/conf

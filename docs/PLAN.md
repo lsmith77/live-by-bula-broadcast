@@ -257,13 +257,17 @@ What was learned building it, all verified by measurement rather than inspection
 
 ### Wanted from upstream
 
-These are asks against UltiOrganizer, not work in this repo. `STUDIO.md` §10 and `COMMENTATOR.md` §7 carry the full cases.
+These are asks against UltiOrganizer, not work in this repo. `STUDIO.md` §10 and `COMMENTATOR.md` §5, §6c and §8a carry the full cases.
 
 6. **Possession capture in the Scorekeeper.** Everything possession-derived here — break chance, clean holds, turnover counts — rests on somebody declaring it by hand during the broadcast. That works, and it is the wrong permanent home: it is unauthoritative, exists only for games being broadcast, and dies with the tab. **Possession data should land in UO, not in an overlay-side export** — which is why the log is deliberately not exportable (`STUDIO.md` §10.5). An export would make the wrong home permanent.
 7. **Per-game block counts through the API.** They exist in `uo_defense` and via `GameTeamDefenseBoard()`, but `GameManager` never exposes them, so a card cannot reach them at all. `entity=teams` carries only tournament totals, behind `ShowDefenseStats`.
 8. **Player photos**, which Live! has none of — `TEAM_PHOTOS_ENABLED` covers team photos only.
 9. **The first point's gender ratio, per mixed game.** It is circled on the paper scoresheet and never captured, so the ABBA pattern is derivable but its labels are not — and scoring splits cannot be aggregated across games, because "ratio A" means different things in different games. One column would make every mixed game ever played analysable by ratio. `COMMENTATOR.md` §6c.
 10. **Pronunciation hints and pronouns**, for the commentary position. Both are personal data the moment they exist, so they need a registration-side home with the consent handling that implies.
+11. **Structured commentary fields on the player profile** — short self-declared lines: other sports played, how they came to ultimate, occupation, interests, clubs played for before. `uo_player_profile` already holds `story` and `achievements`, but free text is the wrong shape for someone with four seconds between points. Same home, edit surface and `public` opt-in as item 10. `COMMENTATOR.md` §5.
+
+    **A commentator-authored version is built** (`COMMENTATOR.md` §5a): a free-text note per player, typed at the desk and shared by the room code, because at a smaller tournament the material arrives as whatever the teams hand over an hour before the pull. It does not satisfy this ask and is not meant to. It is a commentary desk's notebook — third-party authored, unverifiable, expiring after 14 days — where this asks for something the player wrote about themselves that follows them between tournaments. If anything, having the local version makes the upstream case easier to argue: it will show whether desks maintain this data at all.
+12. **Identifiers for people and clubs that survive leaving one installation**, so a career, a club history and a head-to-head record can span instances instead of ending at the edge of whichever database hosted the event. UltiOrganizer already separates the per-event row from the persistent entity in both directions — `uo_player.profile_id` → `uo_player_profile`, `uo_team.club` → `uo_club` — so this is that abstraction one level up rather than a new concept. The hard part is identity, not transport: a wrong merge attributes one player's career to another and links two people's records, so the identifier must be issued rather than derived, and a local `public` opt-in must never be read as a global one. Much larger than anything else on this list, and a UO-wide change to identity, privacy and the API before it is an overlay feature. `COMMENTATOR.md` §8a.
 
 ---
 
