@@ -49,6 +49,20 @@
      * into the next passage, which is the way this could put something untrue on
      * air.
      */
+    /**
+     * A declared stoppage — an injury, or anything else that halts play and
+     * that UltiOrganizer does not record.
+     *
+     * Keyed by score like possession, so it ends itself at the next goal. Play
+     * having restarted is the one thing certain to be true by then, and a
+     * stoppage tab still on air two points later is the failure that matters.
+     */
+    function declared(stoppage, home, visitor) {
+        if (!stoppage || !stoppage.score) { return null; }
+        var key = (Number(home) || 0) + '-' + (Number(visitor) || 0);
+        return stoppage.score === key ? { kind: 'injury', side: null } : null;
+    }
+
     function active(events, elapsed, timeoutLen) {
         if (!Array.isArray(events) || !events.length) { return null; }
         if (typeof elapsed !== 'number' || !isFinite(elapsed)) { return null; }
@@ -77,5 +91,5 @@
         return { kind: 'timeout', side: Number(last.ishome) === 1 ? 'home' : 'visitor' };
     }
 
-    return { active: active };
+    return { active: active, declared: declared };
 }));

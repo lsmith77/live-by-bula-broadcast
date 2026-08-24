@@ -87,7 +87,7 @@ final class Possession
     public static function defaults(): array
     {
         return ['rev' => 0, 'enabled' => false, 'game' => null, 'code' => null,
-                'ratio1' => null, 'events' => [], 'touched' => 0];
+                'ratio1' => null, 'events' => [], 'stoppage' => null, 'touched' => 0];
     }
 
     /**
@@ -142,6 +142,7 @@ final class Possession
             'ratio1' => isset($decoded['ratio1']) && is_string($decoded['ratio1'])
                 && self::isRatio($decoded['ratio1']) ? $decoded['ratio1'] : null,
             'events' => self::cleanEvents($decoded['events'] ?? []),
+            'stoppage' => self::cleanStoppage($decoded['stoppage'] ?? null),
             'touched' => (int) ($decoded['touched'] ?? 0),
         ];
     }
@@ -211,24 +212,49 @@ final class Possession
 
 
         if (array_key_exists('enabled', $change)) {
+            // `enabled` now means one thing only: is POSSESSION being tracked.
+            // It used to double as the master switch for the commentator link,
+            // which meant a desk could not be handed the gender ratio or a
+            // stoppage without also turning on break chances. The code below is
+            // independent of it for that reason.
             $state['enabled'] = (bool) $change['enabled'];
-            // Offer a code rather than asking for one. The operator and the
-            // commentary desk settle on it out of band — a voice call, a
-            // message — so the useful thing is having one ready to read out,
-            // not a handshake. Left to invent one on the spot people reach for
-            // "12345", and two desks at the same tournament then collide.
-            if ($state['enabled'] && $state['code'] === null) {
-                $state['code'] = (new Lines())->generate();
-                $this->writeCode($state['code']);
-            }
-            // Leaving the mode drops the log. Coming back later with stale
-            // events would let a tab reappear for a point that ended long ago.
             if (!$state['enabled']) {
+                // Leaving the mode drops the possession log — and only that.
+                // Coming back later with stale events would let a tab reappear
+                // for a point that ended long ago. The code, the ratio and any
+                // stoppage are not possession data and survive.
                 $state['events'] = [];
             }
         }
 
+        /**
+         * An injury stoppage: play has stopped for something the clock does not
+         * know about.
+         *
+         * Keyed by score like everything else here, so it clears itself at the
+         * next goal without anyone remembering to end it — the failure that
+         * matters is a stoppage tab still on air two points later.
+         */
+        if (array_key_exists('stoppage', $change)) {
+            $raw = $change['stoppage'];
+            if (empty($raw)) {
+                $state['stoppage'] = null;
+            } else {
+                $score = trim((string) ($change['score'] ?? ''));
+                if (!preg_match('/^\d{1,3}-\d{1,3}$/', $score)) {
+                    return ['ok' => false, 'error' => 'A score key looks like "9-6".', 'state' => $state];
+                }
+                $state['stoppage'] = ['score' => $score, 'since' => self::now()];
+            }
+        }
+
         if (array_key_exists('defence', $change)) {
+            // Possession is the one thing that needs the mode on: without it the
+            // log is cleared anyway, so recording into it would be writing to a
+            // bucket with a hole in it.
+            if (!$state['enabled']) {
+                return ['ok' => false, 'error' => 'Possession tracking is off.', 'state' => $state];
+            }
             $score = trim((string) ($change['score'] ?? ''));
             if (!preg_match('/^\d{1,3}-\d{1,3}$/', $score)) {
                 return ['ok' => false, 'error' => 'A score key looks like "9-6".', 'state' => $state];
@@ -332,8 +358,14 @@ final class Possession
         }
 
         if (array_key_exists('code', $change)) {
-            $state['code'] = self::cleanCode($change['code']);
-            $this->writeCode($state['code']);
+            // "new" asks for one rather than supplying it. Left to invent a code
+            // on the spot people reach for "12345", and two desks at the same
+            // tournament then collide.
+            $wanted = $change['code'] === 'new'
+                ? (new Lines())->generate()
+                : self::cleanCode($change['code']);
+            $state['code'] = $wanted;
+            $this->writeCode($wanted);
         }
 
         $state['rev'] += 1;
@@ -369,10 +401,19 @@ final class Possession
      * a line selection is private to a commentary desk, whereas this reaches
      * the broadcast. See docs/COMMENTATOR.md section 6.
      */
+    /**
+     * Is this the code the operator nominated for this game?
+     *
+     * Deliberately says nothing about WHAT the holder may then do. It used to
+     * require possession tracking to be switched on, which meant a commentary
+     * desk could not be handed the gender ratio or an injury stoppage without
+     * also turning on break chances — three unrelated things behind one switch.
+     * The code is the link; each thing it unlocks decides its own conditions.
+     */
     public function allowsCode(?string $code, ?int $game): bool
     {
         $state = $this->load();
-        if (!$state['enabled'] || $state['code'] === null) {
+        if ($state['code'] === null) {
             return false;
         }
         if ($state['game'] !== null && $game !== null && $state['game'] !== $game) {
@@ -393,10 +434,14 @@ final class Possession
             return ['code' => null, 'seen' => []];
         }
         $seen = [];
-        foreach ((array) ($decoded['seen'] ?? []) as $id => $when) {
-            if (is_string($id) && preg_match('/^[a-z0-9]{4,32}$/', $id)) {
-                $seen[$id] = (int) $when;
+        foreach ((array) ($decoded['seen'] ?? []) as $id => $row) {
+            if (!is_string($id) || !preg_match('/^[a-z0-9]{4,32}$/', $id)) {
+                continue;
             }
+            // Older files stored a bare timestamp; read both shapes.
+            $seen[$id] = is_array($row)
+                ? ['t' => (int) ($row['t'] ?? 0), 'name' => self::cleanName($row['name'] ?? null)]
+                : ['t' => (int) $row, 'name' => null];
         }
         return ['code' => self::cleanCode($decoded['code'] ?? null), 'seen' => $seen];
     }
@@ -435,37 +480,96 @@ final class Possession
      * Rate-limited to one write per client per HEARTBEAT_WRITE seconds, because
      * this is called from a poll that runs every couple of seconds per client.
      */
-    public function touchClient(string $clientId): void
+    public function touchClient(string $clientId, ?string $name = null): void
     {
         if (!preg_match('/^[a-z0-9]{4,32}$/', $clientId)) {
             return;
         }
         $private = $this->loadPrivate();
         $now = time();
-        if (isset($private['seen'][$clientId]) && ($now - $private['seen'][$clientId]) < self::HEARTBEAT_WRITE) {
+        $known = $private['seen'][$clientId] ?? null;
+        $clean = self::cleanName($name);
+
+        // Rate-limited, but a NAME change is written straight through: somebody
+        // typing their name wants to see it appear on the operator's screen, not
+        // in five seconds' time.
+        if ($known !== null && ($now - $known['t']) < self::HEARTBEAT_WRITE
+            && $clean === ($known['name'] ?? null)) {
             return;
         }
+
         $private['seen'] = self::freshOnly($private['seen'], $now);
-        $private['seen'][$clientId] = $now;
+        $private['seen'][$clientId] = ['t' => $now, 'name' => $clean];
         $this->writePrivate($private);
     }
 
-    /** Commentators heard from recently enough to still be there. */
+    /**
+     * Who is listening, most recently heard from first.
+     *
+     * Names are typed by the commentators themselves and shown only to the
+     * operator, so they exist to answer "is the right desk on this code" and
+     * nothing else. They live in the private file with the code, are capped
+     * short, and disappear with the client when it stops polling — there is no
+     * reason for a name to outlive the session that supplied it.
+     *
+     * @return array<int, array{name: ?string, ago: int}>
+     */
+    public function connected(): array
+    {
+        $now = time();
+        $fresh = self::freshOnly($this->loadPrivate()['seen'], $now);
+        uasort($fresh, static fn (array $a, array $b): int => $b['t'] <=> $a['t']);
+
+        $out = [];
+        foreach ($fresh as $row) {
+            $out[] = ['name' => $row['name'] ?? null, 'ago' => $now - $row['t']];
+        }
+        return $out;
+    }
+
     public function connectedCount(): int
     {
         return count(self::freshOnly($this->loadPrivate()['seen'], time()));
     }
 
-    /** @param array<string,int> $seen */
+    /** A short, plain display name. Never rendered as markup by any caller. */
+    private static function cleanName(mixed $raw): ?string
+    {
+        if (!is_string($raw)) {
+            return null;
+        }
+        // Control characters out, whitespace collapsed, and capped: this is a
+        // label beside a code, not a free-text field.
+        $name = trim(preg_replace('/\s+/u', ' ', preg_replace('/[\x00-\x1F\x7F]/u', '', $raw)) ?? '');
+        if ($name === '') {
+            return null;
+        }
+        return mb_substr($name, 0, 24);
+    }
+
+    /** @param array<string,array{t:int,name:?string}> $seen */
     private static function freshOnly(array $seen, int $now): array
     {
         $out = [];
-        foreach ($seen as $id => $when) {
-            if (($now - $when) <= self::PRESENCE_SECONDS) {
-                $out[$id] = $when;
+        foreach ($seen as $id => $row) {
+            if (($now - (int) ($row['t'] ?? 0)) <= self::PRESENCE_SECONDS) {
+                $out[$id] = $row;
             }
         }
         return $out;
+    }
+
+    /** @return array{score:string, since:float}|null */
+    private static function cleanStoppage(mixed $raw): ?array
+    {
+        if (!is_array($raw)) {
+            return null;
+        }
+        $score = (string) ($raw['score'] ?? '');
+        if (!preg_match('/^\d{1,3}-\d{1,3}$/', $score)) {
+            return null;
+        }
+        return ['score' => $score, 'since' => (float) ($raw['since'] ?? 0)];
     }
 
     private static function cleanCode(mixed $raw): ?string

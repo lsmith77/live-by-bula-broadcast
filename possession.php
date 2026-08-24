@@ -54,11 +54,15 @@ function respond(Possession $store, bool $isAdmin, ?string $askedCode = null, ?i
         'hasCode' => $state['code'] !== null,
         'canTrack' => $askedCode !== null && $store->allowsCode($askedCode, $askedGame),
         'connected' => $store->connectedCount(),
+        'stoppage' => $state['stoppage'],
         'writable' => $store->isWritable(),
         'admin' => $isAdmin,
     ];
     if ($isAdmin) {
         $body['code'] = $state['code'];
+        // Only the operator needs the roster: it exists to confirm the right
+        // desk is on the code, which is their question, not a commentator's.
+        $body['clients'] = $store->connected();
     }
     echo json_encode($body);
     exit;
@@ -73,7 +77,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') !== 'POST') {
     // that included them would tell the operator nothing.
     $client = (string) (filter_input(INPUT_GET, 'client') ?: '');
     if ($client !== '' && $askedCode !== null && $store->allowsCode($askedCode, $askedGame)) {
-        $store->touchClient($client);
+        $store->touchClient($client, filter_input(INPUT_GET, 'name') ?: null);
     }
 
     respond($store, $isAdmin, $askedCode, $askedGame);
@@ -119,8 +123,8 @@ if (!$isAdmin && !$byCode) {
 // Corrections sit with the presses: whoever can record possession can fix what
 // they recorded, and needs to be able to do it in the next second.
 $allowed = $isAdmin
-    ? ['enabled', 'game', 'code', 'score', 'defence', 'ratio1', 'undo', 'clearPoint', 'at']
-    : ['score', 'defence', 'ratio1', 'undo', 'clearPoint', 'at'];
+    ? ['enabled', 'game', 'code', 'score', 'defence', 'ratio1', 'undo', 'clearPoint', 'at', 'stoppage']
+    : ['score', 'defence', 'ratio1', 'undo', 'clearPoint', 'at', 'stoppage'];
 
 $change = [];
 foreach ($allowed as $key) {
