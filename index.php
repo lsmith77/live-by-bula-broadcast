@@ -1093,6 +1093,14 @@ $json = static fn ($v): string => json_encode($v, JSON_UNESCAPED_SLASHES | JSON_
         // made it a property of one graphic, which meant the commentator panel
         // and the card each had their own copy and could disagree on air.
         var ratios = ratioChoices();
+        if (!ratios) {
+            // Say why rather than showing nothing. An absent control is
+            // indistinguishable from a missing feature, and the first question
+            // asked of this panel was "where do I enter the gender ratio".
+            bar.append(el('span', 'muted',
+                show.game ? 'No gender ratio: this division is not mixed.'
+                    : 'Pick a game to set the gender ratio.'));
+        }
         if (ratios) {
             var rWrap = el('span', 'kitside');
             rWrap.append(el('span', 'muted', 'Ratio on point 1'));
@@ -1229,11 +1237,25 @@ $json = static fn ($v): string => json_encode($v, JSON_UNESCAPED_SLASHES | JSON_
      * channel the stage already polls.
      */
     function startPossessionPoll() {
+        // Who is connected is NOT part of `rev`.
+        //
+        // `rev` counts writes to the show's possession state; a commentator
+        // simply polling does not write to it, so the roster changes underneath
+        // an unchanged rev. Comparing rev alone meant the operator typed a code,
+        // saw "nobody connected", and kept seeing it after the desk joined —
+        // which is the one question this panel exists to answer.
+        var rosterOf = function (state) {
+            return (state.clients || []).map(function (c) {
+                return c.name || '?';
+            }).join('\u0000');
+        };
+
         setInterval(function () {
             fetch(POSSESSION_URL, { credentials: 'same-origin' })
                 .then(readJson)
                 .then(function (state) {
-                    if (state.rev === possession.rev) { return; }
+                    if (state.rev === possession.rev
+                        && rosterOf(state) === rosterOf(possession)) { return; }
                     possession = state;
                     renderStage();
                 })

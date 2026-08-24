@@ -290,11 +290,10 @@ try {
     .possbig.d.on { background: var(--bad); border-color: var(--bad); color: #fff; }
     .possbig.d.on .w { color: #fff; }
     .possbig:disabled { opacity: .45; cursor: not-allowed; }
-    .namefield { display: flex; align-items: center; gap: .5rem; margin-bottom: .6rem; }
-    .namefield label { font-size: .8rem; color: var(--ink-mute); }
-    .namefield input { flex: 1; max-width: 16rem; background: var(--panel-alt);
-                       border: 1px solid var(--line); color: var(--ink); font: inherit;
-                       font-size: .85rem; border-radius: 4px; padding: .3rem .5rem; }
+    .linkline { display: flex; align-items: center; gap: .6rem; flex-wrap: wrap; }
+    .nameinput { width: 8.5rem; background: var(--panel-alt); border: 1px solid var(--line);
+                 color: var(--ink); font: inherit; font-size: .8rem; border-radius: 4px;
+                 padding: .3rem .45rem; }
     .possfix { display: flex; gap: .5rem; margin-top: .6rem; }
 
     /* ---- possession log ----
@@ -320,8 +319,12 @@ try {
 
     /* ---- play mode ---- */
     .step { margin-top: 1rem; }
-    .pickhead { display: flex; align-items: baseline; gap: .75rem; flex-wrap: wrap;
-                margin-bottom: .4rem; }
+    /* The sort chips sat flush against the team-stats panel above them —
+       measured at a 0px gap, so they read as part of it rather than as controls
+       for the rosters below. They belong to what follows, so the space goes
+       above them. */
+    .pickhead { display: flex; align-items: center; gap: .75rem; flex-wrap: wrap;
+                margin: 1.1rem 0 .5rem; }
     .pickhead .count { font-weight: 700; font-variant-numeric: tabular-nums; }
     .pickhead .count.ok { color: var(--ok); }
     .pickhead .count.over { color: var(--bad); }
@@ -1374,21 +1377,6 @@ try {
         correct({ clearPoint: true }, sc);
     }
 
-    /** Who this desk is, for the operator's roster. */
-    function nameField() {
-        var wrap = el('div', 'namefield');
-        var label = el('label', null, 'Your name');
-        var input = document.createElement('input');
-        input.type = 'text';
-        input.maxLength = 24;
-        input.value = myName;
-        input.placeholder = 'shown to the operator';
-        input.id = 'commentatorName';
-        label.htmlFor = input.id;
-        input.addEventListener('change', function () { setMyName(input.value); });
-        wrap.append(label, input);
-        return wrap;
-    }
 
     /** Is a declared stoppage running for the point on the clock? */
     function stoppageOn() {
@@ -1569,6 +1557,22 @@ try {
     function renderSync() {
         var box = document.getElementById('sync');
         box.replaceChildren();
+        // Name first: it identifies this desk, and the code links it. Both are
+        // setup, so both live in the header rather than inside a mode — the name
+        // was in the play-by-play panel, which is not where anyone looks for it
+        // and not visible while preparing.
+        var name = document.createElement('input');
+        name.className = 'nameinput';
+        name.type = 'text';
+        name.maxLength = 24;
+        name.value = myName;
+        name.placeholder = 'your name';
+        name.id = 'commentatorName';
+        name.title = 'Shown to the Studio operator so they know which desk is on this code.';
+        name.setAttribute('aria-label', 'Your name, shown to the operator');
+        name.addEventListener('change', function () { setMyName(name.value); });
+        box.append(name);
+
         box.append(el('span', 'muted', 'Sync'));
 
         var input = document.createElement('input');
@@ -1661,48 +1665,55 @@ try {
      * The previous point's count is shown beside it because the interesting
      * comparison is almost always to the point just gone.
      */
+    /**
+     * The link: who this desk is, and whether it is connected.
+     *
+     * Shown in every mode and whatever else is switched on. It used to live
+     * behind possession tracking, which meant the name field — the thing the
+     * operator reads when deciding whose code to enter — was invisible until
+     * somebody had already turned on a graphic. That is the same coupling the
+     * store shed; the panel had kept it.
+     */
+    function linkPanel() {
+        var box = el('div', 'possbox quiet');
+        var line = el('div', 'linkline');
+        if (possession.canTrack) {
+            line.append(el('b', 'code', syncCode));
+            line.append(el('span', 'muted', 'linked \u2014 you can track for this game'));
+
+            // A stoppage needs no mode: it is its own declared fact.
+            var stop = el('button', 'chip' + (stoppageOn() ? ' on' : ''),
+                stoppageOn() ? '\u25a0 End injury stoppage' : '\u2691 Injury stoppage');
+            stop.type = 'button';
+            stop.title = 'Keyboard: I';
+            stop.addEventListener('click', toggleStoppage);
+            line.append(stop);
+        } else {
+            line.append(el('span', 'muted', possession.hasCode
+                ? 'Another code is linked. To take over, ask the operator for '
+                : 'Not linked. Ask the Studio operator to enter '));
+            line.append(el('b', 'code', syncCode));
+        }
+        box.append(line);
+        return box;
+    }
+
     function possessionPanel() {
         var box = el('div', 'possbox');
+
+        if (!possession.canTrack) { return null; }
 
         if (!possession.enabled) {
             box.className = 'possbox quiet';
             box.append(el('span', 'muted',
-                'Possession tracking is off. The Studio operator turns it on.'));
-            return box;
-        }
-
-        if (!possession.canTrack) {
-            box.className = 'possbox quiet';
-            // Your name goes here even before you are linked: it is what the
-            // operator reads when deciding whose code to enter.
-            box.append(nameField());
-            var ask = el('span', 'muted');
-            ask.append(document.createTextNode(
-                possession.hasCode
-                    ? 'Another code is tracking possession for this game. To take it over, ask the operator to enter '
-                    : 'To track possession, ask the Studio operator to enter your code '));
-            ask.append(el('b', 'code', syncCode));
-            ask.append(document.createTextNode(
-                possession.hasCode ? ' in the Studio instead.' : ' in the Studio.'));
-            box.append(ask);
+                'Possession tracking is off \u2014 the Studio operator turns it on. '
+                + 'The gender ratio and injury stoppages do not need it.'));
             return box;
         }
 
         var sc = liveScore();
         var P = window.Possession;
         var d = sc && P ? P.defenceHasDisc(possession.events, sc.home, sc.visitor) : false;
-
-        box.append(nameField());
-
-        // Injury stoppage sits with possession because it is the same kind of
-        // thing: a fact about the game that nothing records, declared by whoever
-        // is watching. It is not part of break-chance mode and does not need it.
-        var stop = el('button', 'chip' + (stoppageOn() ? ' on' : ''),
-            stoppageOn() ? '\u25a0 End injury stoppage' : '\u2691 Injury stoppage');
-        stop.type = 'button';
-        stop.title = 'Keyboard: I';
-        stop.addEventListener('click', toggleStoppage);
-        box.append(stop);
 
         var btns = el('div', 'possbtns');
         [['O', 'Offence', false], ['D', 'Defence', true]].forEach(function (spec) {
@@ -1847,9 +1858,11 @@ try {
         // Above the line picker as well as the on-field view: in step 1 it is
         // how a commentator learns they are not authorised yet, which is worth
         // finding out before the pull rather than during the point.
+        body.append(linkPanel());
         var ratio = ratioPanel();
         if (ratio) { body.append(ratio); }
-        body.append(possessionPanel());
+        var poss = possessionPanel();
+        if (poss) { body.append(poss); }
 
         if (state.step === 1) {
             var bar = el('div', 'pickhead');
