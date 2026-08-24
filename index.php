@@ -217,11 +217,17 @@ $json = static fn ($v): string => json_encode($v, JSON_UNESCAPED_SLASHES | JSON_
 </head>
 <body>
 
-<div class="topbar">
+<!--
+  Landmarks, so the page can be navigated by structure rather than by reading it
+  top to bottom. The commentator page had these; this one did not, and it is the
+  larger of the two.
+-->
+<header class="topbar">
     <h1>Studio</h1>
     <span class="who" id="who"><span class="dot"></span>Checking…</span>
     <span id="authAction"></span>
-</div>
+</header>
+<main>
 <p class="lede">Browser-source URLs for a video switcher (OBS, Magewell Director Mini, Yolobox).</p>
 
 <h2 style="margin-top:1.5rem">Stage</h2>
@@ -267,8 +273,10 @@ $json = static fn ($v): string => json_encode($v, JSON_UNESCAPED_SLASHES | JSON_
     Set the browser source to <strong>1920&times;1080</strong> with a transparent background.
 </div>
 
+</main>
 <script src="<?= htmlspecialchars($assetUrl('shared/possession.js'), ENT_QUOTES) ?>"></script>
 <script src="<?= htmlspecialchars($assetUrl('shared/ratio.js'), ENT_QUOTES) ?>"></script>
+<script src="<?= htmlspecialchars($assetUrl('shared/tracking.js'), ENT_QUOTES) ?>"></script>
 <script>
 (function () {
     'use strict';
@@ -903,13 +911,22 @@ $json = static fn ($v): string => json_encode($v, JSON_UNESCAPED_SLASHES | JSON_
         return (Number(game.homescore) || 0) + '-' + (Number(game.visitorscore) || 0);
     }
 
+    /**
+     * A client for whichever game the stage is on.
+     *
+     * Rebuilt per call rather than held, because the operator can repin the
+     * stage at any moment and each game has its own document — there is no
+     * "current" store to keep a handle on.
+     */
+    function trackFor(game) {
+        return window.Tracking.client({ endpoint: POSSESSION_URL, game: game });
+    }
+
     function postPossession(change) {
-        return fetch(BASE + '/index.php?view=live/overlays/possession', {
-            method: 'POST',
-            credentials: 'same-origin',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(change)
-        }).then(readJson).then(function (state) {
+        if (!show.game) {
+            return Promise.reject(new Error('Pick a game first.'));
+        }
+        return trackFor(show.game).write(change).then(function (state) {
             possession = state;
             renderStage();
             return state;
@@ -1081,6 +1098,7 @@ $json = static fn ($v): string => json_encode($v, JSON_UNESCAPED_SLASHES | JSON_
         mode.title = on
             ? 'Stop declaring possession. The scoreboard falls back to the standing ON DEFENCE tag.'
             : 'Declare possession by hand. Feeds BREAK CHANCE, clean holds, the turnover count and break-chance conversion.';
+        mode.setAttribute('aria-pressed', on ? 'true' : 'false');
         mode.addEventListener('click', function () { setPossessionMode(!on); });
         bar.append(mode);
 
@@ -1239,11 +1257,10 @@ $json = static fn ($v): string => json_encode($v, JSON_UNESCAPED_SLASHES | JSON_
     function startPossessionPoll() {
         // Who is connected is NOT part of `rev`.
         //
-        // `rev` counts writes to the show's possession state; a commentator
+        // `rev` counts writes to a game's possession document; a commentator
         // simply polling does not write to it, so the roster changes underneath
         // an unchanged rev. Comparing rev alone meant the operator typed a code,
-        // saw "nobody connected", and kept seeing it after the desk joined —
-        // which is the one question this panel exists to answer.
+        // saw "nobody connected", and kept seeing it after the desk joined.
         var rosterOf = function (state) {
             return (state.clients || []).map(function (c) {
                 return c.name || '?';
@@ -1251,8 +1268,8 @@ $json = static fn ($v): string => json_encode($v, JSON_UNESCAPED_SLASHES | JSON_
         };
 
         setInterval(function () {
-            fetch(POSSESSION_URL, { credentials: 'same-origin' })
-                .then(readJson)
+            if (!show.game) { return; }
+            trackFor(show.game).read()
                 .then(function (state) {
                     if (state.rev === possession.rev
                         && rosterOf(state) === rosterOf(possession)) { return; }
@@ -1393,6 +1410,10 @@ $json = static fn ($v): string => json_encode($v, JSON_UNESCAPED_SLASHES | JSON_
                     : slot.replace('-', ' ')
                         + (shared ? ' — shared with ' + shared + ' other card'
                             + (shared > 1 ? 's' : '') : '');
+                // Placed-or-not is a state, not a label: without this the only
+                // difference between the chosen cell and the other eight is a
+                // background colour.
+                b.setAttribute('aria-pressed', placed === slot ? 'true' : 'false');
                 b.addEventListener('click', function () {
                     place(id, placed === slot ? null : slot);
                 });
@@ -1466,6 +1487,10 @@ $json = static fn ($v): string => json_encode($v, JSON_UNESCAPED_SLASHES | JSON_
                 }
             }
 
+            // The state is otherwise carried only by colour and the word on the
+            // button face, which a screen reader gets as a label rather than as
+            // a state. This is the control that decides what is on air.
+            sw.setAttribute('aria-pressed', on ? 'true' : 'false');
             sw.addEventListener('click', function () { toggle(id); });
             row.append(sw);
 
@@ -1505,9 +1530,15 @@ $json = static fn ($v): string => json_encode($v, JSON_UNESCAPED_SLASHES | JSON_
         importBtn.textContent = '⇧ Import';
         importBtn.title = 'Load a saved arrangement. Anything invalid here is dropped.';
         importBtn.disabled = !showCanEdit();
+        // Hidden and driven by the labelled button above — the ordinary pattern
+        // for a file input. `display: none` already keeps it out of the
+        // accessibility tree and the tab order; the label is here so that stays
+        // true if the styling ever changes.
         var picker = document.createElement('input');
         picker.type = 'file';
         picker.accept = 'application/json,.json';
+        picker.setAttribute('aria-label', 'Stage configuration file');
+        picker.tabIndex = -1;
         picker.style.display = 'none';
         picker.addEventListener('change', function () {
             if (picker.files && picker.files[0]) { importConfig(picker.files[0]); }
@@ -1666,7 +1697,8 @@ $json = static fn ($v): string => json_encode($v, JSON_UNESCAPED_SLASHES | JSON_
         // fetch for the whole event beats one game-detail fetch per row.
         fetch(API + '&entity=reference', { credentials: 'same-origin' }).then(readJson),
         fetch(SHOW_URL, { credentials: 'same-origin' }).then(readJson),
-        fetch(POSSESSION_URL, { credentials: 'same-origin' }).then(readJson)
+        // Deferred: the game is not known until show state arrives.
+        Promise.resolve(null)
     ])
         .then(function (results) {
             gamesList = results[0].games || [];
@@ -1699,8 +1731,15 @@ $json = static fn ($v): string => json_encode($v, JSON_UNESCAPED_SLASHES | JSON_
             singleDay = Object.keys(days).length <= 1;
 
             show = results[4];
-            possession = results[5] || possession;
             renderAll();
+            // The possession document is per game, so it cannot be fetched
+            // until show state has said which game the stage is on. The poll
+            // below picks it up on its first tick.
+            if (show.game) {
+                trackFor(show.game).read()
+                    .then(function (state) { possession = state; renderStage(); })
+                    .catch(function () { /* the poll will retry */ });
+            }
             startPossessionPoll();
         })
         .catch(function (error) {

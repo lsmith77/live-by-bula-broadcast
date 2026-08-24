@@ -107,7 +107,7 @@ $json = static fn ($v): string => json_encode($v, JSON_UNESCAPED_SLASHES | JSON_
 
     var CONFIG = {
         apiBase: <?= $json($apiBase) ?>,
-        possessionUrl: <?= $json($assetBase . '/conf/possession.json') ?>,
+        possessionBase: <?= $json($assetBase) ?>,
         assetBase: <?= $json($assetBase) ?>,
         showUrl: <?= $json($store->publicUrl($assetBase)) ?>,
         showPoll: <?= (int) $showPoll ?>,
@@ -461,7 +461,7 @@ $json = static fn ($v): string => json_encode($v, JSON_UNESCAPED_SLASHES | JSON_
                 // The same read serves both: the log for conversion, and the
                 // first point's ratio, which lives with the game rather than
                 // with this card -- see shared/possession.php.
-                var possessionRead = fetch(CONFIG.possessionUrl + '?_=' + Date.now(),
+                var possessionRead = fetch(possessionFileUrl() + '?_=' + Date.now(),
                     { cache: 'no-store' })
                     .then(function (r) { return r.ok ? r.json() : null; })
                     .catch(function () { return null; });
@@ -596,6 +596,17 @@ $json = static fn ($v): string => json_encode($v, JSON_UNESCAPED_SLASHES | JSON_
                 node.appendChild(card);
             }
         };
+    }
+
+    /**
+     * The possession document for the game being shown.
+     *
+     * One document per game: a shared one let a second field's data reach this
+     * overlay whenever the two happened to be on the same score. See
+     * shared/possession.php.
+     */
+    function possessionFileUrl() {
+        return CONFIG.possessionBase + '/conf/possession-' + ((CONFIG.pinnedGame || fieldGame || (lastShow && lastShow.game))) + '.json';
     }
 
     var CARDS = {
@@ -851,7 +862,7 @@ $json = static fn ($v): string => json_encode($v, JSON_UNESCAPED_SLASHES | JSON_
                 // field -- nothing in UltiOrganizer records it. It is kept with
                 // the game rather than with this card, so the commentator panel
                 // and this graphic cannot disagree about it.
-                return fetch(CONFIG.possessionUrl + '?_=' + Date.now(), { cache: 'no-store' })
+                return fetch(possessionFileUrl() + '?_=' + Date.now(), { cache: 'no-store' })
                     .then(function (r) { return r.ok ? r.json() : null; })
                     .catch(function () { return null; })
                     .then(function (declared) {

@@ -471,6 +471,7 @@ try {
 
 <script src="<?= $base ?>/live/overlays/shared/possession.js"></script>
 <script src="<?= $base ?>/live/overlays/shared/ratio.js"></script>
+<script src="<?= $base ?>/live/overlays/shared/tracking.js"></script>
 <script>
 (function () {
     'use strict';
@@ -560,20 +561,11 @@ try {
        Data
        --------------------------------------------------------------- */
 
-    function readJson(r) {
-        if (r.status === 503) { throw new Error('Live! is in maintenance mode.'); }
-        return r.json().then(function (b) {
-            if (!r.ok || typeof b.error === 'string') {
-                throw new Error(b.error || ('HTTP ' + r.status));
-            }
-            return b;
-        });
-    }
 
     function load() {
         return fetch(CONFIG.api + '&entity=games&id=' + encodeURIComponent(CONFIG.gameId),
             { credentials: 'same-origin' })
-            .then(readJson)
+            .then(window.Tracking.readJson)
             .then(function (p) {
                 state.payload = p;
                 var t = p.teams || {};
@@ -582,7 +574,7 @@ try {
                 return Promise.all(ids.map(function (id) {
                     return fetch(CONFIG.api + '&entity=teams&id=' + encodeURIComponent(id),
                         { credentials: 'same-origin' })
-                        .then(readJson)
+                        .then(window.Tracking.readJson)
                         .then(function (team) { state.teams[id] = team; })
                         .catch(function () { /* roster is optional */ });
                 }));
@@ -916,7 +908,7 @@ try {
         if (eventsCache[playerId]) { return Promise.resolve(eventsCache[playerId]); }
         return fetch(CONFIG.api + '&entity=playerevents&id=' + encodeURIComponent(playerId),
             { credentials: 'same-origin' })
-            .then(readJson)
+            .then(window.Tracking.readJson)
             .then(function (b) {
                 eventsCache[playerId] = b.playerevents || {};
                 return eventsCache[playerId];
@@ -1169,14 +1161,8 @@ try {
 
     function setFirstRatio(v) {
         if (!possession.canTrack) { return; }
-        fetch(CONFIG.possessionUrl, {
-            method: 'POST',
-            credentials: 'same-origin',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ game: CONFIG.gameId, code: syncCode, ratio1: v || '' })
-        })
-            .then(function (r) { return r.ok ? r.json() : null; })
-            .then(function (state) { if (state) { possession = state; render(); } })
+        track.setRatio(v)
+            .then(function (state) { possession = state; render(); })
             .catch(function () { /* transient */ });
     }
 
@@ -1266,22 +1252,21 @@ try {
         pollPossession();
     }
 
-    function possessionUrl(extra) {
-        return CONFIG.possessionUrl
-            + '&game=' + encodeURIComponent(CONFIG.gameId)
-            + '&code=' + encodeURIComponent(syncCode)
-            + '&client=' + encodeURIComponent(clientId)
-            + (myName ? '&name=' + encodeURIComponent(myName) : '')
-            + (extra || '');
-    }
+    // One client for the whole page: the protocol lives in shared/tracking.js.
+    var track = window.Tracking.client({
+        endpoint: CONFIG.possessionUrl,
+        game: CONFIG.gameId,
+        code: function () { return syncCode; },
+        clientId: clientId,
+        name: function () { return myName; }
+    });
 
     function pollPossession() {
-        fetch(possessionUrl(), { credentials: 'same-origin' })
-            .then(function (r) { return r.ok ? r.json() : null; })
+        track.read()
             .then(function (state) {
                 if (!state || state.rev === possession.rev) { return; }
                 possession = state;
-                if (state.mode !== 'prep') { render(); }
+                render();
             })
             .catch(function () { /* transient */ });
     }
@@ -1429,16 +1414,8 @@ try {
         if (!possession.canTrack) { return; }
         var sc = liveScore();
         if (!sc) { return; }
-        var on = stoppageOn();
-        fetch(CONFIG.possessionUrl, {
-            method: 'POST',
-            credentials: 'same-origin',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ game: CONFIG.gameId, code: syncCode,
-                                   score: sc.key, stoppage: !on })
-        })
-            .then(function (r) { return r.ok ? r.json() : null; })
-            .then(function (state) { if (state) { possession = state; render(); } })
+        track.setStoppage(!stoppageOn(), sc.key)
+            .then(function (state) { possession = state; render(); })
             .catch(function () { /* transient */ });
     }
 
@@ -1447,39 +1424,23 @@ try {
         if (!possession.canTrack) { return; }
         var sc = forScore || liveScore();
         if (!sc) { return; }
-        var body = { game: CONFIG.gameId, code: syncCode, score: sc.key };
-        Object.keys(what).forEach(function (k) { body[k] = what[k]; });
-        fetch(CONFIG.possessionUrl, {
-            method: 'POST',
-            credentials: 'same-origin',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(body)
-        })
-            .then(function (r) { return r.ok ? r.json() : null; })
-            .then(function (state) {
-                if (!state) { return; }
-                possession = state;
-                render();
-                // Redraw the log underneath, so the correction is seen landing
-                // rather than leaving the reader to reopen and check.
-                if (sheet.classList.contains('open')) { openLog(); }
-            })
-            .catch(function () { /* transient */ });
+        var call = what.clearPoint ? track.clearPoint(sc.key)
+            : (what.at !== undefined ? track.deleteAt(sc.key, what.at)
+                : track.undoLast(sc.key));
+        call.then(function (state) {
+            possession = state;
+            render();
+            // Redraw the log underneath, so the correction is seen landing.
+            if (sheet.classList.contains('open')) { openLog(); }
+        }).catch(function () { /* transient */ });
     }
 
     function setDefence(hasDisc) {
         if (!possession.canTrack) { return; }
         var sc = liveScore();
         if (!sc) { return; }
-        fetch(CONFIG.possessionUrl, {
-            method: 'POST',
-            credentials: 'same-origin',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ game: CONFIG.gameId, code: syncCode,
-                                   score: sc.key, defence: hasDisc })
-        })
-            .then(function (r) { return r.ok ? r.json() : null; })
-            .then(function (state) { if (state) { possession = state; render(); } })
+        track.setDefence(hasDisc, sc.key)
+            .then(function (state) { possession = state; render(); })
             .catch(function () { /* transient */ });
     }
 
@@ -2057,7 +2018,7 @@ try {
         document.querySelector('.tabs').style.display = 'none';
 
         fetch(CONFIG.api + '&entity=games', { credentials: 'same-origin' })
-            .then(readJson)
+            .then(window.Tracking.readJson)
             .then(function (b) {
                 var games = (b.games || []).slice().sort(function (x, y) {
                     var rank = function (g) {

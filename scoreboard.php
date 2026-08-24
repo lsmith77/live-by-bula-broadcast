@@ -274,7 +274,7 @@ $json = static fn ($value): string => json_encode($value, JSON_UNESCAPED_SLASHES
         demoStep: <?= (int) $demoStep ?>,
         // Declared possession, read as a static file so it can move at the pace
         // a break chance needs rather than the pace the game payload allows.
-        possessionUrl: <?= $json($assetBase . '/conf/possession.json') ?>,
+        possessionBase: <?= $json($assetBase) ?>,
         possessionPoll: 1000,
         offline: <?= $json($offline) ?>,
         at: <?= (int) ($offline ? $atParam : 0) ?>,
@@ -560,8 +560,19 @@ $json = static fn ($value): string => json_encode($value, JSON_UNESCAPED_SLASHES
     /** The score the board is currently showing, as the possession store keys it. */
     var shownScore = null;
 
+    /**
+     * The possession document for the game being shown.
+     *
+     * One document per game: a shared one let a second field's data reach this
+     * overlay whenever the two happened to be on the same score. See
+     * shared/possession.php.
+     */
+    function possessionFileUrl() {
+        return CONFIG.possessionBase + '/conf/possession-' + (CONFIG.gameId) + '.json';
+    }
+
     function pollDeclared() {
-        fetch(CONFIG.possessionUrl + '?_=' + Date.now(), { cache: 'no-store' })
+        fetch(possessionFileUrl() + '?_=' + Date.now(), { cache: 'no-store' })
             .then(function (r) { return r.ok ? r.json() : null; })
             .catch(function () { return null; })
             .then(function (state) {
