@@ -27,6 +27,10 @@ use Api\SeasonAccess;
 use Overlays\Colors;
 
 header('Content-Type: application/json; charset=UTF-8');
+// Same as the other three endpoints. Without it a browser caches the kit
+// colours heuristically, and a coin-toss change made minutes before the pull
+// does not take.
+header('Cache-Control: no-store, must-revalidate');
 
 $store = new Colors();
 $config = (new ConfigManager())->getConfig()['config'] ?? [];

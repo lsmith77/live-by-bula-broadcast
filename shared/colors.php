@@ -71,6 +71,13 @@ final class Colors
         if ($gameId <= 0) {
             return false;
         }
+        return $this->withLock(function () use ($gameId, $home, $visitor): bool {
+            return $this->saveGameChoiceLocked($gameId, $home, $visitor);
+        });
+    }
+
+    private function saveGameChoiceLocked(int $gameId, ?string $home, ?string $visitor): bool
+    {
         $state = $this->load();
         $key = (string) $gameId;
 
@@ -128,6 +135,33 @@ final class Colors
 
         ksort($clean, SORT_NUMERIC);
         return $clean;
+    }
+
+    /**
+     * Serialise a read-modify-write, as shared/possession.php does.
+     *
+     * The temp-file-and-rename below gives READERS atomicity and nothing else:
+     * each writer holds `LOCK_EX` on its own private temp file, which no other
+     * process opens, so it excludes nobody. Two operators setting kit colours in
+     * the same second could lose one of them.
+     */
+    private function withLock(callable $body): mixed
+    {
+        $dir = dirname($this->path);
+        if (!is_dir($dir) && !@mkdir($dir, 0775, true) && !is_dir($dir)) {
+            return $body();
+        }
+        $handle = @fopen($this->path . '.lock', 'c');
+        if ($handle === false) {
+            return $body();
+        }
+        try {
+            @flock($handle, LOCK_EX);
+            return $body();
+        } finally {
+            @flock($handle, LOCK_UN);
+            @fclose($handle);
+        }
     }
 
     private function write(array $state): bool

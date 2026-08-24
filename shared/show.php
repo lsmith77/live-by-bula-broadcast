@@ -222,7 +222,41 @@ final class Show
      *                               no prior read to compare against.
      * @return array{ok:bool, error:?string, state:array}
      */
+    /**
+     * Serialise the read-modify-write, as the other stores do.
+     *
+     * The `rev` check below narrows the window but does not close it: two
+     * writers can both read rev 5, both find it current, and both write rev 6.
+     * The temp-file-and-rename gives readers atomicity and nothing else — each
+     * writer locks its own private temp file, which excludes nobody.
+     */
+    private function withLock(callable $body): mixed
+    {
+        $dir = dirname($this->path);
+        if (!is_dir($dir) && !@mkdir($dir, 0775, true) && !is_dir($dir)) {
+            return $body();
+        }
+        $handle = @fopen($this->path . '.lock', 'c');
+        if ($handle === false) {
+            return $body();
+        }
+        try {
+            @flock($handle, LOCK_EX);
+            return $body();
+        } finally {
+            @flock($handle, LOCK_UN);
+            @fclose($handle);
+        }
+    }
+
     public function save(array $incoming, ?int $expectedRev = null): array
+    {
+        return $this->withLock(function () use ($incoming, $expectedRev): array {
+            return $this->saveLocked($incoming, $expectedRev);
+        });
+    }
+
+    private function saveLocked(array $incoming, ?int $expectedRev = null): array
     {
         $current = $this->load();
 
