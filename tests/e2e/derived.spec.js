@@ -288,7 +288,7 @@ test.describe('correcting the possession log', () => {
 
       await page.goto(`/c/${GAME_ID}`);
       await page.locator('#tabPlay').click();
-      await page.locator('.possfix .chip').click();
+      await page.locator('#tracking .tbtn[aria-label="Possession log"]').click();
       await expect(page.locator('.plogrow')).toHaveCount(3);
 
       page.once('dialog', (d) => d.dismiss());
@@ -385,8 +385,9 @@ test.describe('the commentator panel', () => {
       await page.goto(`/c/${GAME_ID}`);
       await page.locator('#tabPlay').click();
       await expect(page.locator('#commentatorName')).toBeVisible();
-      // And it says how to get linked, rather than saying nothing.
-      await expect(page.locator('.possbox').first()).toContainText(/ask the studio operator/i);
+      // And it says how to get linked, rather than saying nothing. The controls
+      // live in the sticky header now, beside the code that authorises them.
+      await expect(page.locator('#tracking')).toContainText(/not linked/i);
     });
   });
 
@@ -398,7 +399,7 @@ test.describe('the commentator panel', () => {
 
       await page.goto(`/c/${GAME_ID}`);
       await page.locator('#tabPlay').click();
-      await expect(page.locator('.possbox').first()).toContainText(/injury stoppage/i);
+      await expect(page.locator('#tracking')).toContainText(/injury/i);
     });
   });
 });
