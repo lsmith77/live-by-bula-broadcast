@@ -393,12 +393,52 @@ $json = static fn ($v): string => json_encode($v, JSON_UNESCAPED_SLASHES | JSON_
      * shown whenever it is non-zero rather than folded into either column --
      * quietly counting an unknown point as a hold would be inventing a fact.
      */
-    function summaryCard(when) {
-        var TITLES = { pre: 'Coming up', half: 'Half time', final: 'Full time' };
+    /**
+     * Which moment a summary card is describing, worked out from the game.
+     *
+     * `hasstarted`, `isongoing` and the `half_cap` event already distinguish all
+     * four states, so an operator naming the moment was asking them to tell the
+     * card something it could see for itself — and to remember to change it,
+     * mid-broadcast, at exactly the moment they are busiest.
+     *
+     * Explicit `params.when` still wins: the useful override is showing full-time
+     * numbers during a break, which no rule can infer.
+     */
+    function momentOf(payload) {
+        var r = payload.game_result || {};
+        if (Number(r.hasstarted) !== 1) { return 'pre'; }
+        if (Number(r.isongoing) !== 1) { return 'final'; }
+
+        // "At the half" means the half has been called and NOBODY HAS SCORED
+        // SINCE. Once play resumes the same card is a running summary, not a
+        // half-time one — the half is a moment, not a phase, and a card still
+        // headed "Half time" three points into the second half is wrong.
+        var halfAt = null;
+        (payload.gameevents || []).forEach(function (e) {
+            if (e && e.type === 'half_cap') { halfAt = Number(e.time) || 0; }
+        });
+        if (halfAt === null) { return 'ingame'; }
+
+        var scoredSince = (payload.goals || []).some(function (g) {
+            return (Number(g.time) || 0) > halfAt;
+        });
+        return scoredSince ? 'ingame' : 'half';
+    }
+
+    function summaryCard(fixed) {
+        var TITLES = {
+            pre: 'Coming up',
+            half: 'Half time',
+            ingame: 'How it stands',
+            final: 'Full time'
+        };
 
         return {
             kind: 'inline',
-            arm: function (payload) {
+            arm: function (payload, params) {
+                var when = fixed
+                    || ((params && params.when && params.when !== 'auto') ? params.when : null)
+                    || momentOf(payload);
                 var teams = payload.teams || {};
                 var info = payload.game_info || {};
                 var result = payload.game_result || {};
@@ -743,6 +783,20 @@ $json = static fn ($v): string => json_encode($v, JSON_UNESCAPED_SLASHES | JSON_
          * makes them usable in post-production, where there is nobody to press
          * anything at all.
          */
+        /**
+         * One card for all four moments, not three cards for three of them.
+         *
+         * They were always one card with a different heading and a slightly
+         * different stat line, and keeping them separate cost the operator three
+         * rows in the control page, three positions to set and three auto
+         * triggers to configure — for a graphic that can see which moment it is.
+         * `params.when` overrides when the inference is not what is wanted; the
+         * case that needs it is showing full-time numbers during a break.
+         *
+         * The old ids stay as fixed-moment aliases so a saved show state and any
+         * exported configuration file still mean what they meant.
+         */
+        summary: summaryCard(null),
         pregame: summaryCard('pre'),
         halftime: summaryCard('half'),
         postgame: summaryCard('final'),

@@ -94,6 +94,9 @@ final class Show
         // Team-versus-team summaries for the three moments that are not a goal.
         // A takeover is exactly right for two of them: before the pull and after
         // the final point there is nothing else worth covering.
+        // One card that reads the moment off the game. The three below are the
+        // same card pinned to one moment, kept so saved states keep working.
+        'summary' => ['center', 'fullscreen'],
         'pregame' => ['center', 'fullscreen'],
         'halftime' => ['center', 'fullscreen'],
         'postgame' => ['center', 'fullscreen'],
