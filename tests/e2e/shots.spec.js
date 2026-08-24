@@ -103,6 +103,79 @@ test('studio', async ({ page }) => {
 });
 
 /**
+ * The stage — the thing the whole project is for, and never pictured until now.
+ *
+ * A card on air over a scoreboard, on the chroma-key backdrop so the composite
+ * is legible on GitHub. This is what a switcher actually receives; the
+ * scoreboard shot alone showed a component rather than the product.
+ */
+test('stage, a card on air', async ({ page }) => {
+  await loginAsAdmin(page, test);
+  const before = await readShow(page);
+  try {
+    await writeShow(page, [
+      { id: 'scoreboard', slot: 'lower-left', visible: true, params: {} },
+      { id: 'lastplay', slot: 'with-scoreboard', visible: true, params: {} },
+    ], { game: GAME_ID, logo: null });
+
+    await page.setViewportSize({ width: 1920, height: 1080 });
+    await page.goto(`/s/${GAME_ID}/overlay/${BACKDROP}`);
+    await expect(page.locator('.mount.shown').first()).toBeVisible({ timeout: 15000 });
+    await page.waitForTimeout(1800);
+    await page.screenshot({ path: path.join(OUT, 'stage.png') });
+  } finally {
+    await writeShow(page, before.cards, { game: before.game, logo: before.logo });
+  }
+});
+
+/**
+ * The score progression card: the most distinctive graphic here.
+ *
+ * A staircase with the gender ratio on it, which needs a mixed division and a
+ * first-point ratio — so both are set up rather than hoped for.
+ */
+test('score progression card', async ({ page }) => {
+  const MIXED = Number(process.env.OTHER_GAME_ID || 703);
+  await loginAsAdmin(page, test);
+  const before = await readShow(page);
+  try {
+    await writePossession(page, { enabled: true, game: MIXED, ratio1: '4MMP/3FMP' });
+    await writeShow(page, [
+      { id: 'progression', slot: 'center', visible: true, params: {} },
+    ], { game: MIXED, logo: null });
+
+    await page.setViewportSize({ width: 1920, height: 1080 });
+    await page.goto(`/s/${MIXED}/overlay/${BACKDROP}`);
+    const card = page.locator('.progcard');
+    await expect(card).toBeVisible({ timeout: 15000 });
+    await page.waitForTimeout(900);
+    await card.screenshot({ path: path.join(OUT, 'progression-card.png') });
+  } finally {
+    await writeShow(page, before.cards, { game: before.game, logo: before.logo });
+  }
+});
+
+/** A summary card, which works out for itself which moment it is describing. */
+test('summary card', async ({ page }) => {
+  await loginAsAdmin(page, test);
+  const before = await readShow(page);
+  try {
+    await writeShow(page, [
+      { id: 'summary', slot: 'center', visible: true, params: {} },
+    ], { game: GAME_ID, logo: null });
+
+    await page.setViewportSize({ width: 1920, height: 1080 });
+    await page.goto(`/s/${GAME_ID}/overlay/${BACKDROP}`);
+    const card = page.locator('.summarycard');
+    await expect(card).toBeVisible({ timeout: 15000 });
+    await page.waitForTimeout(900);
+    await card.screenshot({ path: path.join(OUT, 'summary-card.png') });
+  } finally {
+    await writeShow(page, before.cards, { game: before.game, logo: before.logo });
+  }
+});
+
+/**
  * An animated GIF of the scoreboard reacting to a goal.
  *
  * Frames are captured from ?demo=1 rather than by scoring into the database:
