@@ -284,6 +284,8 @@ try {
        never the jersey number or the name, which are the two things a
        commentator is looking the row up BY. */
     .roster tr.quiet td:not(.n):not(.who) { color: var(--ink-mute); }
+    .roster tr.fmp td { background: var(--fmp-bg); }
+    .roster tr.mmp td { background: var(--mmp-bg); }
 
     /* ---- team stats ---- */
     .stat { display: flex; justify-content: space-between; gap: 1rem; padding: .25rem 0;
@@ -1000,8 +1002,10 @@ try {
             btn.setAttribute('data-player', p.id);
             markNote(btn, noteFor(p.id));
             who.append(btn);
-            markSay(who, noteFor(p.id));
             tr.append(who);
+            // After the cell is in its row: markSay stamps the row's matching
+            // tint on the parent, which does not exist for a detached cell.
+            markSay(who, noteFor(p.id));
 
             tr.append(el('td', null, p.gGoals || '·'));
             tr.append(el('td', null, p.gAssists || '·'));
@@ -1330,6 +1334,16 @@ try {
         } else if (existing) {
             existing.remove();
         }
+        // The whole row carries the matching tint in mixed, so a roster can be
+        // read by colour block as well as by tag — stamped here, in place, for
+        // the same reason as the dot: notes usually arrive after the render.
+        var row = cell.parentNode;
+        if (row && row.tagName === 'TR') {
+            row.classList.remove('fmp', 'mmp');
+            if (opts.matching && note && note.matching) {
+                row.classList.add(note.matching.toLowerCase());
+            }
+        }
     }
 
     /**
@@ -1392,6 +1406,10 @@ try {
                 teamNotes = b.teams || {};
                 syncNoteMarkers();
                 prchecks.forEach(function (fill) { fill(); });
+                // The play body reads notes at build time (chip tints, quota
+                // counts, on-field pronouns), so a room that arrives after the
+                // render must rebuild it — the prep roster updates in place.
+                if (state.mode === 'play') { renderPlay(); }
             });
     }
 

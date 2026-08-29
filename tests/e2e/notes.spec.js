@@ -588,6 +588,8 @@ test.describe('prepared notes', () => {
     await page.reload();
     await expect(page.locator('.roster').first()).toBeVisible();
     await expect(page.locator('.roster td.who .say .mt').first()).toHaveText('FMP');
+    // The whole roster row carries the tint, not only the tag.
+    await expect(page.locator('.roster').first().locator('tbody tr.fmp')).toHaveCount(1);
 
     // The line picker carries it too, as the chip's own tint.
     await page.locator('#tabPlay').click();
@@ -606,8 +608,10 @@ test.describe('prepared notes', () => {
     await page.reload();
     await expect(page.locator('.roster').first()).toBeVisible();
     await expect(page.locator('.roster td.who .say .mt')).toHaveCount(0);
-    // A matching-only entry draws no identity line at all outside mixed.
+    // A matching-only entry draws no identity line at all outside mixed —
+    // and no row tint either.
     await expect(page.locator('.roster td.who .say')).toHaveCount(0);
+    await expect(page.locator('.roster tbody tr.fmp, .roster tbody tr.mmp')).toHaveCount(0);
   });
 
   test("the wrong team's sheet is refused as a file, pointing at the right panel", async ({ page }, info) => {
