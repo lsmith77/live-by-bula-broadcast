@@ -281,35 +281,40 @@ INSERT INTO uo_game_pool (game, pool, timetable) VALUES
 -- Fourteen a side: a seven-a-side mixed line can be picked with a full bench
 -- left over, which the line picker and its ratio assist need. The first eight
 -- ids are load-bearing — the goal rows below name them as scorers and assists.
+--
+-- The numbers are deliberately messy, the way a real squad list is, and they
+-- seed the prefix chains the quick-card digit entry has to disambiguate:
+-- 1/13, 6/66/69, 7/77, 2/22/23, 9/90/99, 3/30, 4/42/44, 5/55 — including a
+-- few numbers both teams wear.
 INSERT IGNORE INTO uo_player (player_id, firstname, lastname, team, num) VALUES
   (900, 'Robin',  'Hart',    304, 1),
-  (901, 'Ash',    'Keller',  304, 4),
-  (902, 'Nico',   'Lang',    304, 7),
-  (903, 'Sam',    'Weber',   304, 9),
-  (908, 'Alex',   'Brunner', 304, 2),
-  (909, 'Bo',     'Egger',   304, 3),
-  (910, 'Charlie', 'Fuchs',  304, 5),
-  (911, 'Dana',   'Gruber',  304, 6),
+  (901, 'Ash',    'Keller',  304, 13),
+  (902, 'Nico',   'Lang',    304, 6),
+  (903, 'Sam',    'Weber',   304, 66),
+  (908, 'Alex',   'Brunner', 304, 69),
+  (909, 'Bo',     'Egger',   304, 7),
+  (910, 'Charlie', 'Fuchs',  304, 23),
+  (911, 'Dana',   'Gruber',  304, 42),
   (912, 'Eli',    'Haas',    304, 8),
-  (913, 'Fin',    'Jung',    304, 10),
-  (914, 'Gil',    'Koch',    304, 11),
-  (915, 'Hana',   'Lehner',  304, 12),
-  (916, 'Iva',    'Maurer',  304, 13),
-  (917, 'Juno',   'Nagel',   304, 14),
-  (904, 'Jo',     'Moser',   305, 2),
-  (905, 'Kai',    'Reiter',  305, 5),
-  (906, 'Lee',    'Sommer',  305, 8),
-  (907, 'Max',    'Winter',  305, 11),
+  (913, 'Fin',    'Jung',    304, 91),
+  (914, 'Gil',    'Koch',    304, 30),
+  (915, 'Hana',   'Lehner',  304, 11),
+  (916, 'Iva',    'Maurer',  304, 99),
+  (917, 'Juno',   'Nagel',   304, 5),
+  (904, 'Jo',     'Moser',   305, 13),
+  (905, 'Kai',    'Reiter',  305, 7),
+  (906, 'Lee',    'Sommer',  305, 77),
+  (907, 'Max',    'Winter',  305, 9),
   (920, 'Noa',    'Ortner',  305, 1),
   (921, 'Ola',    'Pichler', 305, 3),
-  (922, 'Pat',    'Quast',   305, 4),
+  (922, 'Pat',    'Quast',   305, 30),
   (923, 'Quinn',  'Riedel',  305, 6),
-  (924, 'Rae',    'Steiner', 305, 7),
-  (925, 'Sky',    'Thaler',  305, 9),
-  (926, 'Toni',   'Unger',   305, 10),
-  (927, 'Uli',    'Vogel',   305, 12),
-  (928, 'Val',    'Wagner',  305, 13),
-  (929, 'Win',    'Zobel',   305, 14);
+  (924, 'Rae',    'Steiner', 305, 69),
+  (925, 'Sky',    'Thaler',  305, 2),
+  (926, 'Toni',   'Unger',   305, 22),
+  (927, 'Uli',    'Vogel',   305, 44),
+  (928, 'Val',    'Wagner',  305, 90),
+  (929, 'Win',    'Zobel',   305, 55);
 
 -- Nine points, so the ABBA pattern runs through two full cycles and a bit:
 -- points 1, 4, 5, 8, 9 carry the first point's ratio and 2, 3, 6, 7 the other.
