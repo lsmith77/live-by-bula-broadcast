@@ -70,5 +70,21 @@
         return String(seriesName || '').toLowerCase().indexOf('mixed') !== -1;
     }
 
-    return { slot: slot, pair: pair, short: short, isMixed: isMixed };
+    /**
+     * A stored ratio as per-matching quotas: '4MMP/3FMP' -> {MMP: 4, FMP: 3}.
+     *
+     * Null for anything else, because a line built from a half-parsed ratio
+     * would be confidently wrong.
+     */
+    function counts(full) {
+        var m = /^(\d+)(MMP|FMP)\/(\d+)(MMP|FMP)$/.exec(
+            String(full || '').toUpperCase().replace(/\s+/g, ''));
+        if (!m || m[2] === m[4]) { return null; }
+        var out = {};
+        out[m[2]] = parseInt(m[1], 10);
+        out[m[4]] = parseInt(m[3], 10);
+        return out;
+    }
+
+    return { slot: slot, pair: pair, short: short, isMixed: isMixed, counts: counts };
 }));

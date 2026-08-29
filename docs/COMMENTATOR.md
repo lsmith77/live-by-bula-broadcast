@@ -518,6 +518,14 @@ A digit commits the moment the typed string cannot be extended into another on-f
 
 The attention rules are §7's, one notch relaxed: the region is fixed, below the lines, overlays nothing a commentator might be reading, and nothing ever appears unasked. The relaxation is that a deliberate keypress may shift the season blocks under it — acceptable for an action the commentator chose, where §7 rules it out for an automatic one.
 
+## 6e. Picking a legal mixed line — **built**
+
+With matchings (§5a) and this point's ratio (§6b) in hand, the line picker stops making the commentator count. The matching shows on every pick chip, on the roster and on the field view as a small tinted tag — teal for FMP, violet for MMP, deliberately neither of the stereotyped colours, and the term itself carries the meaning while the tint only makes a line scannable — and the picker groups its chips by matching, tighter quota first: the short list is clicked first and confirmed at a glance, with each group header counting picked against quota.
+
+A group whose quota is exactly filled sets its unpicked players aside — every one of them could only make the line illegal — and unpicking somebody from the group brings them all back; the picked stay visible, so a swap is one unpick away. Players without matching data are always listed in their own group: absent is not a matching, and an empty spreadsheet cell must not make somebody disappear from a picker. Setting a filled group aside is a deliberate exception to "show the consequence; never block the click" (`AGENTS.md`): a displaced card is often intended, an eighth FMP never is.
+
+The grouping decisions live in `shared/lineup.js`, pure and tested directly; the point's ratio derives from the declared first point plus the ABBA pattern (`shared/ratio.js`), so the ratio panel and the picker cannot disagree about which ratio this point is. Before anyone declares point 1's ratio, the picker is the plain flat list.
+
 ## 7. The auto-surfacing behaviour
 
 The idea: when something happens — a goal, a block — the person involved is pulled up automatically for a few seconds, with a control to pin it. (The *deliberate* version — the commentator pulls a player up by key — is built, §6d; this section is about the automatic trigger, which is the risky half.)

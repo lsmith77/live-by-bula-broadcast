@@ -120,6 +120,12 @@ try {
         --badge-soon-bg: #e0f2fe;  --badge-soon-ink: #1e3a5f;
         --err-bg: #fee2e2;         --err-ink: #7f1d1d;   --err-edge: #b91c1c;
 
+        /* Matching tints: teal and violet, deliberately neither of the
+           stereotyped pair. The term carries the meaning; colour only lets a
+           line be scanned. */
+        --fmp-bg: #ccfbf1;  --fmp-ink: #115e59;
+        --mmp-bg: #ede9fe;  --mmp-ink: #5b21b6;
+
         /* Glare eats thin strokes before it eats thick ones. */
         --rule: 1px;
         --rule-strong: 2px;
@@ -152,6 +158,9 @@ try {
         --badge-done-bg: #1e293b;  --badge-done-ink: #94a3b8;
         --badge-soon-bg: #1e3a5f;  --badge-soon-ink: #7dd3fc;
         --err-bg: #3f1d1d;         --err-ink: #fecaca;   --err-edge: #ef4444;
+
+        --fmp-bg: #134e4a;  --fmp-ink: #99f6e4;
+        --mmp-bg: #312e81;  --mmp-ink: #ddd6fe;
 
         --rule: 1px;
         --rule-strong: 1px;
@@ -263,10 +272,13 @@ try {
     .roster td.who .say { margin-left: .5rem; color: var(--ink-mute); font-size: .82rem;
         white-space: nowrap; }
     .roster td.who .say .hi, #sheetCard .sub.say .hi { color: var(--ink); font-weight: 700; }
-    .say .mt, .nums button .mt { font-size: .68rem; font-weight: 700; letter-spacing: .04em;
+    .mt { font-size: .68rem; font-weight: 700; letter-spacing: .04em;
         color: var(--ink-mute); border: 1px solid var(--line); border-radius: 3px;
         padding: 0 .25rem; }
+    .mt.fmp { background: var(--fmp-bg); color: var(--fmp-ink); border-color: transparent; }
+    .mt.mmp { background: var(--mmp-bg); color: var(--mmp-ink); border-color: transparent; }
     .nums button .mt { display: block; margin: .1rem auto 0; width: max-content; }
+    .onfield .p .mt { margin-left: .4rem; vertical-align: .2em; }
     /* A player with no points yet is the DEFAULT state, not an exception — on a
        fresh game it is most of the roster. So the row dims only its statistics,
        never the jersey number or the name, which are the two things a
@@ -390,6 +402,7 @@ try {
         color: inherit; cursor: pointer; text-align: left; }
     .onfield button.p:hover { color: var(--link); }
     #quickbuf { font-weight: 700; color: var(--ink); min-width: 2rem; display: inline-block; }
+    .panel .ghead { display: flex; align-items: baseline; gap: .5rem; margin: .6rem 0 .3rem; }
     .prcheck { margin-top: .6rem; }
     .prcheck h4 { margin: 0 0 .15rem; font-size: .85rem; }
     .prcheck .muted { margin: 0 0 .35rem; font-size: .8rem; }
@@ -586,6 +599,7 @@ try {
 
 <script src="<?= $base ?>/live/overlays/shared/possession.js"></script>
 <script src="<?= $base ?>/live/overlays/shared/ratio.js"></script>
+<script src="<?= $base ?>/live/overlays/shared/lineup.js"></script>
 <script src="<?= $base ?>/live/overlays/shared/tracking.js"></script>
 <script src="<?= $base ?>/live/overlays/shared/secret.js"></script>
 <script src="<?= $base ?>/live/overlays/shared/csv.js"></script>
@@ -1182,7 +1196,9 @@ try {
             if (node.childNodes.length) { node.append(document.createTextNode(' · ')); }
             node.append(el('span', cls, text));
         };
-        if (opts && opts.matching && note.matching) { add(note.matching, 'mt'); }
+        if (opts && opts.matching && note.matching) {
+            add(note.matching, 'mt ' + note.matching.toLowerCase());
+        }
         if (note.nickname) { add('“' + note.nickname + '”', null); }
         if (note.pronouns) {
             add(note.pronouns, emphasizedPronouns(note.pronouns) ? 'hi' : null);
@@ -2085,6 +2101,15 @@ try {
      */
     function firstRatioValue() { return possession.ratio1 || null; }
 
+    /** This point's full ratio ('4MMP/3FMP'), or null before anyone declared point 1's. */
+    function currentRatioFull() {
+        var first = firstRatioValue();
+        if (!isMixedDivision() || !first) { return null; }
+        var pair = ratioPair();
+        var other = pair[0] === first ? pair[1] : pair[0];
+        return abbaSlot(currentPointNumber()) === 'A' ? first : other;
+    }
+
     function setFirstRatio(v) {
         if (!possession.canTrack) { return; }
         track.setRatio(v)
@@ -2563,9 +2588,8 @@ try {
             return panel;
         }
 
-        var nums = el('div', 'nums');
         var mixed = isMixedSide(side);
-        list.forEach(function (p) {
+        function chip(p) {
             var b = el('button', line.indexOf(p.id) !== -1 ? 'on' : '');
             b.type = 'button';
             b.append(document.createTextNode(
@@ -2576,11 +2600,61 @@ try {
             // The matching under the surname, in mixed — clicking a legal line
             // together is exactly when it is needed (§10.5).
             var n = noteFor(p.id);
-            if (mixed && n && n.matching) { b.append(el('small', 'mt', n.matching)); }
+            if (mixed && n && n.matching) {
+                b.append(el('small', 'mt ' + n.matching.toLowerCase(), n.matching));
+            }
             b.addEventListener('click', function () { toggleNum(side, p.id); });
-            nums.append(b);
+            return b;
+        }
+
+        // With matchings and this point's ratio in hand, the picker groups by
+        // matching — the tighter quota first, so the short list is clicked
+        // first — and a group whose quota is exactly filled hides its unpicked
+        // players: they could only make the line illegal, and unpicking from
+        // the group brings them back. The decisions live in shared/lineup.js.
+        var assist = mixed && window.Lineup
+            ? window.Lineup.groups(
+                list.map(function (p) {
+                    var n = noteFor(p.id);
+                    return { id: p.id, matching: n && n.matching };
+                }),
+                window.Ratio.counts(currentRatioFull()),
+                line)
+            : null;
+
+        if (!assist) {
+            var nums = el('div', 'nums');
+            list.forEach(function (p) { nums.append(chip(p)); });
+            panel.append(nums);
+            return panel;
+        }
+
+        var byId = {};
+        list.forEach(function (p) { byId[String(p.id)] = p; });
+        var section = function (headParts, players, hideUnpicked) {
+            var ghead = el('div', 'ghead');
+            headParts.forEach(function (part) { ghead.append(part); });
+            panel.append(ghead);
+            var nums = el('div', 'nums');
+            players.forEach(function (gp) {
+                var p = byId[String(gp.id)];
+                if (!p) { return; }
+                if (hideUnpicked && line.indexOf(p.id) === -1) { return; }
+                nums.append(chip(p));
+            });
+            panel.append(nums);
+        };
+        assist.groups.forEach(function (g) {
+            section([
+                el('span', 'mt ' + g.matching.toLowerCase(), g.matching),
+                el('span', 'muted', g.picked + ' of ' + g.quota
+                    + (g.full ? ' — done, the rest are set aside' : ''))
+            ], g.players, g.full);
         });
-        panel.append(nums);
+        if (assist.unknown.length) {
+            section([el('span', 'muted', 'No matching data — always listed')],
+                assist.unknown, false);
+        }
         return panel;
     }
 
@@ -2595,6 +2669,7 @@ try {
     function onFieldPanel(side, cls) {
         var wrap = el('div', 'side' + (cls ? ' ' + cls : ''));
         var rowIdx = cls === 'away' ? 1 : 0;
+        var mixed = isMixedSide(side);
         wrap.append(el('h3', null, side.team.name || '—'));
 
         if (!lineFor(side).length) {
@@ -2622,7 +2697,16 @@ try {
                     d.append(el('span',
                         emphasizedPronouns(n.pronouns) ? 'pr hi' : 'pr', n.pronouns));
                 }
+                // The matching as a tinted tag — the term is the signal, the
+                // tint only makes a line scannable, and the pair is neither of
+                // the stereotyped colours.
+                if (mixed && n && n.matching) {
+                    d.append(el('span', 'mt ' + n.matching.toLowerCase(), n.matching));
+                }
                 var full = sayLine(n);
+                if (mixed && n && n.matching) {
+                    full = n.matching + (full ? ' · ' + full : '');
+                }
                 if (full) { d.title = full; }
                 row.append(d);
             });
