@@ -496,35 +496,62 @@ test.describe('prepared notes', () => {
     }
   });
 
-  test('the pronoun review maps a variant onto a common set, by hand', async ({ page, request }) => {
+  test('the pronoun review: map a variant, or tweak and keep any set verbatim', async ({ page, request }) => {
     // The CSV stays free text, so "He" arrives as written and would be
     // emphasised as if it were a less common set — noise that erodes the
-    // emphasis. The prep panel lists it; one click maps it; nothing is ever
-    // mapped automatically.
+    // emphasis. The panel lists it and one click maps it. A genuinely declared
+    // set — xe/xem, she/they, anything — is edited if needed, kept exactly as
+    // written, stays emphasised, and is never asked about again. Nothing is
+    // ever mapped automatically.
     await openPage(page);
-    const firstId = await page.locator('.roster').first()
-      .locator('td.who button[data-player]').first()
-      .getAttribute('data-player');
+    const buttons = page.locator('.roster').first().locator('td.who button[data-player]');
+    const ids = [
+      await buttons.nth(0).getAttribute('data-player'),
+      await buttons.nth(1).getAttribute('data-player'),
+    ];
     await request.post(NOTES, {
-      data: { code: CODE, player: Number(firstId), text: '', by: 'Tester', pronouns: 'He' },
+      data: { code: CODE, player: Number(ids[0]), text: '', by: 'Tester', pronouns: 'He' },
+    });
+    await request.post(NOTES, {
+      data: { code: CODE, player: Number(ids[1]), text: '', by: 'Tester', pronouns: 'Xe/Xem ' },
     });
     await page.reload();
     await expect(page.locator('.roster').first()).toBeVisible();
 
     const check = page.locator('.prcheck').first();
     await expect(check).toContainText('Pronouns to review');
-    await expect(check.locator('.row .val')).toHaveText('He');
+    await expect(check.locator('.row')).toHaveCount(2);
 
-    await check.locator('.row .chip', { hasText: 'he/him' }).click();
-    // The row is resolved, the line beside the name is the common set,
-    // un-emphasised, and the store carries the mapped value.
-    await expect(check.locator('.row')).toHaveCount(0);
+    // "He" plainly means he/him: one click maps it, and it leaves the list
+    // un-emphasised. Rows follow roster order, so the first row is player one.
+    const heRow = check.locator('.row').first();
+    await expect(heRow.locator('input')).toHaveValue('He');
+    await heRow.locator('.chip', { hasText: 'he/him' }).click();
+    await expect(check.locator('.row')).toHaveCount(1);
     await expect(page.locator('.roster td.who .say').first()).toHaveText('he/him');
-    await expect(page.locator('.roster td.who .say .hi')).toHaveCount(0);
+    await expect(page.locator('.roster td.who .say').first().locator('.hi')).toHaveCount(0);
+
+    // "Xe/Xem " is a declaration, not a variant of the common sets: tidy the
+    // typing in place, keep it, and it stays exactly as written — emphasised.
+    const xeInput = check.locator('.row input');
+    await xeInput.fill('xe/xem');
+    await check.locator('.row .chip', { hasText: 'Keep' }).click();
+    await expect(check.locator('.row')).toHaveCount(0);
+    await expect(page.locator('.roster td.who .say .hi')).toHaveText('xe/xem');
     await expect.poll(async () => {
       const stored = await (await request.get(`${NOTES}&code=${CODE}`)).json();
-      return stored.players[firstId] && stored.players[firstId].pronouns;
-    }).toBe('he/him');
+      return stored.players[ids[1]] && stored.players[ids[1]].pronouns;
+    }).toBe('xe/xem');
+    const stored = await (await request.get(`${NOTES}&code=${CODE}`)).json();
+    expect(stored.players[ids[0]].pronouns).toBe('he/him');
+    expect(stored.players[ids[1]].pronounsok).toBe(true);
+
+    // Reviewed means reviewed: after a reload the kept set is still shown
+    // verbatim and the panel does not re-open the question.
+    await page.reload();
+    await expect(page.locator('.roster').first()).toBeVisible();
+    await expect(page.locator('.roster td.who .say .hi')).toHaveText('xe/xem');
+    await expect(page.locator('.prcheck .row')).toHaveCount(0);
   });
 
   test('the Keys button explains the shortcuts', async ({ page }) => {

@@ -389,9 +389,13 @@ try {
     .prcheck { margin-top: .6rem; }
     .prcheck h4 { margin: 0 0 .15rem; font-size: .85rem; }
     .prcheck .muted { margin: 0 0 .35rem; font-size: .8rem; }
-    .prcheck .row { display: flex; align-items: baseline; gap: .6rem; padding: .15rem 0; }
+    .prcheck .row { display: flex; align-items: center; gap: .6rem; padding: .15rem 0;
+        flex-wrap: wrap; }
     .prcheck .row .who { font-weight: 600; }
-    .prcheck .row .val { color: var(--ink); font-weight: 700; }
+    .prcheck .row input { font: inherit; font-size: .85rem; font-weight: 700;
+        color: var(--ink); background: var(--bg); border: 1px solid var(--line);
+        border-radius: 4px; padding: .2rem .45rem; width: 8rem; }
+    .prcheck .row input:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
     .keygrid { display: grid; grid-template-columns: auto 1fr; gap: .35rem .8rem;
         align-items: baseline; margin: .3rem 0 .8rem; }
     .keygrid kbd { font-family: inherit; font-size: .85rem; font-weight: 700;
@@ -989,47 +993,75 @@ try {
 
     /**
      * The prep-time pronoun check: every declared set the emphasis rule does
-     * not recognise as he/him or she/her, with one-click mapping onto them.
+     * not recognise as he/him or she/her, and that nobody has reviewed yet.
      *
      * The CSV deliberately stays free text — a dropdown in a team-visible sheet
      * would make the two common answers a form and everything else a disclosure
      * (§5). The cost is variants: "He", "she/her/hers", another language. Left
      * alone they would all be emphasised, and emphasis that is mostly noise
-     * stops protecting the entries it exists for. So the desk normalises during
-     * prep, by hand: one click maps a variant onto the common set it plainly
-     * is; anything genuinely declared stays as the player wrote it, emphasised.
-     * Nothing is ever mapped automatically.
+     * stops protecting the entries it exists for. So the desk reconciles during
+     * prep, by hand: a variant that plainly means a common set is mapped onto
+     * it, a typo is fixed in the row's own input, and a genuinely declared set
+     * — she/they, xe/xem, anything — is kept exactly as written with one click,
+     * stays emphasised, and stops being asked about. Nothing is ever mapped
+     * automatically, and when in doubt the answer is Keep.
      */
     function pronounCheck(side) {
         var box = el('div', 'prcheck');
+        function save(p, entry) {
+            pushNote(p.id, entry);
+            fill();
+        }
         function fill() {
             box.replaceChildren();
             var open = rosterByNumber(side).filter(function (p) {
                 var n = noteFor(p.id);
-                return !!(n && n.pronouns && emphasizedPronouns(n.pronouns));
+                return !!(n && n.pronouns && emphasizedPronouns(n.pronouns) && !n.pronounsok);
             });
             if (!open.length) { return; }
             box.append(el('h4', null, 'Pronouns to review'));
             box.append(el('p', 'muted',
                 'Written differently but plainly one of the two common sets? Map it. '
-                + 'Anything else stays as the player wrote it, emphasised.'));
+                + 'Anything genuinely declared: edit if needed, then Keep — it stays '
+                + 'exactly as written, emphasised, and is not asked about again.'));
             open.forEach(function (p) {
+                var cur = noteFor(p.id);
                 var row = el('div', 'row');
                 row.append(el('span', 'who', p.name));
-                row.append(el('span', 'val', noteFor(p.id).pronouns));
+
+                var input = document.createElement('input');
+                input.type = 'text';
+                input.maxLength = CONFIG.fieldMax;
+                input.value = cur.pronouns;
+                input.setAttribute('aria-label', 'Pronouns for ' + p.name);
+                row.append(input);
+
+                function keep() {
+                    save(p, {
+                        text: cur.text || '', nickname: cur.nickname || '',
+                        pronouns: input.value, pronunciation: cur.pronunciation || '',
+                        pronounsok: true
+                    });
+                }
                 ['he/him', 'she/her'].forEach(function (target) {
                     var b = el('button', 'chip', '→ ' + target);
                     b.type = 'button';
                     b.addEventListener('click', function () {
-                        var cur = noteFor(p.id) || {};
-                        pushNote(p.id, {
+                        save(p, {
                             text: cur.text || '', nickname: cur.nickname || '',
                             pronouns: target, pronunciation: cur.pronunciation || ''
                         });
-                        fill();
                     });
                     row.append(b);
                 });
+                var b = el('button', 'chip', 'Keep');
+                b.type = 'button';
+                b.title = 'Keep exactly this text, as the player declared it';
+                b.addEventListener('click', keep);
+                input.addEventListener('keydown', function (e) {
+                    if (e.key === 'Enter') { e.preventDefault(); keep(); }
+                });
+                row.append(b);
                 box.append(row);
             });
         }
@@ -1243,6 +1275,7 @@ try {
         ['nickname', 'pronouns', 'pronunciation'].forEach(function (k) {
             clean[k] = String(entry[k] || '').trim();
         });
+        clean.pronounsok = entry.pronounsok === true && clean.pronouns !== '';
         var anything = clean.text || clean.nickname || clean.pronouns || clean.pronunciation;
 
         // Reflect it locally first. The roster marker and a sheet reopened
@@ -1252,6 +1285,7 @@ try {
             notes[key] = {
                 text: clean.text, nickname: clean.nickname,
                 pronouns: clean.pronouns, pronunciation: clean.pronunciation,
+                pronounsok: clean.pronounsok,
                 by: myName, at: Math.floor(Date.now() / 1000)
             };
         } else {
@@ -1271,6 +1305,7 @@ try {
                 code: syncCode, player: Number(playerId),
                 text: clean.text, nickname: clean.nickname,
                 pronouns: clean.pronouns, pronunciation: clean.pronunciation,
+                pronounsok: clean.pronounsok,
                 by: myName
             })
         })
@@ -1665,12 +1700,16 @@ try {
             stateLabel.className = 'state';
             stateLabel.textContent = 'Saving…';
             // The whole entry in one write, so the box and the store cannot
-            // disagree about which channels exist.
+            // disagree about which channels exist. The review marker survives
+            // only while the pronouns it reviewed stand unedited.
+            var cur = noteFor(p.id);
             pushNote(p.id, {
                 text: area.value,
                 nickname: fieldInputs.nickname.value,
                 pronouns: fieldInputs.pronouns.value,
-                pronunciation: fieldInputs.pronunciation.value
+                pronunciation: fieldInputs.pronunciation.value,
+                pronounsok: !!(cur && cur.pronounsok
+                    && fieldInputs.pronouns.value.trim() === (cur.pronouns || ''))
             }, function (ok) {
                 stateLabel.className = 'state ' + (ok ? 'saved' : 'failed');
                 stateLabel.textContent = ok ? 'Saved' : 'Not shared — kept on this screen';

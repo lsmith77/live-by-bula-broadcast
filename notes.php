@@ -115,7 +115,14 @@ foreach (Notes::FIELDS as $field) {
     $fields[$field] = is_string($payload[$field] ?? null) ? $payload[$field] : '';
 }
 
-$result = $store->save($code, $playerId, $payload['text'], (string) ($payload['by'] ?? ''), $fields);
+$result = $store->save(
+    $code,
+    $playerId,
+    $payload['text'],
+    (string) ($payload['by'] ?? ''),
+    $fields,
+    ($payload['pronounsok'] ?? false) === true,
+);
 if (!$result['ok']) {
     fail(500, (string) $result['error']);
 }

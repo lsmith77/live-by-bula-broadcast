@@ -183,18 +183,27 @@ final class Notes
      * @param  array<string,string> $fields
      * @return array{ok: bool, error: ?string, state: array}
      */
-    public function save(string $code, int $playerId, string $text, string $by = '', array $fields = []): array
-    {
+    public function save(
+        string $code,
+        int $playerId,
+        string $text,
+        string $by = '',
+        array $fields = [],
+        bool $pronounsOk = false,
+    ): array {
         $path = $this->pathFor($code);
         if ($path === null || $playerId <= 0) {
             return ['ok' => false, 'error' => 'Bad room.', 'state' => $this->load($code)];
         }
 
-        return $this->withLock($path, function () use ($path, $code, $playerId, $text, $by, $fields) {
+        return $this->withLock($path, function () use ($path, $code, $playerId, $text, $by, $fields, $pronounsOk) {
             $state = $this->load($code);
             $players = $state['players'];
             $clean = self::cleanText($text);
             $cleanFields = self::cleanFields($fields);
+            // "Reviewed, keep as written" only means something about a declared
+            // set, so it cannot outlive the pronouns it reviewed.
+            $ok = $pronounsOk && isset($cleanFields['pronouns']);
 
             // Skip a write that would change nothing, rather than one that
             // arrives too soon.
@@ -216,7 +225,8 @@ final class Notes
                 ? $existing === null
                 : ($existing !== null
                     && $existing['text'] === $clean
-                    && self::fieldsOf($existing) === $cleanFields);
+                    && self::fieldsOf($existing) === $cleanFields
+                    && !empty($existing['pronounsok']) === $ok);
             if ($unchanged) {
                 return ['ok' => true, 'error' => null, 'state' => $state];
             }
@@ -236,6 +246,7 @@ final class Notes
                 }
                 $players[(string) $playerId] = ['text' => $clean]
                     + $cleanFields
+                    + ($ok ? ['pronounsok' => true] : [])
                     + ['by' => self::cleanBy($by), 'at' => time()];
             }
 
@@ -310,6 +321,9 @@ final class Notes
 
                 // Fill what is empty; keep what was written. Per channel.
                 $next = ['text' => $current['text'] ?? ''] + self::fieldsOf($current ?? []);
+                if (!empty($current['pronounsok'])) {
+                    $next['pronounsok'] = true;
+                }
                 $wrote = false;
                 $keptAny = false;
                 if ($text !== '') {
@@ -326,6 +340,11 @@ final class Notes
                     } else {
                         $next[$field] = $value;
                         $wrote = true;
+                        if ($field === 'pronouns') {
+                            // A newly imported declaration has not been
+                            // reviewed, whatever its predecessor was.
+                            unset($next['pronounsok']);
+                        }
                     }
                 }
                 if (!$wrote) {
@@ -452,6 +471,7 @@ final class Notes
             }
             $clean[(string) $id] = ['text' => $text]
                 + $fields
+                + (!empty($entry['pronounsok']) && isset($fields['pronouns']) ? ['pronounsok' => true] : [])
                 + [
                     'by' => self::cleanBy((string) ($entry['by'] ?? '')),
                     'at' => (int) ($entry['at'] ?? 0),
