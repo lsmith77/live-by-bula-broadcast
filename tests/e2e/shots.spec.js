@@ -93,6 +93,81 @@ test('commentator, player sheet', async ({ page }) => {
   await page.locator('#sheetCard').screenshot({ path: path.join(OUT, 'player-sheet.png') });
 });
 
+/**
+ * Play by play: a line on the field, with the identity fields on display.
+ *
+ * This is the screen where a name is about to be said, so it is the shot that
+ * shows declared pronouns beside the names — plus the roster identity line the
+ * CSV round trip fills. The room is a dedicated code, seeded and emptied here,
+ * so no real desk's notes are touched.
+ */
+test('commentator, play by play', async ({ page, request }) => {
+  // From the room-code alphabet, which has no O/I/L/U — and distinct from
+  // anything a person would be handed.
+  const CODE = 'ZSNAP';
+  const NOTES = '/index.php?view=live/overlays/notes';
+  await page.addInitScript(({ game, code }) => {
+    localStorage.setItem(`uo-lines-code-${game}`, code);
+    localStorage.setItem('uo-commentator-name', 'Desk');
+  }, { game: GAME_ID, code: CODE });
+
+  // Shorter than the prep shots: this view ends at the team blocks, and dead
+  // space under them reads as a broken page in a README.
+  await page.setViewportSize({ width: 1440, height: 640 });
+  await page.goto(`/c/${GAME_ID}`);
+  await expect(page.locator('.roster').first()).toBeVisible();
+
+  // Player ids come from the rendered roster, not from guesses about the fixture.
+  const ids = await page.locator('.roster').first()
+    .locator('td.who button[data-player]')
+    .evaluateAll((btns) => btns.map((b) => Number(b.getAttribute('data-player'))));
+  const seeded = [
+    { pronouns: 'she/her', nickname: 'Ace', pronunciation: 'OW-er' },
+    { pronouns: 'they/them' },
+    { pronouns: 'he/him' },
+  ].map((fields, i) => ({ player: ids[i], fields }));
+
+  try {
+    for (const s of seeded) {
+      await request.post(NOTES, { data: { code: CODE, player: s.player, text: '', by: 'Desk', ...s.fields } });
+    }
+    await page.reload();
+    await expect(page.locator('.roster').first()).toBeVisible();
+    // The identity line proves the room has been read; the on-field panel is
+    // rendered once, so entering play mode before this races the poll.
+    await expect(page.locator('.roster td.who .say').first()).toBeVisible();
+
+    // Exactly the first seven a side on the field, whatever the room held
+    // before — toggling blindly would invert a line left by an earlier run.
+    await page.locator('#tabPlay').click();
+    for (const panel of [0, 1]) {
+      const chips = page.locator('.cols .panel').nth(panel).locator('.nums button');
+      const count = await chips.count();
+      for (let i = 0; i < count; i += 1) {
+        const on = await chips.nth(i).evaluate((b) => b.classList.contains('on'));
+        if ((i < 7) !== on) { await chips.nth(i).click(); }
+      }
+    }
+    await page.locator('#steps .tbtn.primary').click();
+    await expect(page.locator('.onfield .p').first()).toBeVisible();
+    await expect(page.locator('.onfield .p .pr').first()).toBeVisible();
+    await page.waitForTimeout(600);
+    await page.screenshot({ path: path.join(OUT, 'commentator-play.png') });
+
+    // Empty both lines chip by chip: each toggle is pushed to the room, where
+    // the toolbar's Clear is local to this browser.
+    await page.locator('#steps .tbtn', { hasText: 'Change line' }).click();
+    for (const panel of [0, 1]) {
+      const on = page.locator('.cols .panel').nth(panel).locator('.nums button.on');
+      while (await on.count()) { await on.first().click(); }
+    }
+  } finally {
+    for (const s of seeded) {
+      await request.post(NOTES, { data: { code: CODE, player: s.player, text: '' } });
+    }
+  }
+});
+
 test('studio', async ({ page }) => {
   await loginAsAdmin(page, test);
   await page.setViewportSize({ width: 1440, height: 1100 });

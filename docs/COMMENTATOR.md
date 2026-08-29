@@ -105,7 +105,7 @@ Three consequences:
 
 This matters more than a missing statistic. Ultimate is international — a WUCC roster mixes Austrian, Finnish, Colombian and Japanese names in a single game — and a commentator mispronouncing a player's name on a public broadcast is a small disrespect to that player, repeated every time they touch the disc. It is also the kind of error the audience notices and the player remembers.
 
-**Build it as overlay-local state**, exactly the proving-ground pattern in `STUDIO.md` §2.5: a `conf/pronunciations.json` keyed by `player_id`, edited by whoever is preparing the broadcast, gitignored, surviving a Live! upgrade. Properties that make this the right first home:
+**Built as overlay-local state** — exactly the proving-ground pattern in `STUDIO.md` §2.5, though not as the separate file first sketched here: a structured `pronunciation` field on the desk's notes store (§5a), typed at the desk or arriving through the bio round trip's `Name pronunciation` column, and shown beside the name on the roster and the player sheet rather than buried in a note. Properties that made this the right first home:
 
 - It is prepared *before* a game, not under time pressure, so a plain edit surface is enough.
 - It is per-installation and low-stakes — a wrong entry is corrected in seconds.
@@ -128,7 +128,7 @@ So:
 - **Optional, and absent means absent.** No default, and no placeholder implying a value. This is the same "absent is not zero" rule as `STUDIO.md` §3.3, applied to a person rather than a statistic — and here the failure mode is worse than a wrong number.
 - **When it is absent, use the name.** A commentator can carry a whole game on surname and jersey number without a single pronoun. The page should make that the obvious fallback rather than leaving a blank that invites a guess.
 
-Same store as pronunciation (`conf/pronunciations.json` or a sibling), same reasoning for starting overlay-local, same graduation path — and that path is more concrete than it first appeared, because UltiOrganizer already has a player-owned profile with a consent mechanism.
+Same store as pronunciation, same graduation path — **also built**, as a structured `pronouns` field on the notes store. The right way to fill it is the bio round trip (§5a), because a player typing their own row *is* the self-declaration this section requires; the desk input exists so a wrong entry is corrected in seconds, not so a desk can guess. It is shown wherever a name is about to be said — the roster, the player sheet, and beside each name on the play-by-play field view — and the rules above are enforced by shape: free text, optional, absent renders nothing. The graduation path is more concrete than it first appeared, because UltiOrganizer already has a player-owned profile with a consent mechanism.
 
 ### What registration already provides
 
@@ -177,7 +177,7 @@ Each is one line, and each is optional.
 
 **Same home, same edit surface, same consent mechanism as pronunciation and pronouns:** `uo_player_profile`, self-edited through `user/playerprofile.php`, published only if the player adds the field to the `public` whitelist. That is what makes this a cheap ask rather than a large one — the storage, the player-owned edit page, the per-field opt-in and the privacy obligations all exist, and these fields join them rather than creating anything new.
 
-**But unlike pronunciation, this cannot start as an overlay-local store.** A broadcast team can research a phonetic spelling and type it in; nobody can supply a player's hobbies on their behalf. The proving-ground pattern (`STUDIO.md` §2.5) that makes `conf/pronunciations.json` the right first home does not apply, because this data has exactly one possible author. It is upstream from the start or it does not exist.
+**But unlike pronunciation, a desk cannot author this.** A broadcast team can research a phonetic spelling and type it in; nobody can supply a player's hobbies on their behalf. The one overlay-local route is therefore the bio round trip (§5a), where each player writes their own row — and that is a bridge with a room's lifetime, gathered again for every tournament, not a home. The durable version is upstream or it does not exist.
 
 Three things to get right, each of them a rule already stated elsewhere in these documents:
 
@@ -283,7 +283,7 @@ export CSV (identifier + name, empty prompt columns)
 - **It is reusable.** The same document serves every tournament the team attends, and it is the team's to keep.
 - **The team owns the boundary.** Whatever is in that document, the team chose to send it.
 
-It does not replace the box. A commentator's own observations — something a coach mentioned, something from the previous game — have no other home, so **import fills empty notes only and never overwrites one that was typed**, and the preview says how many were kept for that reason. That rule is enforced in the store rather than only in the page, so a partner writing during a preview cannot be overwritten by an import that never saw their note.
+It does not replace the box. A commentator's own observations — something a coach mentioned, something from the previous game — have no other home, so **import fills only what is empty and never overwrites what was typed**, and the preview says how many rows were kept for that reason. The rule holds per channel — the note and each structured field independently — so a player whose note was typed at the desk still receives the pronouns nobody had. It is enforced in the store rather than only in the page, so a partner writing during a preview cannot be overwritten by an import that never saw their note.
 
 #### The identifier is never trusted
 
@@ -320,7 +320,7 @@ A CSV is also the format the source is *already* in: a team collecting player an
 
 #### What the export contains
 
-`Player ID`, `Number`, `Name`, then five empty prompt columns — the fields §5 asks upstream for, phrased as questions. A blank column gets a blank answer; a column that asks something gets an answer. A team may delete or add columns freely: the import maps by header, several filled columns compose into one labelled note, and a single filled column is not labelled with its own question.
+`Player ID`, `Number`, `Name`, then three structured columns — `Nickname`, `Pronouns`, `Name pronunciation`, which import into their own fields and are shown beside the name rather than composed into the note (§5) — then five empty prompt columns, the fields §5 asks upstream for, phrased as questions. A blank column gets a blank answer; a column that asks something gets an answer. A team may delete or add columns freely: the import maps by header, several filled prompt columns compose into one labelled note, and a single filled one is not labelled with its own question.
 
 An untouched export imports nothing rather than blanking the roster.
 
