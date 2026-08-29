@@ -263,6 +263,10 @@ try {
     .roster td.who .say { margin-left: .5rem; color: var(--ink-mute); font-size: .82rem;
         white-space: nowrap; }
     .roster td.who .say .hi, #sheetCard .sub.say .hi { color: var(--ink); font-weight: 700; }
+    .say .mt, .nums button .mt { font-size: .68rem; font-weight: 700; letter-spacing: .04em;
+        color: var(--ink-mute); border: 1px solid var(--line); border-radius: 3px;
+        padding: 0 .25rem; }
+    .nums button .mt { display: block; margin: .1rem auto 0; width: max-content; }
     /* A player with no points yet is the DEFAULT state, not an exception — on a
        fresh game it is most of the roster. So the row dims only its statistics,
        never the jersey number or the name, which are the two things a
@@ -952,6 +956,7 @@ try {
             tr.append(el('td', 'n', p.num === null || p.num === undefined ? '' : p.num));
 
             var who = el('td', 'who');
+            who.setAttribute('data-mixed', isMixedSide(side) ? '1' : '');
             var btn = el('button', null, p.name);
             btn.type = 'button';
             // Say whether opening this player is worth it. The notes live in the
@@ -1040,7 +1045,7 @@ try {
                     save(p, {
                         text: cur.text || '', nickname: cur.nickname || '',
                         pronouns: input.value, pronunciation: cur.pronunciation || '',
-                        pronounsok: true
+                        matching: cur.matching || '', pronounsok: true
                     });
                 }
                 ['he/him', 'she/her'].forEach(function (target) {
@@ -1049,7 +1054,8 @@ try {
                     b.addEventListener('click', function () {
                         save(p, {
                             text: cur.text || '', nickname: cur.nickname || '',
-                            pronouns: target, pronunciation: cur.pronunciation || ''
+                            pronouns: target, pronunciation: cur.pronunciation || '',
+                            matching: cur.matching || ''
                         });
                     });
                     row.append(b);
@@ -1165,18 +1171,28 @@ try {
         return n !== '' && n !== 'he/him' && n !== 'she/her';
     }
 
-    /** Fill a container with the identity line, emphasising what must not be skimmed. */
-    function sayInto(node, note) {
+    /**
+     * Fill a container with the identity line, emphasising what must not be
+     * skimmed. `opts.matching` opts the competition designation in — it rides
+     * the same line but only where it means something, a mixed division.
+     */
+    function sayInto(node, note, opts) {
         node.replaceChildren();
         var add = function (text, cls) {
             if (node.childNodes.length) { node.append(document.createTextNode(' · ')); }
             node.append(el('span', cls, text));
         };
+        if (opts && opts.matching && note.matching) { add(note.matching, 'mt'); }
         if (note.nickname) { add('“' + note.nickname + '”', null); }
         if (note.pronouns) {
             add(note.pronouns, emphasizedPronouns(note.pronouns) ? 'hi' : null);
         }
         if (note.pronunciation) { add('say ' + note.pronunciation, null); }
+    }
+
+    /** Is there anything for sayInto() to draw? */
+    function hasSayLine(note, opts) {
+        return !!(sayLine(note) || (opts && opts.matching && note && note.matching));
     }
 
     /**
@@ -1186,12 +1202,13 @@ try {
      */
     function markSay(cell, note) {
         var existing = cell.querySelector('.say');
-        if (sayLine(note)) {
+        var opts = { matching: cell.getAttribute('data-mixed') === '1' };
+        if (note && hasSayLine(note, opts)) {
             if (!existing) {
                 existing = el('span', 'say');
                 cell.append(existing);
             }
-            sayInto(existing, note);
+            sayInto(existing, note, opts);
         } else if (existing) {
             existing.remove();
         }
@@ -1272,11 +1289,14 @@ try {
         lastNoteWrite = Date.now();
         var key = String(playerId);
         var clean = { text: String(entry.text || '').trim() };
-        ['nickname', 'pronouns', 'pronunciation'].forEach(function (k) {
+        ['nickname', 'pronouns', 'pronunciation', 'matching'].forEach(function (k) {
             clean[k] = String(entry[k] || '').trim();
         });
+        clean.matching = clean.matching.toUpperCase();
+        if (clean.matching !== 'FMP' && clean.matching !== 'MMP') { clean.matching = ''; }
         clean.pronounsok = entry.pronounsok === true && clean.pronouns !== '';
-        var anything = clean.text || clean.nickname || clean.pronouns || clean.pronunciation;
+        var anything = clean.text || clean.nickname || clean.pronouns
+            || clean.pronunciation || clean.matching;
 
         // Reflect it locally first. The roster marker and a sheet reopened
         // straight away should agree with what was just typed, whatever the
@@ -1285,7 +1305,7 @@ try {
             notes[key] = {
                 text: clean.text, nickname: clean.nickname,
                 pronouns: clean.pronouns, pronunciation: clean.pronunciation,
-                pronounsok: clean.pronounsok,
+                matching: clean.matching, pronounsok: clean.pronounsok,
                 by: myName, at: Math.floor(Date.now() / 1000)
             };
         } else {
@@ -1305,7 +1325,7 @@ try {
                 code: syncCode, player: Number(playerId),
                 text: clean.text, nickname: clean.nickname,
                 pronouns: clean.pronouns, pronunciation: clean.pronunciation,
-                pronounsok: clean.pronounsok,
+                matching: clean.matching, pronounsok: clean.pronounsok,
                 by: myName
             })
         })
@@ -1371,10 +1391,22 @@ try {
                 text: notes[k].text || '',
                 nickname: notes[k].nickname || '',
                 pronouns: notes[k].pronouns || '',
-                pronunciation: notes[k].pronunciation || ''
+                pronunciation: notes[k].pronunciation || '',
+                matching: notes[k].matching || ''
             };
         });
         return out;
+    }
+
+    /**
+     * Matching is shown only where it means something — a mixed division
+     * (§10.5). Both teams share the game's division, and the game payload's
+     * team objects carry no `type`, so this is the page's one mixed test
+     * (isMixedDivision, §6b) asked per side for the call sites that think in
+     * sides.
+     */
+    function isMixedSide(side) {
+        return isMixedDivision();
     }
 
     function importBios(side, input) {
@@ -1677,7 +1709,7 @@ try {
      * paragraph and closes the sheet has lost it, and they will not find out
      * until the moment they wanted to read it out.
      */
-    function noteBox(p) {
+    function noteBox(p, side) {
         var box = el('div', 'note');
         var existing = noteFor(p.id);
 
@@ -1688,13 +1720,17 @@ try {
         // arrive through the CSV round trip — a player's own row is the
         // self-declaration pronouns require — but a wrong entry must be
         // correctable at the desk in seconds, so they are editable here too.
+        // Matching only offers itself in a mixed division, where it means
+        // something (§10.5).
         var fieldsRow = el('div', 'fields');
         var fieldInputs = {};
         [
             { key: 'nickname', label: 'Nickname', hint: 'as the player uses it' },
             { key: 'pronouns', label: 'Pronouns', hint: 'as the player declared — never guessed' },
             { key: 'pronunciation', label: 'Say it', hint: 'how to say the name' }
-        ].forEach(function (f) {
+        ].concat(isMixedSide(side)
+            ? [{ key: 'matching', label: 'Matching', hint: 'FMP or MMP' }]
+            : []).forEach(function (f) {
             var wrap = el('label', 'field');
             wrap.append(el('span', null, f.label));
             var input = document.createElement('input');
@@ -1769,6 +1805,11 @@ try {
                 nickname: fieldInputs.nickname.value,
                 pronouns: fieldInputs.pronouns.value,
                 pronunciation: fieldInputs.pronunciation.value,
+                // Without an input on this sheet, the stored value rides along
+                // unchanged rather than being cleared by a save.
+                matching: fieldInputs.matching
+                    ? fieldInputs.matching.value
+                    : (cur && cur.matching) || '',
                 pronounsok: !!(cur && cur.pronounsok
                     && fieldInputs.pronouns.value.trim() === (cur.pronouns || ''))
             }, function (ok) {
@@ -1805,16 +1846,18 @@ try {
         card.append(name);
         card.append(el('div', 'sub',
             [side.team.name, p.division].filter(Boolean).join(' · ')));
-        // Nickname, pronouns, pronunciation — under the name, where somebody
-        // about to say it looks. Rendered only when something is declared.
+        // Nickname, pronouns, pronunciation — and, in mixed, the matching —
+        // under the name, where somebody about to say it looks. Rendered only
+        // when something is declared.
         var sayNote = noteFor(p.id);
-        if (sayLine(sayNote)) {
+        var sayOpts = { matching: isMixedSide(side) };
+        if (sayNote && hasSayLine(sayNote, sayOpts)) {
             var idLine = el('div', 'sub say');
-            sayInto(idLine, sayNote);
+            sayInto(idLine, sayNote, sayOpts);
             card.append(idLine);
         }
 
-        card.append(noteBox(p));
+        card.append(noteBox(p, side));
 
         // Blocks earn a column here on the same condition as the roster, so the
         // sheet and the list never disagree about whether the number exists.
@@ -2521,6 +2564,7 @@ try {
         }
 
         var nums = el('div', 'nums');
+        var mixed = isMixedSide(side);
         list.forEach(function (p) {
             var b = el('button', line.indexOf(p.id) !== -1 ? 'on' : '');
             b.type = 'button';
@@ -2529,6 +2573,10 @@ try {
             // Surname under the number: the number is what is on the shirt, the
             // name is what gets said.
             b.append(el('small', null, p.name.split(' ').slice(-1)[0]));
+            // The matching under the surname, in mixed — clicking a legal line
+            // together is exactly when it is needed (§10.5).
+            var n = noteFor(p.id);
+            if (mixed && n && n.matching) { b.append(el('small', 'mt', n.matching)); }
             b.addEventListener('click', function () { toggleNum(side, p.id); });
             nums.append(b);
         });
@@ -2700,9 +2748,10 @@ try {
             (p.num !== null && p.num !== undefined ? '#' + p.num + '  ' : '') + p.name));
         card.append(el('div', 'muted', side.team.name || ''));
         var n = noteFor(p.id);
-        if (sayLine(n)) {
+        var sayOpts = { matching: isMixedSide(side) };
+        if (n && hasSayLine(n, sayOpts)) {
             var s = el('div', 'say');
-            sayInto(s, n);
+            sayInto(s, n, sayOpts);
             card.append(s);
         }
         var blocks = blocksTracked();

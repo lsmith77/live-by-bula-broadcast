@@ -75,11 +75,18 @@ final class Notes
      * The structured fields an entry may carry beside the note.
      *
      * Single-line and short: each is something said in a breath — a nickname, a
-     * pronoun set, how to say a name — not a place for prose.
+     * pronoun set, how to say a name — not a place for prose. `matching` is the
+     * odd one out: a competition designation, not identity, and it accepts
+     * exactly FMP or MMP — the sport's own terms, never a gender letter
+     * (docs/STUDIO.md section 10.5). Anything else is dropped rather than
+     * stored, so the short forms cannot creep in.
      *
      * @var list<string>
      */
-    public const FIELDS = ['nickname', 'pronouns', 'pronunciation'];
+    public const FIELDS = ['nickname', 'pronouns', 'pronunciation', 'matching'];
+
+    /** The only values `matching` may hold. */
+    public const MATCHINGS = ['FMP', 'MMP'];
 
     /** Length of one structured field. */
     public const MAX_FIELD = 60;
@@ -439,6 +446,12 @@ final class Notes
             $out = preg_replace('/[\x00-\x1F\x7F]/u', ' ', (string) ($raw[$field] ?? ''));
             $out = is_string($out) ? trim(preg_replace('/\s+/', ' ', $out) ?? '') : '';
             $out = mb_substr($out, 0, self::MAX_FIELD);
+            if ($field === 'matching') {
+                $out = strtoupper($out);
+                if (!in_array($out, self::MATCHINGS, true)) {
+                    $out = '';
+                }
+            }
             if ($out !== '') {
                 $clean[$field] = $out;
             }

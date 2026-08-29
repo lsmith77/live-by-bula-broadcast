@@ -299,6 +299,17 @@ test.describe('bio import: who a row is allowed to name', () => {
     expect(report.accepted[0].fields).toEqual({ pronouns: 'she/her' });
   });
 
+  test("a matching cell imports only as FMP or MMP, the sport's own terms", () => {
+    // A gender letter is not a matching (docs/STUDIO.md section 10.5): a cell
+    // that cannot say FMP or MMP imports as blank, never as a guess.
+    const out = Csv.parse('Player ID,Name,Matching (FMP/MMP)\r\n'
+      + '301,Alex Auer,fmp\r\n302,Kim Ebner,F\r\n');
+    const report = Bios.match(out, ROSTER, {});
+    expect(report.accepted).toHaveLength(1);
+    expect(report.accepted[0].fields).toEqual({ matching: 'FMP' });
+    expect(report.empty).toBe(1);
+  });
+
   test('a row whose every channel is already written is kept', () => {
     const out = Csv.parse(csv([{
       'Player ID': 301, Name: 'Alex Auer',

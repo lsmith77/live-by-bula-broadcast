@@ -774,6 +774,8 @@ Deriving matching from it would be both a category error and unreliable.
 
 **Treat it as capture-policy data (§4).** It is only meaningful in mixed divisions, so it needs the same per-event declaration as blocks: an event that has not recorded matchings must be distinguishable from one where every player happens to be unset.
 
+**A desk-local bridge is built**, in the commentator page's notes store: a `matching` field supplied through the bio round trip or typed at the desk, validated to exactly `FMP`/`MMP`, shown on the roster and the line picker in mixed divisions only (`COMMENTATOR.md` §5a). It is desk-side and per-tournament — the on-air cards still read `player.matching` from the payload and still wait on this ask, and the bridge does not change that: team-supplied designations on a commentator's private screen are one thing, a broadcast graphic asserting them is the upstream feature's job.
+
 **And apply the pronouns caution (`COMMENTATOR.md` §5) to publication.** A roster matching is a competition fact rather than a statement about identity, which is why collecting it is legitimate where inferring pronouns is not — but it is adjacent enough that it should be published deliberately rather than by default.
 
 ### 10.6 Feature request: a per-tournament logo

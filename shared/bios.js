@@ -101,8 +101,25 @@
         {
             key: 'pronunciation', header: 'Name pronunciation',
             aliases: ['name pronunciation', 'pronunciation', 'pronounced', 'pronounce', 'how to say it']
+        },
+        {
+            key: 'matching', header: 'Matching (FMP/MMP)',
+            aliases: ['matching (fmp/mmp)', 'matching', 'fmp/mmp', 'fmp or mmp', 'gender matching']
         }
     ];
+
+    /**
+     * `matching` is a competition designation with exactly two values — the
+     * sport's own terms, never a gender letter (docs/STUDIO.md §10.5). A cell
+     * that cannot say FMP or MMP is not supplying this data and imports as
+     * blank rather than as a guess.
+     */
+    function fieldValue(key, raw) {
+        var v = String(raw === undefined || raw === null ? '' : raw).trim();
+        if (key !== 'matching') { return v; }
+        v = v.toUpperCase();
+        return v === 'FMP' || v === 'MMP' ? v : '';
+    }
 
     var ID_ALIASES = ['player id', 'player_id', 'playerid', 'id', 'identifier'];
     var NAME_ALIASES = ['name', 'player', 'player name', 'full name'];
@@ -172,7 +189,7 @@
      * note text alone. Both mean the same thing: what is already written here.
      */
     function existingOf(value) {
-        var entry = { text: '', nickname: '', pronouns: '', pronunciation: '' };
+        var entry = { text: '', nickname: '', pronouns: '', pronunciation: '', matching: '' };
         if (typeof value === 'string') { entry.text = value; return entry; }
         if (value && typeof value === 'object') {
             Object.keys(entry).forEach(function (k) {
@@ -357,7 +374,7 @@
                 if (!cur.text.trim()) { toText = text; }
             }
             fieldKeys.forEach(function (k) {
-                var v = String(row[fields[k]] === undefined ? '' : row[fields[k]]).trim();
+                var v = fieldValue(k, row[fields[k]]);
                 if (!v) { return; }
                 any = true;
                 if (!cur[k].trim()) { toFields[k] = v; }

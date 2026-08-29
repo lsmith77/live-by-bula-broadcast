@@ -568,6 +568,40 @@ test.describe('prepared notes', () => {
     await expect(page.locator('#sheet')).not.toHaveClass(/open/);
   });
 
+  test('matching shows as FMP or MMP, and only in a mixed division', async ({ page, request }) => {
+    // Mixed fixture game 703. The value is validated on the way in — "fmp"
+    // stores as FMP, and a gender letter would not store at all.
+    await openPage(page, 703);
+    const id = await page.locator('.roster').first()
+      .locator('td.who button[data-player]').first().getAttribute('data-player');
+    await request.post(NOTES, {
+      data: { code: CODE, player: Number(id), text: '', matching: 'fmp', by: 'Tester' },
+    });
+    await page.reload();
+    await expect(page.locator('.roster').first()).toBeVisible();
+    await expect(page.locator('.roster td.who .say .mt').first()).toHaveText('FMP');
+
+    // The line picker carries it too — a legal mixed line is picked by it.
+    await page.locator('#tabPlay').click();
+    await expect(page.locator('.nums button .mt').first()).toHaveText('FMP');
+  });
+
+  test('matching stays off the screen outside mixed', async ({ page, request }) => {
+    // Open division, same data: in open and women's every player shares one
+    // matching, so a label carries no information (docs/STUDIO.md 10.5).
+    await openPage(page);
+    const id = await page.locator('.roster').first()
+      .locator('td.who button[data-player]').first().getAttribute('data-player');
+    await request.post(NOTES, {
+      data: { code: CODE, player: Number(id), text: '', matching: 'MMP', by: 'Tester' },
+    });
+    await page.reload();
+    await expect(page.locator('.roster').first()).toBeVisible();
+    await expect(page.locator('.roster td.who .say .mt')).toHaveCount(0);
+    // A matching-only entry draws no identity line at all outside mixed.
+    await expect(page.locator('.roster td.who .say')).toHaveCount(0);
+  });
+
   test("the wrong team's sheet is refused as a file, pointing at the right panel", async ({ page }, info) => {
     const fs = require('fs');
     await openPage(page);
