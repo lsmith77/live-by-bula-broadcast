@@ -1733,16 +1733,14 @@ try {
         // activation comfortably survives the write, so the popup is not
         // blocked from the callback.
         navigator.clipboard.writeText(text).then(function () {
-            // The create endpoint sheets.new redirects to, called directly so
-            // the title survives the trip; if Google ever stops honouring it,
-            // the sheet is merely untitled. No third window.open argument: ANY
-            // features string demotes the tab to a small popup window, and
+            // The create endpoint sheets.new redirects to. A ?title= parameter
+            // was tried and is ignored there (measured, not assumed), so the
+            // sheet arrives untitled — the pasted Team column says whose it is,
+            // and naming it stays with the team. No third window.open argument:
+            // ANY features string demotes the tab to a small popup window, and
             // "noopener" there is a feature, not a rel. The opener is cut by
             // hand instead.
-            var title = bioFileName(side).replace(/\.csv$/, '');
-            var tab = window.open(
-                'https://docs.google.com/spreadsheets/create?title=' + encodeURIComponent(title),
-                '_blank');
+            var tab = window.open('https://docs.google.com/spreadsheets/create', '_blank');
             if (tab) { tab.opener = null; }
             flashMessage('Copied. Paste into the new sheet (Ctrl+V or Cmd+V), then share it with the team.');
         }, function () {
