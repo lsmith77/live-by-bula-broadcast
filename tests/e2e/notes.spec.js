@@ -426,11 +426,11 @@ test.describe('prepared notes', () => {
     await expect(page.locator('#sheet .note textarea')).toHaveValue('Typed at the desk.');
   });
 
-  test('a key per on-field player pulls up a quick card; Escape clears', async ({ page, request }) => {
+  test('typing a shirt number pulls up quick cards; Escape clears', async ({ page, request }) => {
     // The play view's whole point is speed: mid-point there is no roster on
-    // screen and no time for a dialog, so Digit1..7 pin the top team's players
-    // and the bottom letter row the bottom team's. Cards carry the prepared
-    // note, which is why this lives beside the notes tests.
+    // screen and no time for a dialog, so the card is summoned by the number
+    // on the shirt. Cards carry the prepared note, which is why this lives
+    // beside the notes tests.
     await openPage(page);
     const firstId = await page.locator('.roster').first()
       .locator('td.who button[data-player]').first()
@@ -457,30 +457,33 @@ test.describe('prepared notes', () => {
     }
     await page.locator('#steps .tbtn.primary').click();
     await expect(page.locator('.onfield .p').first()).toBeVisible();
-    // Every on-field player shows the key that pulls them up.
-    await expect(page.locator('.onfield .p kbd')).toHaveCount(14);
 
     try {
-      // Top row, first player: the card carries the note and the identity line.
+      // Both fixture squads wear the same numbers, so #1 is worn on both
+      // sides: one number pins both players, labelled, rather than guessing
+      // which team was meant. The home #1 carries the seeded note.
       await page.keyboard.press('Digit1');
-      await expect(page.locator('#quickcards .qcard')).toHaveCount(1);
+      await expect(page.locator('#quickcards .qcard')).toHaveCount(2);
       await expect(page.locator('#quickcards .qcard').first())
         .toContainText('Captain. Started playing in Graz.');
       await expect(page.locator('#quickcards .qcard .say .hi')).toHaveText('they/them');
 
-      // A player from the other team sits beside the first; a third replaces
-      // the oldest rather than growing a stack.
-      await page.keyboard.press('KeyZ');
-      await expect(page.locator('#quickcards .qcard')).toHaveCount(2);
-      await page.keyboard.press('Digit2');
+      // Another number replaces the pair rather than growing a stack.
+      await page.keyboard.press('Digit3');
       await expect(page.locator('#quickcards .qcard')).toHaveCount(2);
       await expect(page.locator('#quickcards .qcard').first())
         .not.toContainText('Captain. Started playing in Graz.');
 
-      // The same key removes its own card; Escape clears the region.
-      await page.keyboard.press('Digit2');
-      await expect(page.locator('#quickcards .qcard')).toHaveCount(1);
+      // Escape clears; a number nobody on the field wears pins nothing.
       await page.keyboard.press('Escape');
+      await expect(page.locator('#quickcards .qcard')).toHaveCount(0);
+      await page.keyboard.press('Digit2');
+      await expect(page.locator('#quickcards .qcard')).toHaveCount(0);
+
+      // Clicking a chip pins that one player; clicking again removes them.
+      await page.locator('.onfield .p').first().click();
+      await expect(page.locator('#quickcards .qcard')).toHaveCount(1);
+      await page.locator('.onfield .p').first().click();
       await expect(page.locator('#quickcards .qcard')).toHaveCount(0);
       await expect(page.locator('#quickcards')).toBeHidden();
     } finally {
@@ -491,6 +494,51 @@ test.describe('prepared notes', () => {
         while (await on.count()) { await on.first().click(); }
       }
     }
+  });
+
+  test('the pronoun review maps a variant onto a common set, by hand', async ({ page, request }) => {
+    // The CSV stays free text, so "He" arrives as written and would be
+    // emphasised as if it were a less common set — noise that erodes the
+    // emphasis. The prep panel lists it; one click maps it; nothing is ever
+    // mapped automatically.
+    await openPage(page);
+    const firstId = await page.locator('.roster').first()
+      .locator('td.who button[data-player]').first()
+      .getAttribute('data-player');
+    await request.post(NOTES, {
+      data: { code: CODE, player: Number(firstId), text: '', by: 'Tester', pronouns: 'He' },
+    });
+    await page.reload();
+    await expect(page.locator('.roster').first()).toBeVisible();
+
+    const check = page.locator('.prcheck').first();
+    await expect(check).toContainText('Pronouns to review');
+    await expect(check.locator('.row .val')).toHaveText('He');
+
+    await check.locator('.row .chip', { hasText: 'he/him' }).click();
+    // The row is resolved, the line beside the name is the common set,
+    // un-emphasised, and the store carries the mapped value.
+    await expect(check.locator('.row')).toHaveCount(0);
+    await expect(page.locator('.roster td.who .say').first()).toHaveText('he/him');
+    await expect(page.locator('.roster td.who .say .hi')).toHaveCount(0);
+    await expect.poll(async () => {
+      const stored = await (await request.get(`${NOTES}&code=${CODE}`)).json();
+      return stored.players[firstId] && stored.players[firstId].pronouns;
+    }).toBe('he/him');
+  });
+
+  test('the Keys button explains the shortcuts', async ({ page }) => {
+    // Each key is obvious to whoever added it; the person meeting all of them
+    // at once is a commentator five minutes before a pull.
+    await openPage(page);
+    await page.locator('#tabPlay').click();
+    await page.locator('#steps .tbtn', { hasText: 'Keys' }).click();
+    const card = page.locator('#sheetCard');
+    await expect(card).toContainText('Keyboard');
+    await expect(card).toContainText('shirt number');
+    await expect(card).toContainText('break chance');
+    await page.keyboard.press('Escape');
+    await expect(page.locator('#sheet')).not.toHaveClass(/open/);
   });
 
   test('the room is the code alone, so notes outlive one fixture', async ({ request }) => {

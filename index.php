@@ -115,6 +115,26 @@ $json = static fn ($v): string => json_encode($v, JSON_UNESCAPED_SLASHES | JSON_
     a.btn:hover { background: #2563eb; }
     a.btn.ghost { background: none; border: 1px solid #334155; color: #94a3b8; }
     a.btn.ghost:hover { background: none; border-color: #475569; color: #e2e8f0; }
+    #keysBtn { background: none; border: 1px solid #334155; color: #94a3b8; font: inherit;
+               font-size: .85rem; font-weight: 600; padding: .45rem 1rem; border-radius: 4px;
+               cursor: pointer; }
+    #keysBtn:hover { border-color: #475569; color: #e2e8f0; }
+    #keysOverlay { position: fixed; inset: 0; background: rgba(2, 6, 23, .7); z-index: 50;
+                   display: flex; align-items: center; justify-content: center; }
+    #keysOverlay[hidden] { display: none; }
+    #keysOverlay .card { background: #0f172a; border: 1px solid #334155; border-radius: 8px;
+                         padding: 1.2rem 1.5rem; max-width: 30rem; width: calc(100% - 2rem); }
+    #keysOverlay h3 { margin: 0 0 .6rem; }
+    #keysOverlay .keygrid { display: grid; grid-template-columns: auto 1fr; gap: .4rem .8rem;
+                            align-items: baseline; }
+    #keysOverlay kbd { font-family: inherit; font-size: .85rem; font-weight: 700;
+                       border: 1px solid #334155; border-radius: 4px; padding: .05rem .5rem;
+                       justify-self: start; background: #1e293b; }
+    #keysOverlay .muted { font-size: .85rem; }
+    #keysOverlay footer { margin-top: .8rem; text-align: right; }
+    #keysOverlay footer button { background: #1d4ed8; border: 0; color: #fff; font: inherit;
+                                 font-weight: 600; font-size: .85rem; padding: .45rem 1rem;
+                                 border-radius: 4px; cursor: pointer; }
 
     td.where { color: #94a3b8; font-size: .85rem; white-space: nowrap; }
     td.where strong { color: #cbd5e1; font-weight: 600; }
@@ -226,6 +246,7 @@ $json = static fn ($v): string => json_encode($v, JSON_UNESCAPED_SLASHES | JSON_
     <h1>Studio</h1>
     <span class="who" id="who"><span class="dot"></span>Checking…</span>
     <span id="authAction"></span>
+    <button id="keysBtn" type="button" title="Keyboard shortcuts">Keys</button>
 </header>
 <main>
 <p class="lede">Browser-source URLs for a video switcher (OBS, Magewell Director Mini, Yolobox).</p>
@@ -274,6 +295,24 @@ $json = static fn ($v): string => json_encode($v, JSON_UNESCAPED_SLASHES | JSON_
 </div>
 
 </main>
+
+<!-- The keyboard reference. Each key is obvious to whoever added it; the person
+     meeting all of them at once is an operator five minutes before a pull. -->
+<div id="keysOverlay" hidden role="dialog" aria-modal="true" aria-labelledby="keysTitle">
+    <div class="card">
+        <h3 id="keysTitle">Keyboard</h3>
+        <div class="keygrid">
+            <kbd>O</kbd><div>The offence has the disc</div>
+            <kbd>D</kbd><div>The defence has the disc — a break chance</div>
+            <kbd>I</kbd><div>Toggle a stoppage</div>
+            <kbd>U</kbd><div>Undo the last possession press</div>
+        </div>
+        <p class="muted">O, D and U need break-chance tracking to be on; all four need the
+        Live! admin session. Keys do nothing while typing in a field.</p>
+        <footer><button type="button">Close</button></footer>
+    </div>
+</div>
+
 <script src="<?= htmlspecialchars($assetUrl('shared/possession.js'), ENT_QUOTES) ?>"></script>
 <script src="<?= htmlspecialchars($assetUrl('shared/ratio.js'), ENT_QUOTES) ?>"></script>
 <script src="<?= htmlspecialchars($assetUrl('shared/tracking.js'), ENT_QUOTES) ?>"></script>
@@ -1006,6 +1045,10 @@ $json = static fn ($v): string => json_encode($v, JSON_UNESCAPED_SLASHES | JSON_
         if (e.metaKey || e.ctrlKey || e.altKey) { return; }
         var tag = (e.target && e.target.tagName) || '';
         if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA' || e.target.isContentEditable) { return; }
+        // Inert behind the keyboard-reference overlay: reading about O must
+        // not press it.
+        var keysOverlay = document.getElementById('keysOverlay');
+        if (keysOverlay && !keysOverlay.hidden) { return; }
         var key = (e.key || '').toLowerCase();
         if (key !== 'o' && key !== 'd' && key !== 'u' && key !== 'i') { return; }
         if (!showCanEdit()) { return; }
@@ -1018,6 +1061,32 @@ $json = static fn ($v): string => json_encode($v, JSON_UNESCAPED_SLASHES | JSON_
         if (key === 'u') { correct({ undo: true }); return; }
         setDefence(key === 'd');
     });
+
+    /**
+     * The keyboard reference: open, close, and nothing else. It is static
+     * markup because the keys are static; only the wiring lives here.
+     */
+    (function () {
+        var overlay = document.getElementById('keysOverlay');
+        var button = document.getElementById('keysBtn');
+        if (!overlay || !button) { return; }
+        var close = overlay.querySelector('footer button');
+        var opener = null;
+        function show() { overlay.hidden = false; opener = document.activeElement; close.focus(); }
+        function hide() {
+            overlay.hidden = true;
+            if (opener && opener.focus) { opener.focus(); }
+        }
+        button.addEventListener('click', show);
+        close.addEventListener('click', hide);
+        overlay.addEventListener('click', function (e) { if (e.target === overlay) { hide(); } });
+        document.addEventListener('keydown', function (e) {
+            if (overlay.hidden) { return; }
+            if (e.key === 'Escape') { hide(); return; }
+            // One focusable control, so the trap is trivial: Tab stays on it.
+            if (e.key === 'Tab') { e.preventDefault(); close.focus(); }
+        });
+    }());
 
     /**
      * The commentary link: one code, and who is on it.

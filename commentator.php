@@ -380,9 +380,23 @@ try {
     .onfield .p .pr { color: var(--ink-mute); font-size: .95rem; font-weight: 600;
         margin-left: .4rem; margin-right: 0; }
     .onfield .p .pr.hi { color: var(--ink); font-weight: 700; }
-    .onfield .p kbd { font-family: inherit; font-size: .72rem; font-weight: 600;
-        color: var(--ink-mute); border: 1px solid var(--line); border-radius: 3px;
-        padding: 0 .3rem; margin-right: .35rem; vertical-align: .25em; }
+    /* font-family only: the `font` shorthand would reset the size and weight
+       .p sets, shrinking every name on the field. */
+    .onfield button.p { font-family: inherit; background: none; border: 0; padding: 0;
+        color: inherit; cursor: pointer; text-align: left; }
+    .onfield button.p:hover { color: var(--link); }
+    #quickbuf { font-weight: 700; color: var(--ink); min-width: 2rem; display: inline-block; }
+    .prcheck { margin-top: .6rem; }
+    .prcheck h4 { margin: 0 0 .15rem; font-size: .85rem; }
+    .prcheck .muted { margin: 0 0 .35rem; font-size: .8rem; }
+    .prcheck .row { display: flex; align-items: baseline; gap: .6rem; padding: .15rem 0; }
+    .prcheck .row .who { font-weight: 600; }
+    .prcheck .row .val { color: var(--ink); font-weight: 700; }
+    .keygrid { display: grid; grid-template-columns: auto 1fr; gap: .35rem .8rem;
+        align-items: baseline; margin: .3rem 0 .8rem; }
+    .keygrid kbd { font-family: inherit; font-size: .85rem; font-weight: 700;
+        border: 1px solid var(--line); border-radius: 4px; padding: .05rem .45rem;
+        justify-self: start; background: var(--panel); }
     .quickcards { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));
         gap: .75rem; margin-top: .75rem; }
     .qcard { background: var(--panel); border: 1px solid var(--line); border-radius: 6px;
@@ -969,11 +983,64 @@ try {
             list.length + ' players · G / A / Pts are this game, Tot is the tournament'
             + (blocks ? ', Blk is tournament blocks from completed games' : '')));
         panel.append(bioBar(side));
+        panel.append(pronounCheck(side));
         return panel;
+    }
+
+    /**
+     * The prep-time pronoun check: every declared set the emphasis rule does
+     * not recognise as he/him or she/her, with one-click mapping onto them.
+     *
+     * The CSV deliberately stays free text — a dropdown in a team-visible sheet
+     * would make the two common answers a form and everything else a disclosure
+     * (§5). The cost is variants: "He", "she/her/hers", another language. Left
+     * alone they would all be emphasised, and emphasis that is mostly noise
+     * stops protecting the entries it exists for. So the desk normalises during
+     * prep, by hand: one click maps a variant onto the common set it plainly
+     * is; anything genuinely declared stays as the player wrote it, emphasised.
+     * Nothing is ever mapped automatically.
+     */
+    function pronounCheck(side) {
+        var box = el('div', 'prcheck');
+        function fill() {
+            box.replaceChildren();
+            var open = rosterByNumber(side).filter(function (p) {
+                var n = noteFor(p.id);
+                return !!(n && n.pronouns && emphasizedPronouns(n.pronouns));
+            });
+            if (!open.length) { return; }
+            box.append(el('h4', null, 'Pronouns to review'));
+            box.append(el('p', 'muted',
+                'Written differently but plainly one of the two common sets? Map it. '
+                + 'Anything else stays as the player wrote it, emphasised.'));
+            open.forEach(function (p) {
+                var row = el('div', 'row');
+                row.append(el('span', 'who', p.name));
+                row.append(el('span', 'val', noteFor(p.id).pronouns));
+                ['he/him', 'she/her'].forEach(function (target) {
+                    var b = el('button', 'chip', '→ ' + target);
+                    b.type = 'button';
+                    b.addEventListener('click', function () {
+                        var cur = noteFor(p.id) || {};
+                        pushNote(p.id, {
+                            text: cur.text || '', nickname: cur.nickname || '',
+                            pronouns: target, pronunciation: cur.pronunciation || ''
+                        });
+                        fill();
+                    });
+                    row.append(b);
+                });
+                box.append(row);
+            });
+        }
+        fill();
+        prchecks.push(fill);
+        return box;
     }
 
     function renderPrep() {
         body.replaceChildren();
+        prchecks = [];
 
         var bar = el('div', 'pickhead');
         bar.append(el('span', 'muted', 'Sort by'));
@@ -1022,6 +1089,9 @@ try {
     /** player id -> {text, by, at}, as last read from the room. */
     var notes = {};
     var lastNoteWrite = 0;
+
+    /** Refreshers for the prep-time pronoun checks, re-run when notes arrive. */
+    var prchecks = [];
 
     function noteFor(playerId) {
         return notes[String(playerId)] || null;
@@ -1153,6 +1223,7 @@ try {
                 if (!b || !b.players) { return; }
                 notes = b.players;
                 syncNoteMarkers();
+                prchecks.forEach(function (fill) { fill(); });
             });
     }
 
@@ -2385,11 +2456,11 @@ try {
         var row = el('div', 'line');
         fieldOrder(side)
             .forEach(function (p, idx) {
-                var d = el('div', 'p');
-                // The key that pulls this player's card up, from the same row of
-                // the keyboard as this row of the frame.
-                var hint = idx < 7 ? (quickLabels[rowIdx] || [])[idx] : '';
-                if (hint) { d.append(el('kbd', null, hint)); }
+                // A button, because a click pins the same quick card that typing
+                // the shirt number does. The number on the chip is the key hint.
+                var d = el('button', 'p');
+                d.type = 'button';
+                d.addEventListener('click', function () { toggleQuickPlayer(rowIdx, p); });
                 if (p.num !== null && p.num !== undefined) { d.append(el('span', null, p.num)); }
                 d.append(document.createTextNode(p.name));
                 // Pronouns ride along here because this panel is exactly where a
@@ -2412,54 +2483,57 @@ try {
     }
 
     /* ---------------------------------------------------------------
-       Quick cards: one key per player on the field
+       Quick cards: type the shirt number
 
        A commentator mid-point has no roster in view and no time for a dialog,
-       so each on-field player gets a key — the digit row for the top team, the
-       bottom letter row for the bottom team, mirroring the frame. Pressing it
-       pins a compact card (identity line, scoring, the prepared note) into a
-       fixed region under the field panels; a second player sits beside the
-       first for a matchup, a third replaces the oldest, the same key removes
-       its own card, and Escape clears the region.
+       so the card is summoned by the thing already in their head: the number
+       on the shirt. Typing it pins a compact card (identity line, scoring, the
+       prepared note) into a fixed region under the field panels; clicking a
+       player's chip does the same for a mouse hand. A second card sits beside
+       the first for a matchup, a third replaces the oldest, and Escape clears
+       — a pending number first, then the cards.
 
-       Keys are matched on `e.code` — the PHYSICAL key — so the scheme survives
-       QWERTZ and AZERTY; the labels shown on the chips are corrected from the
-       layout where the browser can say (navigator.keyboard.getLayoutMap).
-       The bottom row is Z-row rather than the Q-row below the digits because
-       the possession keys already own letters up there: U is the undo log and
-       I the stoppage toggle (§6a2), and a key that did both would be worse
-       than a less obvious one. Z-row has no reserved key at all.
+       An earlier version mapped one key per on-field POSITION (digits for the
+       top team, a letter row for the bottom). It was a single blind keypress
+       and it was wrong: the keys did not mean jersey numbers, so #5 scoring
+       invited pressing 5 and pinning whoever stood fifth in the line, and the
+       mapping reshuffled with every line change so no muscle memory could
+       form. Number entry types what the shirt says — nothing has to be found
+       on the panel first, and practice compounds, because memorising jersey
+       numbers is the job anyway. Retiring the letter row also dissolved the
+       keyboard-layout question: the digit row is the same physical row
+       everywhere, matched on `e.code`.
+
+       A digit commits the moment the typed string cannot be extended into
+       another on-field number, so with at most 14 players the double-digit
+       pause almost never fires; Enter commits early, Backspace edits, and a
+       number nobody on the field wears evaporates. A number BOTH teams field
+       pins both players, labelled — a number resolves per team (§5), and the
+       two-slot region is exactly the size of that ambiguity, so it is shown
+       rather than guessed.
        --------------------------------------------------------------- */
-
-    var QUICK_ROWS = [
-        ['Digit1', 'Digit2', 'Digit3', 'Digit4', 'Digit5', 'Digit6', 'Digit7'],
-        ['KeyZ', 'KeyX', 'KeyC', 'KeyV', 'KeyB', 'KeyN', 'KeyM']
-    ];
-    var quickLabels = [
-        ['1', '2', '3', '4', '5', '6', '7'],
-        ['Z', 'X', 'C', 'V', 'B', 'N', 'M']
-    ];
-    if (navigator.keyboard && navigator.keyboard.getLayoutMap) {
-        navigator.keyboard.getLayoutMap().then(function (map) {
-            quickLabels = QUICK_ROWS.map(function (codes, r) {
-                return codes.map(function (code, i) {
-                    var label = map.get(code);
-                    return label ? label.toUpperCase() : quickLabels[r][i];
-                });
-            });
-            if (state.mode === 'play') { render(); }
-        }).catch(function () { /* the QWERTY labels stand */ });
-    }
 
     /** Up to two of {sideIndex, playerId}, oldest first. */
     var quick = [];
+    var quickBuffer = '';
+    var quickTimer = null;
 
-    function toggleQuick(sideIndex, pos) {
-        var p = fieldOrder(sides()[sideIndex])[pos];
+    function paintQuickBuffer() {
+        var box = document.getElementById('quickbuf');
+        if (box) { box.textContent = quickBuffer ? '#' + quickBuffer : ''; }
+    }
+
+    function clearQuickBuffer() {
+        quickBuffer = '';
+        if (quickTimer) { window.clearTimeout(quickTimer); quickTimer = null; }
+        paintQuickBuffer();
+    }
+
+    function toggleQuickPlayer(sideIndex, p) {
         if (!p) { return; }
         var at = -1;
         quick.forEach(function (q, i) {
-            if (q.sideIndex === sideIndex && q.playerId === p.id) { at = i; }
+            if (q.sideIndex === sideIndex && String(q.playerId) === String(p.id)) { at = i; }
         });
         if (at !== -1) {
             quick.splice(at, 1);
@@ -2468,6 +2542,49 @@ try {
             if (quick.length > 2) { quick.shift(); }
         }
         renderQuickCards();
+    }
+
+    function commitQuickNumber() {
+        var buffer = quickBuffer;
+        clearQuickBuffer();
+        if (!buffer) { return; }
+        var matches = [];
+        sides().forEach(function (side, si) {
+            fieldOrder(side).forEach(function (p) {
+                if (String(p.num) === buffer) { matches.push({ sideIndex: si, player: p }); }
+            });
+        });
+        if (matches.length > 1) {
+            // Both teams field this number: show both rather than guess.
+            quick = matches.slice(0, 2).map(function (m) {
+                return { sideIndex: m.sideIndex, playerId: m.player.id };
+            });
+            renderQuickCards();
+            return;
+        }
+        if (matches.length === 1) {
+            toggleQuickPlayer(matches[0].sideIndex, matches[0].player);
+        }
+    }
+
+    function pressQuickDigit(digit) {
+        if (quickTimer) { window.clearTimeout(quickTimer); quickTimer = null; }
+        quickBuffer += digit;
+        var exact = false;
+        var extendable = false;
+        sides().forEach(function (side) {
+            fieldOrder(side).forEach(function (p) {
+                var num = String(p.num === null || p.num === undefined ? '' : p.num);
+                if (num === quickBuffer) { exact = true; }
+                else if (num.indexOf(quickBuffer) === 0) { extendable = true; }
+            });
+        });
+        paintQuickBuffer();
+        if (!exact && !extendable) { clearQuickBuffer(); return; }
+        if (exact && !extendable) { commitQuickNumber(); return; }
+        // A longer on-field number is still possible: commit what is typed if
+        // nothing follows shortly, or forget a bare prefix.
+        quickTimer = window.setTimeout(commitQuickNumber, exact ? 650 : 1500);
     }
 
     function quickCard(q) {
@@ -2520,16 +2637,27 @@ try {
         if (state.mode !== 'play' || state.step !== 2) { return; }
         if (sheet.classList.contains('open')) { return; }
         if (e.key === 'Escape') {
+            if (quickBuffer) { clearQuickBuffer(); return; }
             if (quick.length) { quick = []; renderQuickCards(); }
             return;
         }
-        for (var r = 0; r < QUICK_ROWS.length; r += 1) {
-            var i = QUICK_ROWS[r].indexOf(e.code);
-            if (i !== -1) {
-                e.preventDefault();
-                toggleQuick(r, i);
-                return;
-            }
+        if (e.key === 'Enter' && quickBuffer) {
+            e.preventDefault();
+            commitQuickNumber();
+            return;
+        }
+        if (e.key === 'Backspace' && quickBuffer) {
+            e.preventDefault();
+            if (quickTimer) { window.clearTimeout(quickTimer); quickTimer = null; }
+            quickBuffer = quickBuffer.slice(0, -1);
+            paintQuickBuffer();
+            if (quickBuffer) { quickTimer = window.setTimeout(commitQuickNumber, 1500); }
+            return;
+        }
+        var digit = /^(?:Digit|Numpad)([0-9])$/.exec(e.code || '');
+        if (digit) {
+            e.preventDefault();
+            pressQuickDigit(digit[1]);
         }
     });
 
@@ -2680,11 +2808,76 @@ try {
      * between the two steps, which is a control, so it goes where the other
      * controls are.
      */
+    /**
+     * The keyboard reference, in the same dialog the player sheet and the
+     * import preview use. A page grows keys one at a time and each is obvious
+     * to whoever added it; the person meeting all of them at once is a
+     * commentator five minutes before a pull.
+     */
+    function openKeysHelp() {
+        var card = document.getElementById('sheetCard');
+        card.replaceChildren();
+        var title = el('h3', null, 'Keyboard');
+        title.id = 'sheetName';
+        card.append(title);
+
+        [
+            {
+                name: 'On the field', rows: [
+                    ['1\u201399', 'Type a shirt number to pin that player\'s card. A number both teams wear pins both, labelled'],
+                    ['Enter', 'Pin the number typed so far, without waiting'],
+                    ['Backspace', 'Edit the number typed so far'],
+                    ['Esc', 'Forget the typed number; pressed again, clear the cards']
+                ]
+            },
+            {
+                name: 'Possession tracking, when it is on', rows: [
+                    ['O', 'The offence has the disc'],
+                    ['D', 'The defence has the disc \u2014 a break chance'],
+                    ['I', 'Toggle a stoppage'],
+                    ['U', 'Open the possession log, to undo a wrong entry']
+                ]
+            }
+        ].forEach(function (group) {
+            card.append(el('h4', null, group.name));
+            var grid = el('div', 'keygrid');
+            group.rows.forEach(function (row) {
+                grid.append(el('kbd', null, row[0]));
+                grid.append(el('div', null, row[1]));
+            });
+            card.append(grid);
+        });
+        card.append(el('p', 'muted',
+            'Keys do nothing while typing in a field. Clicking a player on the '
+            + 'field pins the same card the number does.'));
+
+        var foot = el('footer');
+        var close = el('button', 'barbtn', 'Close');
+        close.type = 'button';
+        close.addEventListener('click', closeSheet);
+        foot.append(close);
+        card.append(foot);
+
+        sheet.classList.add('open');
+        lastFocus = document.activeElement;
+        close.focus();
+    }
+
+    function keysButton() {
+        var b = el('button', 'tbtn', 'Keys');
+        b.type = 'button';
+        b.title = 'Keyboard shortcuts';
+        b.addEventListener('click', openKeysHelp);
+        return b;
+    }
+
     function renderSteps() {
         var box = document.getElementById('steps');
         if (!box) { return; }
         box.replaceChildren();
-        if (state.mode !== 'play') { return; }
+        // The keyboard reference is prep material as much as a play-time aid,
+        // so the button is in the toolbar in both modes.
+        if (state.mode !== 'play') { box.append(keysButton()); return; }
 
         if (state.step === 1) {
             var go = el('button', 'tbtn primary', 'Start point \u2192');
@@ -2697,11 +2890,18 @@ try {
             clear.title = 'Clear both lines';
             clear.addEventListener('click', function () { state.line = {}; render(); });
             box.append(clear);
+            box.append(keysButton());
         } else {
             var edit = el('button', 'tbtn', '\u2190 Change line');
             edit.type = 'button';
             edit.addEventListener('click', function () { state.step = 1; render(); });
             box.append(edit);
+            box.append(keysButton());
+            // The shirt number being typed, so a mistype is seen rather than
+            // silently pinning the wrong player.
+            var buf = el('span', 'qbuf');
+            buf.id = 'quickbuf';
+            box.append(buf);
         }
     }
 

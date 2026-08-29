@@ -32,6 +32,21 @@ test.describe('studio', () => {
     await expect(page.locator('#authAction a')).toBeVisible();
   });
 
+  test('the Keys button opens the keyboard reference', async ({ page }) => {
+    // Every operator surface carries the same reference: each key was obvious
+    // to whoever added it, and the person meeting all of them at once is an
+    // operator five minutes before a pull. Reading about O must not press it.
+    await page.goto('/s/');
+    await expect(page.locator('h1')).toBeVisible();
+    await page.locator('#keysBtn').click();
+    const overlay = page.locator('#keysOverlay');
+    await expect(overlay).toBeVisible();
+    await expect(overlay).toContainText('break chance');
+    await expect(overlay).toContainText('stoppage');
+    await page.keyboard.press('Escape');
+    await expect(overlay).toBeHidden();
+  });
+
   test('the commentator code is masked on the operator station', async ({ page }) => {
     // Larger consequence than on the commentator page: this code authorises
     // writing possession, and possession reaches air. An operator's station is

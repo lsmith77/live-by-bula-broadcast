@@ -155,9 +155,9 @@ test('commentator, play by play', async ({ page, request }) => {
     await expect(page.locator('.onfield .p').first()).toBeVisible();
     await expect(page.locator('.onfield .p .pr').first()).toBeVisible();
 
-    // Two quick cards on their keys: the prepared captain, and an opponent.
+    // Both teams wear #1, so typing the number pins both quick cards: the
+    // prepared captain and the opposite number.
     await page.keyboard.press('Digit1');
-    await page.keyboard.press('KeyZ');
     await expect(page.locator('#quickcards .qcard')).toHaveCount(2);
     await page.waitForTimeout(600);
     await page.screenshot({ path: path.join(OUT, 'commentator-play.png') });
