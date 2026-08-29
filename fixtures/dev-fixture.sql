@@ -278,15 +278,38 @@ INSERT INTO uo_game (
 INSERT INTO uo_game_pool (game, pool, timetable) VALUES
   (703, 201, 1);
 
+-- Fourteen a side: a seven-a-side mixed line can be picked with a full bench
+-- left over, which the line picker and its ratio assist need. The first eight
+-- ids are load-bearing — the goal rows below name them as scorers and assists.
 INSERT IGNORE INTO uo_player (player_id, firstname, lastname, team, num) VALUES
-  (900, 'Robin',  'Hart',   304, 1),
-  (901, 'Ash',    'Keller', 304, 4),
-  (902, 'Nico',   'Lang',   304, 7),
-  (903, 'Sam',    'Weber',  304, 9),
-  (904, 'Jo',     'Moser',  305, 2),
-  (905, 'Kai',    'Reiter', 305, 5),
-  (906, 'Lee',    'Sommer', 305, 8),
-  (907, 'Max',    'Winter', 305, 11);
+  (900, 'Robin',  'Hart',    304, 1),
+  (901, 'Ash',    'Keller',  304, 4),
+  (902, 'Nico',   'Lang',    304, 7),
+  (903, 'Sam',    'Weber',   304, 9),
+  (908, 'Alex',   'Brunner', 304, 2),
+  (909, 'Bo',     'Egger',   304, 3),
+  (910, 'Charlie', 'Fuchs',  304, 5),
+  (911, 'Dana',   'Gruber',  304, 6),
+  (912, 'Eli',    'Haas',    304, 8),
+  (913, 'Fin',    'Jung',    304, 10),
+  (914, 'Gil',    'Koch',    304, 11),
+  (915, 'Hana',   'Lehner',  304, 12),
+  (916, 'Iva',    'Maurer',  304, 13),
+  (917, 'Juno',   'Nagel',   304, 14),
+  (904, 'Jo',     'Moser',   305, 2),
+  (905, 'Kai',    'Reiter',  305, 5),
+  (906, 'Lee',    'Sommer',  305, 8),
+  (907, 'Max',    'Winter',  305, 11),
+  (920, 'Noa',    'Ortner',  305, 1),
+  (921, 'Ola',    'Pichler', 305, 3),
+  (922, 'Pat',    'Quast',   305, 4),
+  (923, 'Quinn',  'Riedel',  305, 6),
+  (924, 'Rae',    'Steiner', 305, 7),
+  (925, 'Sky',    'Thaler',  305, 9),
+  (926, 'Toni',   'Unger',   305, 10),
+  (927, 'Uli',    'Vogel',   305, 12),
+  (928, 'Val',    'Wagner',  305, 13),
+  (929, 'Win',    'Zobel',   305, 14);
 
 -- Nine points, so the ABBA pattern runs through two full cycles and a bit:
 -- points 1, 4, 5, 8, 9 carry the first point's ratio and 2, 3, 6, 7 the other.

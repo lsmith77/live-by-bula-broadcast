@@ -122,7 +122,7 @@ The digest of asks against UltiOrganizer and Live! by BULA — one entry per ask
 
 ### Fixtures
 
-[`../fixtures/dev-fixture.sql`](../fixtures/dev-fixture.sql) creates a tournament to develop against: two 28-player squads, a completed game (700) and an ongoing one (702) at 8–6 with a halftime cap, plus recorded blocks. Idempotent — safe to re-run.
+[`../fixtures/dev-fixture.sql`](../fixtures/dev-fixture.sql) creates a tournament to develop against: two 28-player squads, a completed game (700) and an ongoing one (702) at 8–6 with a halftime cap, plus recorded blocks — and an ongoing mixed semi-final (703) with fourteen-a-side squads, for the gender-ratio features and the line picker. Idempotent — safe to re-run.
 
 ```
 mariadb -uroot -p<root-password> ultiorganizer < live/overlays/fixtures/dev-fixture.sql
