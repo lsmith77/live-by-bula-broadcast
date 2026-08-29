@@ -31,11 +31,20 @@ const { GAME_ID, expect } = require('./helpers');
 const CODE = 'ZTEST';
 const NOTES = '/index.php?view=live/overlays/notes';
 
-/** Empty the room, so a test never counts what an earlier run left. */
+/**
+ * Empty the room, so a test never counts what an earlier run left. Saves are
+ * DELTAS — an absent key keeps the stored value — so every channel is cleared
+ * by name.
+ */
 async function resetRoom(request) {
   const current = await (await request.get(`${NOTES}&code=${CODE}`)).json();
   for (const id of Object.keys(current.players || {})) {
-    await request.post(NOTES, { data: { code: CODE, player: Number(id), text: '' } });
+    await request.post(NOTES, {
+      data: {
+        code: CODE, player: Number(id),
+        text: '', nickname: '', pronouns: '', pronunciation: '', matching: '',
+      },
+    });
   }
   for (const id of Object.keys(current.teams || {})) {
     await request.post(NOTES, { data: { code: CODE, team: Number(id), text: '' } });
@@ -504,13 +513,14 @@ test.describe('prepared notes', () => {
     }
   });
 
-  test('the pronoun review: map a variant, or tweak and keep any set verbatim', async ({ page, request }) => {
+  test('the pronoun review: clear the everyday, or tweak and keep any set verbatim', async ({ page, request }) => {
     // The CSV stays free text, so "He" arrives as written and would be
     // emphasised as if it were a less common set — noise that erodes the
-    // emphasis. The panel lists it and one click maps it. A genuinely declared
-    // set — xe/xem, she/they, anything — is edited if needed, kept exactly as
-    // written, stays emphasised, and is never asked about again. Nothing is
-    // ever mapped automatically.
+    // emphasis. Normalising is EMPTYING: the field keeps only what needs
+    // saying, and an empty field reads as the everyday he or she. A genuinely
+    // declared set — xe/xem, she/they, anything — is edited if needed, kept
+    // exactly as written, stays emphasised, and is never asked about again.
+    // Nothing happens automatically.
     await openPage(page);
     const buttons = page.locator('.roster').first().locator('td.who button[data-player]');
     const ids = [
@@ -530,14 +540,15 @@ test.describe('prepared notes', () => {
     await expect(check).toContainText('Pronouns to review');
     await expect(check.locator('.row')).toHaveCount(2);
 
-    // "He" plainly means he/him: one click maps it, and it leaves the list
-    // un-emphasised. Rows follow roster order, so the first row is player one.
+    // "He" plainly means the everyday reading: Clear empties the field, the
+    // row leaves the list, and the emptied entry disappears entirely — only
+    // sets that need saying are kept. Rows follow roster order, so the first
+    // row is player one.
     const heRow = check.locator('.row').first();
     await expect(heRow.locator('input')).toHaveValue('He');
-    await heRow.locator('.chip', { hasText: 'he/him' }).click();
+    await heRow.locator('.chip', { hasText: 'Clear' }).click();
     await expect(check.locator('.row')).toHaveCount(1);
-    await expect(page.locator('.roster td.who .say').first()).toHaveText('he/him');
-    await expect(page.locator('.roster td.who .say').first().locator('.hi')).toHaveCount(0);
+    await expect(page.locator('.roster td.who .say')).toHaveCount(1);
 
     // "Xe/Xem " is a declaration, not a variant of the common sets: tidy the
     // typing in place, keep it, and it stays exactly as written — emphasised.
@@ -551,7 +562,7 @@ test.describe('prepared notes', () => {
       return stored.players[ids[1]] && stored.players[ids[1]].pronouns;
     }).toBe('xe/xem');
     const stored = await (await request.get(`${NOTES}&code=${CODE}`)).json();
-    expect(stored.players[ids[0]].pronouns).toBe('he/him');
+    expect(stored.players[ids[0]]).toBeUndefined();
     expect(stored.players[ids[1]].pronounsok).toBe(true);
 
     // Reviewed means reviewed: after a reload the kept set is still shown
@@ -590,6 +601,11 @@ test.describe('prepared notes', () => {
     await expect(page.locator('.roster td.who .say .mt').first()).toHaveText('FMP');
     // The whole roster row carries the tint, not only the tag.
     await expect(page.locator('.roster').first().locator('tbody tr.fmp')).toHaveCount(1);
+
+    // At the desk the matching is a two-value select, not a write-in.
+    await page.locator('.roster td.who button').first().click();
+    await expect(page.locator('#sheet .note .fields select')).toHaveValue('FMP');
+    await page.keyboard.press('Escape');
 
     // The line picker carries it too, as the chip's own tint.
     await page.locator('#tabPlay').click();

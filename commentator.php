@@ -309,13 +309,12 @@ try {
     .abbapt.now { background: var(--accent); border-color: var(--accent); }
     .abbapt.now b, .abbapt.now span { color: var(--accent-ink); }
 
-    .abbasplit { margin: .6rem 0; display: flex; flex-direction: column; gap: .3rem; }
-    .abbasplitrow { display: flex; align-items: baseline; gap: .6rem; padding: .3rem .5rem;
-                    border-radius: 4px; background: var(--panel-alt); }
-    .abbasplitrow b { min-width: 4.2rem; font-weight: 700; }
-    .abbasplitrow .sc { font-size: 1.05rem; font-weight: 800; font-variant-numeric: tabular-nums; }
-    .abbasplitrow .who { font-size: .75rem; color: var(--ink-mute); margin-left: auto;
-                         overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .abbaline { display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; }
+    .abbaline .abbahead { margin: 0; }
+    .abbainline { margin-left: auto; display: flex; gap: 1.1rem; align-items: baseline; }
+    .abbainline .item { color: var(--ink-mute); font-variant-numeric: tabular-nums;
+        white-space: nowrap; }
+    .abbainline .item b { color: var(--ink); font-weight: 700; margin-right: .25rem; }
 
     /* ---- possession ---- */
     .possbox { margin-top: 1rem; padding: .85rem 1rem; border-radius: 6px;
@@ -392,6 +391,15 @@ try {
     .nums button.mmp small { color: var(--mmp-ink); }
     .nums button.on { background: var(--accent); border-color: var(--accent); color: #fff; }
     .nums button.on small { color: var(--accent-soft); }
+    /* A picked chip keeps its matching tint — the gender split of the chosen
+       seven must stay readable — and says "picked" with an accent ring
+       instead of an accent fill. */
+    .nums button.on.fmp { background: var(--fmp-bg); color: var(--fmp-ink);
+        border-color: var(--accent); box-shadow: inset 0 0 0 2px var(--accent); }
+    .nums button.on.fmp small { color: var(--fmp-ink); }
+    .nums button.on.mmp { background: var(--mmp-bg); color: var(--mmp-ink);
+        border-color: var(--accent); box-shadow: inset 0 0 0 2px var(--accent); }
+    .nums button.on.mmp small { color: var(--mmp-ink); }
 
     .onfield { margin-top: .75rem; }
     .onfield .side { padding: .6rem .9rem; border-radius: 6px; background: var(--panel);
@@ -431,6 +439,9 @@ try {
     .qcard { background: var(--panel); border: 1px solid var(--line); border-radius: 6px;
         padding: .6rem .9rem; }
     .qcard h4 { margin: 0; font-size: 1.15rem; }
+    .qcard .qtop { display: flex; align-items: baseline; justify-content: space-between;
+        gap: .6rem; }
+    .qcard .qopen { white-space: nowrap; }
     .qcard .muted { font-size: .8rem; }
     .qcard .say { color: var(--ink-mute); font-size: .85rem; margin-top: .1rem; }
     .qcard .say .hi { color: var(--ink); font-weight: 700; }
@@ -492,10 +503,11 @@ try {
     .note .fields .field { display: flex; flex-direction: column; gap: .2rem; min-width: 0; }
     .note .fields .field span { font-size: .72rem; color: var(--ink-mute);
         text-transform: uppercase; letter-spacing: .04em; }
-    .note .fields .field input { font: inherit; font-size: .9rem; padding: .35rem .5rem;
-        border: 1px solid var(--line); border-radius: 4px; background: var(--bg);
-        color: var(--ink); min-width: 0; }
-    .note .fields .field input:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+    .note .fields .field input, .note .fields .field select { font: inherit;
+        font-size: .9rem; padding: .35rem .5rem; border: 1px solid var(--line);
+        border-radius: 4px; background: var(--bg); color: var(--ink); min-width: 0; }
+    .note .fields .field input:focus, .note .fields .field select:focus {
+        outline: 2px solid var(--accent); outline-offset: 1px; }
     #sheetCard .sub.say { color: var(--ink); font-weight: 600; }
     .note.teamnote { margin: .6rem 0 .2rem; }
     .note.teamnote textarea { min-height: 3.2rem; }
@@ -1151,12 +1163,16 @@ try {
      * would make the two common answers a form and everything else a disclosure
      * (§5). The cost is variants: "He", "she/her/hers", another language. Left
      * alone they would all be emphasised, and emphasis that is mostly noise
-     * stops protecting the entries it exists for. So the desk reconciles during
-     * prep, by hand: a variant that plainly means a common set is mapped onto
-     * it, a typo is fixed in the row's own input, and a genuinely declared set
-     * — she/they, xe/xem, anything — is kept exactly as written with one click,
-     * stays emphasised, and stops being asked about. Nothing is ever mapped
-     * automatically, and when in doubt the answer is Keep.
+     * stops protecting the entries it exists for.
+     *
+     * So the desk reconciles during prep, by hand — and NORMALISING IS
+     * EMPTYING. Nothing is gained by storing the everyday two: a commentator
+     * reads he or she off the name exactly as they would with no data, so this
+     * field keeps only what needs saying. A variant that plainly means the
+     * everyday reading is CLEARED; a genuinely declared set — she/they,
+     * xe/xem, anything — is edited if needed and KEPT exactly as written,
+     * emphasised, and never asked about again. Nothing happens automatically,
+     * and when in doubt the answer is Keep.
      */
     function pronounCheck(side) {
         var box = el('div', 'prcheck');
@@ -1173,9 +1189,10 @@ try {
             if (!open.length) { return; }
             box.append(el('h4', null, 'Pronouns to review'));
             box.append(el('p', 'muted',
-                'Written differently but plainly one of the two common sets? Map it. '
-                + 'Anything genuinely declared: edit if needed, then Keep — it stays '
-                + 'exactly as written, emphasised, and is not asked about again.'));
+                'Plainly the everyday he or she, written down? Clear it — an empty '
+                + 'field reads as exactly that, and only sets that need saying are '
+                + 'kept. Anything genuinely declared: edit if needed, then Keep — it '
+                + 'stays exactly as written, emphasised, and is not asked about again.'));
             open.forEach(function (p) {
                 var cur = noteFor(p.id);
                 var row = el('div', 'row');
@@ -1195,18 +1212,18 @@ try {
                         matching: cur.matching || '', pronounsok: true
                     });
                 }
-                ['he/him', 'she/her'].forEach(function (target) {
-                    var b = el('button', 'chip', '→ ' + target);
-                    b.type = 'button';
-                    b.addEventListener('click', function () {
-                        save(p, {
-                            text: cur.text || '', nickname: cur.nickname || '',
-                            pronouns: target, pronunciation: cur.pronunciation || '',
-                            matching: cur.matching || ''
-                        });
+                var clear = el('button', 'chip', 'Clear');
+                clear.type = 'button';
+                clear.title = 'Empty the field — an empty field reads as the everyday '
+                    + 'he or she, and only sets that need saying are kept';
+                clear.addEventListener('click', function () {
+                    save(p, {
+                        text: cur.text || '', nickname: cur.nickname || '',
+                        pronouns: '', pronunciation: cur.pronunciation || '',
+                        matching: cur.matching || ''
                     });
-                    row.append(b);
                 });
+                row.append(clear);
                 var b = el('button', 'chip', 'Keep');
                 b.type = 'button';
                 b.title = 'Keep exactly this text, as the player declared it';
@@ -1919,14 +1936,26 @@ try {
             { key: 'pronouns', label: 'Pronouns', hint: 'as the player declared — never guessed' },
             { key: 'pronunciation', label: 'Say it', hint: 'how to say the name' }
         ].concat(isMixedSide(side)
-            ? [{ key: 'matching', label: 'Matching', hint: 'FMP or MMP' }]
+            ? [{ key: 'matching', label: 'Matching', select: ['', 'FMP', 'MMP'] }]
             : []).forEach(function (f) {
             var wrap = el('label', 'field');
             wrap.append(el('span', null, f.label));
-            var input = document.createElement('input');
-            input.type = 'text';
-            input.maxLength = CONFIG.fieldMax;
-            input.placeholder = f.hint;
+            var input;
+            if (f.select) {
+                // A two-value competition designation is not a write-in.
+                input = document.createElement('select');
+                f.select.forEach(function (v) {
+                    var opt = document.createElement('option');
+                    opt.value = v;
+                    opt.textContent = v || '—';
+                    input.append(opt);
+                });
+            } else {
+                input = document.createElement('input');
+                input.type = 'text';
+                input.maxLength = CONFIG.fieldMax;
+                input.placeholder = f.hint;
+            }
             input.value = existing && existing[f.key] ? existing[f.key] : '';
             input.setAttribute('aria-label', f.label + ' for ' + p.name);
             wrap.append(input);
@@ -2022,6 +2051,9 @@ try {
         area.addEventListener('blur', flush);
         Object.keys(fieldInputs).forEach(function (k) {
             fieldInputs[k].addEventListener('input', onEdit);
+            // Selects report through change; text inputs through input. Both
+            // flush on blur either way.
+            fieldInputs[k].addEventListener('change', onEdit);
             fieldInputs[k].addEventListener('blur', flush);
         });
         box.flushNote = flush;
@@ -2901,17 +2933,23 @@ try {
 
         var byId = {};
         list.forEach(function (p) { byId[String(p.id)] = p; });
+        // A full LINE hides every unpicked chip, unknown-matching included —
+        // nothing unpicked can join a full line, so showing it only invites
+        // the eighth pick.
+        var lineFull = line.length >= size;
         assist.groups.forEach(function (g) {
             g.players.forEach(function (gp) {
                 var p = byId[String(gp.id)];
                 if (!p) { return; }
-                if (g.full && line.indexOf(p.id) === -1) { return; }
+                if ((g.full || lineFull) && line.indexOf(p.id) === -1) { return; }
                 nums.append(chip(p));
             });
         });
         assist.unknown.forEach(function (gp) {
             var p = byId[String(gp.id)];
-            if (p) { nums.append(chip(p)); }
+            if (!p) { return; }
+            if (lineFull && line.indexOf(p.id) === -1) { return; }
+            nums.append(chip(p));
         });
         return panel;
     }
@@ -3086,17 +3124,33 @@ try {
         quickTimer = window.setTimeout(commitQuickNumber, exact ? 650 : 1500);
     }
 
-    function quickCard(q) {
+    /** Resolve a pinned card back to its side and roster player. */
+    function quickPlayer(q) {
         var side = sides()[q.sideIndex];
         var p = null;
         rosterByNumber(side).forEach(function (r) {
             if (String(r.id) === String(q.playerId)) { p = r; }
         });
-        if (!p) { return null; }
+        return p ? { side: side, player: p } : null;
+    }
+
+    function quickCard(q, pos) {
+        var hit = quickPlayer(q);
+        if (!hit) { return null; }
+        var side = hit.side;
+        var p = hit.player;
 
         var card = el('div', 'qcard');
-        card.append(el('h4', null,
+        var top = el('div', 'qtop');
+        top.append(el('h4', null,
             (p.num !== null && p.num !== undefined ? '#' + p.num + '  ' : '') + p.name));
+        // The whole sheet, one key away: L for the left card, R for the right —
+        // physical keys, like the digits.
+        var more = el('button', 'barbtn qopen', 'Full sheet · ' + (pos === 0 ? 'L' : 'R'));
+        more.type = 'button';
+        more.addEventListener('click', function () { openSheet(p, side); });
+        top.append(more);
+        card.append(top);
         card.append(el('div', 'muted', side.team.name || ''));
         var n = noteFor(p.id);
         var sayOpts = { matching: isMixedSide(side) };
@@ -3113,6 +3167,12 @@ try {
             'Tournament  ' + (p.tGoals || 0) + ' G · ' + (p.tAssists || 0) + ' A · '
             + (p.tTotal || 0) + ' Pts'
             + (blocks ? ' · ' + (p.tBlocks || 0) + ' Blk' : '')));
+        var season = (p.games || 0) + (p.games === 1 ? ' game' : ' games');
+        if (p.games) { season += ' · ' + p.avg.toFixed(1) + ' Pts/game'; }
+        if (p.tCallahan) {
+            season += ' · ' + p.tCallahan + ' Callahan' + (p.tCallahan === 1 ? '' : 's');
+        }
+        card.append(el('div', 'qline', season));
         var strip = pointStrip(side, p);
         if (strip) { card.append(strip); }
         // The payoff: what was prepared about this player, at the moment it is
@@ -3154,8 +3214,8 @@ try {
         var box = document.getElementById('quickcards');
         if (!box) { return; }
         box.replaceChildren();
-        quick.forEach(function (q) {
-            var card = quickCard(q);
+        quick.forEach(function (q, i) {
+            var card = quickCard(q, i);
             if (card) { box.append(card); }
         });
         box.hidden = !box.childNodes.length;
@@ -3183,6 +3243,16 @@ try {
             quickBuffer = quickBuffer.slice(0, -1);
             paintQuickBuffer();
             if (quickBuffer) { quickTimer = window.setTimeout(commitQuickNumber, 1500); }
+            return;
+        }
+        // L and R open the full sheet for the left and right card.
+        if (e.code === 'KeyL' || e.code === 'KeyR') {
+            var q = quick[e.code === 'KeyL' ? 0 : 1];
+            var hit = q && quickPlayer(q);
+            if (hit) {
+                e.preventDefault();
+                openSheet(hit.player, hit.side);
+            }
             return;
         }
         var digit = /^(?:Digit|Numpad)([0-9])$/.exec(e.code || '');
@@ -3358,6 +3428,7 @@ try {
             {
                 name: 'On the field', rows: [
                     ['1\u201399', 'Type a shirt number to pin that player\'s card. A number both teams wear pins both, labelled'],
+                    ['L / R', 'Open the full player sheet for the left / right pinned card'],
                     ['Enter', 'Pin the number typed so far, without waiting'],
                     ['Backspace', 'Edit the number typed so far'],
                     ['Esc', 'Forget the typed number; pressed again, clear the cards']
@@ -3477,13 +3548,12 @@ try {
         var pair = ratioPair();
         var now = currentPointNumber();
 
-        var head = el('div', 'abbahead');
-        head.append(el('span', 'muted', 'Gender ratio'));
-        box.append(head);
-
         var firstRatio = firstRatioValue();
 
         if (!firstRatio) {
+            var head = el('div', 'abbahead');
+            head.append(el('span', 'muted', 'Gender ratio'));
+            box.append(head);
             // The selector is in the toolbar now; this only says why the rest of
             // the panel is empty.
             // Do not tell somebody to use a control they cannot reach.
@@ -3502,9 +3572,13 @@ try {
         var other = pair[0] === firstRatio ? pair[1] : pair[0];
         var ratioFor = function (n) { return abbaSlot(n) === 'A' ? firstRatio : other; };
 
-        // Ratio and which point it is, on one line each: the label is a caption
-        // for the number, not a second fact, and stacking them doubled the
-        // height of the one panel that is read at a glance between points.
+        // The whole panel is ONE line: the label, the run of coming points, and
+        // the per-ratio split inline at the far end. It sits above the field
+        // panels and is glanced at between points, so every extra row it takes
+        // is a row the lines lose.
+        var lineRow = el('div', 'abbaline');
+        lineRow.append(el('span', 'abbahead', 'Gender ratio'));
+
         var run = el('div', 'abbarun');
         for (var n = now; n < now + 4; n += 1) {
             var cell = el('div', 'abbapt' + (n === now ? ' now' : ''));
@@ -3512,26 +3586,29 @@ try {
             cell.append(el('span', null, n === now ? 'this point' : 'pt ' + n));
             run.append(cell);
         }
-        box.append(run);
+        lineRow.append(run);
 
-        // Which ratio each side is actually winning. Only once there is enough
-        // played to mean anything -- a split over two points is a coin toss with
-        // a label on it.
+        // Which ratio each side is actually winning, as home\u2013away scores \u2014 the
+        // teams are the page's own header, so naming them again spent a row.
+        // Only once there is enough played to mean anything: a split over two
+        // points is a coin toss with a label on it.
         var split = ratioSplit();
         if ((split.A.home + split.A.away + split.B.home + split.B.away) >= 4) {
             var s = sides();
-            var tbl = el('div', 'abbasplit');
+            var inline = el('div', 'abbainline');
             [['A', firstRatio], ['B', other]].forEach(function (pairv) {
                 var slot = split[pairv[0]];
-                var line = el('div', 'abbasplitrow');
-                line.append(el('b', null, shortRatio(pairv[1])));
-                line.append(el('span', 'sc', slot.home + ' \u2013 ' + slot.away));
-                line.append(el('span', 'who',
-                    (s[0].team.name || 'Home') + ' v ' + (s[1].team.name || 'Away')));
-                tbl.append(line);
+                var item = el('span', 'item');
+                item.append(el('b', null, shortRatio(pairv[1])));
+                item.append(document.createTextNode(' ' + slot.home + '\u2013' + slot.away));
+                item.title = (s[0].team.name || 'Home') + ' ' + slot.home + ' \u2013 '
+                    + (s[1].team.name || 'Away') + ' ' + slot.away
+                    + ' on ' + shortRatio(pairv[1]) + ' points';
+                inline.append(item);
             });
-            box.append(tbl);
+            lineRow.append(inline);
         }
+        box.append(lineRow);
 
         // The local-declaration caveat, and the one-click way out of it once
         // the desk is linked. Nothing local is ever shared without this click.

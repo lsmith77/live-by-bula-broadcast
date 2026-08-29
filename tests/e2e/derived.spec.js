@@ -858,16 +858,17 @@ test.describe('gender ratio', () => {
       await expect(panel).toBeVisible({ timeout: 10000 });
 
       // 9 goals, alternating from the home team. A points are 1, 4, 5, 8, 9 ->
-      // home 3 away 2; B points are 2, 3, 6, 7 -> 2 all.
-      const rows = panel.locator('.abbasplitrow');
-      await expect(rows).toHaveCount(2);
+      // home 3 away 2; B points are 2, 3, 6, 7 -> 2 all. The split is inline
+      // on the panel's single line, as home–away scores.
+      const items = panel.locator('.abbainline .item');
+      await expect(items).toHaveCount(2);
       // One side, not two: `4MMP` says 4MMP/3FMP without deciding which
       // category gets printed first.
-      await expect(rows.nth(0)).toContainText('4MMP');
-      await expect(rows.nth(0)).not.toContainText('/');
-      await expect(rows.nth(0).locator('.sc')).toHaveText('3 – 2');
-      await expect(rows.nth(1)).toContainText('4FMP');
-      await expect(rows.nth(1).locator('.sc')).toHaveText('2 – 2');
+      await expect(items.nth(0)).toContainText('4MMP');
+      await expect(items.nth(0)).not.toContainText('/');
+      await expect(items.nth(0)).toContainText('3–2');
+      await expect(items.nth(1)).toContainText('4FMP');
+      await expect(items.nth(1)).toContainText('2–2');
     });
   });
 
@@ -883,7 +884,7 @@ test.describe('gender ratio', () => {
       // No ratio named anywhere until somebody sets it, and the panel points at
       // the control rather than carrying one — the selector is in the toolbar.
       await expect(panel).toContainText(/ratio for point 1|ratio for point 1 yet/i);
-      await expect(panel.locator('.abbasplitrow')).toHaveCount(0);
+      await expect(panel.locator('.abbainline .item')).toHaveCount(0);
       await expect(page.locator('#tracking .tsel')).toHaveCount(1);
     });
   });
