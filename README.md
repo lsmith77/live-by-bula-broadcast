@@ -31,7 +31,7 @@ Everything reads through Live!'s public JSON API. No overlay touches the databas
 
 ![Play by play](docs/images/commentator-play.png)
 
-*Play by play — the line on the field, with each player's declared pronouns beside the name about to be said, the less common sets emphasised. Each chip carries the key that pins that player's quick card below — two side by side for a matchup, carrying the identity line and the prepared note. Nickname, pronouns and name pronunciation arrive through the team's own CSV, where every player writes their own row.*
+*Play by play — the line on the field, with each player's declared pronouns beside the name about to be said, the less common sets emphasised. Typing a shirt number pins that player's quick card below — here #1, worn by both teams, so both appear — carrying the identity line and the prepared note. Nickname, pronouns and name pronunciation arrive through the team's own CSV, where every player writes their own row.*
 
 ## Features
 
@@ -71,6 +71,7 @@ Everything reads through Live!'s public JSON API. No overlay touches the databas
 | Undo | One level — the mistakes worth reversing are always the last action |
 | Tournament logo | `TV_SCREEN_LOGO_PATH` in a chosen corner, kept clear of whatever else is there |
 | Break chance mode | Enable it, then declare possession with **O** and **D** on the keyboard, or hand tracking to a commentator by naming their room code |
+| Keyboard reference | A Keys button on every operator surface — the Studio and both commentator modes — opens the shortcut list, with the live keys inert behind it |
 | Connected commentators | How many commentator pages are live on that code |
 
 ### Stage — one URL per broadcast at `/s/<game>/overlay`
@@ -92,8 +93,8 @@ Everything reads through Live!'s public JSON API. No overlay touches the databas
 | Rosters | Both squads side by side, sorted by number, goals, assists, points, tournament total, or blocks |
 | Player sheet | This game and the tournament, blocks and callahans where recorded, games and points per game, a game-by-game history, and the team-mate they most often score with |
 | Bio round trip | Export a CSV, the team's players fill in their own rows, import it back. Fills only what is empty here — never what the desk typed — one channel at a time |
-| Identity fields | Nickname, pronouns and name pronunciation as structured fields, self-declared through the CSV or corrected at the desk, shown beside the name on the roster, the player sheet and the field view. Less common pronoun sets are emphasised — those are the ones a reading habit gets wrong — and the full line rides on hover on the field view |
-| Quick cards | One key per on-field player, layout-independent and printed on the chip — the digit row for the top team, the bottom letter row for the bottom. Pins up to two compact cards side by side: identity line, scoring, the prepared note. Esc clears |
+| Identity fields | Nickname, pronouns and name pronunciation as structured fields, self-declared through the CSV or corrected at the desk, shown beside the name on the roster, the player sheet and the field view. Less common pronoun sets are emphasised — those are the ones a reading habit gets wrong — and the full line rides on hover on the field view. A prep-time review maps variant spellings onto the two common sets, one click each, never automatically |
+| Quick cards | Type a shirt number — or click the chip — to pin that player's compact card under the lines: identity line, scoring, the prepared note. Up to two side by side; a number both teams wear pins both, labelled; Esc clears. A Keys button explains every shortcut |
 | Line selection | Who is on the field, shared between two commentators through a room code |
 | Possession | Track offence and defence with **O** and **D**; turnover counts for this point and the last |
 | Blocks | A column and a sort, but only where the installation actually records them |

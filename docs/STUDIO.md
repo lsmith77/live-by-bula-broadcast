@@ -573,6 +573,8 @@ It is shown **centred**, not over one team. A stoppage belongs to neither side, 
 
 More than one person may press O and D at once, and that is safe by construction rather than by coordination.
 
+(A **Keys** button in the Studio's header opens the reference for these keys, mirrored on the commentator page — each key was obvious to whoever added it, and the person meeting all of them at once is an operator five minutes before a pull. The live keys are inert while the reference is open, so reading about O cannot press it.)
+
 **The log records the state of possession, not transitions**, and every reader counts *changes* rather than entries. So two commentators watching the same play and both pressing D produce D then D, which is not a change. Measured: one press, two presses and three presses all yield one turnover. The store drops the repeat on the way in as well, so the log stays the length of the game rather than the length of the audience.
 
 That property is why the obvious worry does not apply. It would be easy to assume two trackers double-count every turnover and to design a handover — one desk locks the others out. That was built and then removed: it solved a problem that does not exist and cost the operator the ability to help.
