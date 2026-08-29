@@ -464,15 +464,26 @@ try {
     .sheet { position: fixed; inset: 0; background: rgb(2 6 16 / 72%); display: none;
              align-items: center; justify-content: center; padding: 1rem; z-index: 50; }
     .sheet.open { display: flex; }
+    /* Wider than it was: the sheet's blocks are short and narrow, so width is
+       what buys the height that keeps it off a scrollbar. */
     .sheet .card { background: var(--panel); border: 1px solid var(--line); border-radius: 8px;
-                   padding: 1.1rem 1.3rem; max-width: 540px; width: 100%;
+                   padding: 1.1rem 1.3rem; max-width: 700px; width: 100%;
                    max-height: 90vh; overflow-y: auto; }
+    .sheet .statband { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+                       gap: .5rem 1.6rem; align-items: start; }
+    @media (max-width: 620px) { .sheet .statband { grid-template-columns: minmax(0, 1fr); } }
     .sheet h3 { margin: 0 0 .1rem; font-size: 1.35rem; }
     .sheet .sub { color: var(--ink-mute); font-size: .85rem; margin-bottom: .8rem; }
     .sheet .grid { display: grid; gap: .3rem .8rem; font-variant-numeric: tabular-nums; }
     .sheet .grid .h { font-size: .68rem; text-transform: uppercase; letter-spacing: .06em;
                       color: var(--ink-mute); font-weight: 600; }
     .sheet .grid .v { text-align: right; font-weight: 700; }
+    /* The (i) that carries the completed-games caveat on hover. */
+    .info { display: inline-flex; align-items: center; justify-content: center;
+            width: 1.05em; height: 1.05em; margin-left: .35em; border-radius: 50%;
+            border: 1px solid currentcolor; font-size: .78em; font-style: italic;
+            font-weight: 700; line-height: 1; cursor: help; opacity: .75; }
+    .info:hover, .info:focus-visible { opacity: 1; }
     .sheet h4 { margin: 1rem 0 .4rem; font-size: .7rem; text-transform: uppercase;
                 letter-spacing: .08em; color: var(--ink-mute); font-weight: 700; }
     .sheet .facts { display: grid; grid-template-columns: 1fr auto; gap: .2rem .8rem;
@@ -511,7 +522,7 @@ try {
     #sheetCard .sub.say { color: var(--ink); font-weight: 600; }
     .note.teamnote { margin: .6rem 0 .2rem; }
     .note.teamnote textarea { min-height: 3.2rem; }
-    .note textarea { width: 100%; min-height: 6.5rem; resize: vertical; font: inherit;
+    .note textarea { width: 100%; min-height: 4.8rem; resize: vertical; font: inherit;
                      font-size: .92rem; line-height: 1.45; padding: .5rem .6rem;
                      background: var(--bg); color: var(--ink); border: 1px solid var(--line);
                      border-radius: 5px; }
@@ -2060,6 +2071,25 @@ try {
         return box;
     }
 
+    /**
+     * The (i) on the Tournament row: what that number does and does not count.
+     *
+     * Hover text rather than a line of its own, because it is read once and
+     * then never again — but it still has to be reachable, so the marker is
+     * focusable and carries the sentence as its label as well as its tooltip.
+     * `title` is the page's established way of parking a detail that must not
+     * spend width (the ratio split, the picker chips) — same idiom here.
+     */
+    function tourInfo() {
+        var text = 'Tournament figures cover completed games, '
+            + 'so this game is not in them yet.';
+        var mark = el('span', 'info', 'i');
+        mark.tabIndex = 0;
+        mark.title = text;
+        mark.setAttribute('aria-label', text);
+        return mark;
+    }
+
     function openSheet(p, side) {
         var card = document.getElementById('sheetCard');
         card.replaceChildren();
@@ -2098,11 +2128,16 @@ try {
         grid.style.gridTemplateColumns = '1fr' + ' auto'.repeat(head.length - 1);
         [head].concat(rows).forEach(function (row, ri) {
             row.forEach(function (cell, ci) {
-                grid.append(el('div', ri === 0 || ci === 0 ? 'h' : 'v',
-                    ri === 0 && ci === 0 ? '' : cell));
+                var box = el('div', ri === 0 || ci === 0 ? 'h' : 'v',
+                    ri === 0 && ci === 0 ? '' : cell);
+                // The caveat belongs to the Tournament row and nothing else, so
+                // it hangs off that label as an (i) rather than as a paragraph
+                // under the whole card. It qualifies one number; it was costing
+                // two lines of the height that made this sheet scroll.
+                if (ri === 2 && ci === 0) { box.append(tourInfo()); }
+                grid.append(box);
             });
         });
-        card.append(grid);
 
         var facts = el('div', 'facts');
         var fact = function (k, v) {
@@ -2113,9 +2148,14 @@ try {
         if (p.tCallahan) { fact('Callahans', p.tCallahan); }
         if (blocks) { fact('Blocks', p.tBlocks); }
         if (p.num !== null && p.num !== undefined) { fact('Jersey', '#' + p.num); }
-        card.append(facts);
-        card.append(el('p', 'muted',
-            'Tournament figures cover completed games, so this game is not in them yet.'));
+
+        // Two short blocks side by side rather than stacked. Both are three to
+        // five lines of numbers with a lot of empty width; stacking them cost
+        // the sheet the height that pushed it into a scrollbar, and neither is
+        // read in relation to the other.
+        var band = el('div', 'statband');
+        band.append(grid, facts);
+        card.append(band);
 
         var histHead = el('h4', null, 'Game by game');
         var histBox = el('div');
@@ -2134,8 +2174,14 @@ try {
         sheet.classList.add('open');
         // Move focus into the dialog and remember where it came from, so keyboard
         // and screen-reader users are not left behind it with no way back.
+        //
+        // preventScroll, because the only focusable thing worth landing on is
+        // Close in the footer, and focusing it normally scrolls the footer into
+        // view — which opens a long sheet at the BOTTOM, past the name and the
+        // numbers the sheet was opened for. Focus goes there; the view does not.
         lastFocus = document.activeElement;
-        close.focus();
+        close.focus({ preventScroll: true });
+        card.scrollTop = 0;
 
         var openedFor = p.id;
         loadEvents(p.id).then(function (data) {

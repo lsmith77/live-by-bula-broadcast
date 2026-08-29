@@ -129,6 +129,51 @@ test.describe('commentator', () => {
       document.activeElement === document.querySelector('.roster td.who button'))).toBe(true);
   });
 
+  test('the player sheet opens at the top, even when it has to scroll', async ({ page }) => {
+    // The regression: focus goes to Close in the footer, and focusing it
+    // normally scrolls the footer into view — so a sheet long enough to scroll
+    // opened at the BOTTOM, past the name and the numbers it was opened for.
+    // Squeezed deliberately, because the sheet fits a real desk's screen.
+    await page.setViewportSize({ width: 1512, height: 400 });
+    await page.locator('.roster td.who button').first().click();
+    await expect(page.locator('#sheet .note textarea')).toBeVisible();
+
+    const m = await page.evaluate(() => {
+      const c = document.querySelector('#sheet .card');
+      return { top: c.scrollTop, overflowing: c.scrollHeight > c.clientHeight };
+    });
+    expect(m.overflowing, 'the viewport must be short enough to prove anything').toBe(true);
+    expect(m.top).toBe(0);
+  });
+
+  test('the sheet fits without scrolling on a desk-sized screen', async ({ page }) => {
+    // The stats grid and the facts sit side by side rather than stacked for
+    // exactly this reason; stacked, the sheet scrolled at 1080.
+    await page.locator('.roster td.who button').first().click();
+    await expect(page.locator('#sheet .note textarea')).toBeVisible();
+    // The game-by-game list arrives after the sheet does, and it is the tallest
+    // block on the card.
+    await expect(page.locator('#sheet .card')).not.toContainText('Loading…');
+
+    const m = await page.evaluate(() => {
+      const c = document.querySelector('#sheet .card');
+      return { scroll: c.scrollHeight, client: c.clientHeight };
+    });
+    expect(m.scroll).toBeLessThanOrEqual(m.client);
+  });
+
+  test('the completed-games caveat is an (i), not a paragraph', async ({ page }) => {
+    await page.locator('.roster td.who button').first().click();
+    const info = page.locator('#sheet .grid .info');
+    await expect(info).toBeVisible();
+    // Hover text, but reachable: it carries the sentence as a label too.
+    await expect(info).toHaveAttribute('title', /completed games/);
+    await expect(info).toHaveAttribute('aria-label', /completed games/);
+    // And it hangs off the row it qualifies, not the whole card.
+    await expect(page.locator('#sheet .grid .h', { hasText: 'Tournament' }).locator('.info'))
+      .toHaveCount(1);
+  });
+
   test('toggles expose their state to assistive technology, not only by colour', async ({ page }) => {
     const pressed = await page.evaluate(() =>
       [...document.querySelectorAll('.chip')].map((c) => c.getAttribute('aria-pressed')));
