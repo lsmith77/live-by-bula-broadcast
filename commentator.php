@@ -1733,11 +1733,17 @@ try {
         // activation comfortably survives the write, so the popup is not
         // blocked from the callback.
         navigator.clipboard.writeText(text).then(function () {
-            // The .new shortcuts take a title; if Google ever stops honouring
-            // it, the sheet is merely untitled.
+            // The create endpoint sheets.new redirects to, called directly so
+            // the title survives the trip; if Google ever stops honouring it,
+            // the sheet is merely untitled. No third window.open argument: ANY
+            // features string demotes the tab to a small popup window, and
+            // "noopener" there is a feature, not a rel. The opener is cut by
+            // hand instead.
             var title = bioFileName(side).replace(/\.csv$/, '');
-            window.open('https://sheets.new/?title=' + encodeURIComponent(title),
-                '_blank', 'noopener');
+            var tab = window.open(
+                'https://docs.google.com/spreadsheets/create?title=' + encodeURIComponent(title),
+                '_blank');
+            if (tab) { tab.opener = null; }
             flashMessage('Copied. Paste into the new sheet (Ctrl+V or Cmd+V), then share it with the team.');
         }, function () {
             flashMessage('Could not copy — use Export CSV instead.');
