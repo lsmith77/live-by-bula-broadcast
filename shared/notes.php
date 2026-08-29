@@ -2,8 +2,17 @@
 /**
  * Prepared talking points about a player, for the commentary position.
  *
- *   { "players": { "1234": { "text": "...", "by": "Sam", "at": 1787420000 } },
+ *   { "players": { "1234": { "text": "...", "pronouns": "she/her", "by": "Sam", "at": 1787420000 } },
  *     "touched": 1787420000 }
+ *
+ * Besides the free-text note, an entry may carry three STRUCTURED fields —
+ * `nickname`, `pronouns`, `pronunciation` (see FIELDS) — the answers a
+ * commentator looks up at speed rather than reads out, shown beside the name
+ * instead of inside the note. They arrive through the bio round trip, where the
+ * player fills in their own row (which is what makes pronouns acceptable to hold
+ * at all: self-declared or absent, never guessed — docs/COMMENTATOR.md section
+ * 5), or are typed at the desk. Non-empty values only; an entry exists while any
+ * of its four channels has content.
  *
  * WHY THIS EXISTS. `docs/COMMENTATOR.md` section 5 argues that the right home for
  * what a commentator says about a player is `uo_player_profile`, self-declared and
@@ -63,12 +72,26 @@ final class Notes
     public const MAX_BY = 24;
 
     /**
+     * The structured fields an entry may carry beside the note.
+     *
+     * Single-line and short: each is something said in a breath — a nickname, a
+     * pronoun set, how to say a name — not a place for prose.
+     *
+     * @var list<string>
+     */
+    public const FIELDS = ['nickname', 'pronouns', 'pronunciation'];
+
+    /** Length of one structured field. */
+    public const MAX_FIELD = 60;
+
+    /**
      * Players carrying a note in one room.
      *
      * Two 28-player squads is 56, and a desk that keeps one code across a whole
      * tournament will touch several games — so this is generous rather than
-     * tight. With MAX_TEXT it also fixes the document's ceiling at ~100 KB, which
-     * is the number that actually matters for an unauthenticated write.
+     * tight. With MAX_TEXT and the structured fields it also fixes the document's
+     * ceiling at ~120 KB, which is the number that actually matters for an
+     * unauthenticated write.
      */
     private const MAX_PLAYERS_PER_ROOM = 100;
 
@@ -117,7 +140,7 @@ final class Notes
     }
 
     /**
-     * @return array{players: array<string,array{text:string,by:string,at:int}>, touched: int}
+     * @return array{players: array<string,array<string,mixed>>, touched: int}
      */
     public function load(string $code): array
     {
@@ -142,30 +165,36 @@ final class Notes
     }
 
     /**
-     * Write one player's note, or clear it.
+     * Write one player's whole entry, or clear it.
      *
      * Per player rather than per room, for the reason `Lines::saveTeam()` is per
      * team: two people preparing a broadcast split the squads, so their writes
      * touch disjoint keys and cannot conflict. Where they do overlap the last
      * write wins, and the page shows who wrote it.
      *
-     * An empty string deletes rather than storing a blank, so clearing a note a
-     * commentator no longer wants actually removes it instead of leaving an entry
-     * that counts against the room's cap and expires on its own schedule.
+     * `$fields` is the FULL desired state of the structured fields, not a delta:
+     * a key that is absent or empty clears that field. The sheet edits all four
+     * channels in one box and flushes them together, so "what the box shows is
+     * what is stored" is the only contract a caller can reason about. Everything
+     * empty deletes the entry rather than storing a blank, so clearing what a
+     * commentator no longer wants actually removes it instead of leaving an
+     * entry that counts against the room's cap and expires on its own schedule.
      *
+     * @param  array<string,string> $fields
      * @return array{ok: bool, error: ?string, state: array}
      */
-    public function save(string $code, int $playerId, string $text, string $by = ''): array
+    public function save(string $code, int $playerId, string $text, string $by = '', array $fields = []): array
     {
         $path = $this->pathFor($code);
         if ($path === null || $playerId <= 0) {
             return ['ok' => false, 'error' => 'Bad room.', 'state' => $this->load($code)];
         }
 
-        return $this->withLock($path, function () use ($path, $code, $playerId, $text, $by) {
+        return $this->withLock($path, function () use ($path, $code, $playerId, $text, $by, $fields) {
             $state = $this->load($code);
             $players = $state['players'];
             $clean = self::cleanText($text);
+            $cleanFields = self::cleanFields($fields);
 
             // Skip a write that would change nothing, rather than one that
             // arrives too soon.
@@ -182,14 +211,17 @@ final class Notes
             // writes worth dropping -- a debounced save firing twice with the
             // same text -- and never loses one that would have changed anything.
             $existing = $players[(string) $playerId] ?? null;
-            $unchanged = $clean === ''
+            $emptied = $clean === '' && $cleanFields === [];
+            $unchanged = $emptied
                 ? $existing === null
-                : ($existing !== null && $existing['text'] === $clean);
+                : ($existing !== null
+                    && $existing['text'] === $clean
+                    && self::fieldsOf($existing) === $cleanFields);
             if ($unchanged) {
                 return ['ok' => true, 'error' => null, 'state' => $state];
             }
 
-            if ($clean === '') {
+            if ($emptied) {
                 unset($players[(string) $playerId]);
             } else {
                 if (
@@ -202,11 +234,9 @@ final class Notes
                         'state' => $state,
                     ];
                 }
-                $players[(string) $playerId] = [
-                    'text' => $clean,
-                    'by' => self::cleanBy($by),
-                    'at' => time(),
-                ];
+                $players[(string) $playerId] = ['text' => $clean]
+                    + $cleanFields
+                    + ['by' => self::cleanBy($by), 'at' => time()];
             }
 
             $next = ['players' => $players, 'touched' => time()];
@@ -236,12 +266,14 @@ final class Notes
      * One request, one lock, one file write. It is the only shape in which
      * "apply this import" is a single decision rather than a partial one.
      *
-     * `$ifAbsent` keeps the promise the preview makes. The page already filters
-     * out players who have a note, but it decided that from a poll that may be
+     * `$ifAbsent` keeps the promise the preview makes, PER CHANNEL: the note and
+     * each structured field are filled only where empty, independently, so a row
+     * whose note was typed at the desk can still bring the pronouns nobody had.
+     * The page already filters, but it decided that from a poll that may be
      * seconds old; enforcing it here means a partner writing during the preview
      * cannot have their note overwritten by an import that never saw it.
      *
-     * @param  array<array{player:int,text:string}> $entries
+     * @param  array<array{player:int,text?:string,nickname?:string,pronouns?:string,pronunciation?:string}> $entries
      * @return array{ok: bool, error: ?string, state: array, written: int, kept: int}
      */
     public function saveMany(string $code, array $entries, string $by = '', bool $ifAbsent = true): array
@@ -269,20 +301,49 @@ final class Notes
                 }
                 $id = (int) ($entry['player'] ?? 0);
                 $text = self::cleanText((string) ($entry['text'] ?? ''));
-                if ($id <= 0 || $text === '') {
+                $fields = self::cleanFields($entry);
+                if ($id <= 0 || ($text === '' && $fields === [])) {
                     continue;
                 }
                 $key = (string) $id;
-                if ($ifAbsent && isset($players[$key]) && trim($players[$key]['text']) !== '') {
-                    $kept++;
+                $current = $players[$key] ?? null;
+
+                // Fill what is empty; keep what was written. Per channel.
+                $next = ['text' => $current['text'] ?? ''] + self::fieldsOf($current ?? []);
+                $wrote = false;
+                $keptAny = false;
+                if ($text !== '') {
+                    if ($ifAbsent && trim($next['text']) !== '') {
+                        $keptAny = true;
+                    } else {
+                        $next['text'] = $text;
+                        $wrote = true;
+                    }
+                }
+                foreach ($fields as $field => $value) {
+                    if ($ifAbsent && trim($next[$field] ?? '') !== '') {
+                        $keptAny = true;
+                    } else {
+                        $next[$field] = $value;
+                        $wrote = true;
+                    }
+                }
+                if (!$wrote) {
+                    if ($keptAny) {
+                        $kept++;
+                    }
                     continue;
                 }
-                if (!isset($players[$key]) && count($players) >= self::MAX_PLAYERS_PER_ROOM) {
+                if ($current === null && count($players) >= self::MAX_PLAYERS_PER_ROOM) {
                     // Full. Stop rather than dropping the tail in silence -- the
                     // caller reports what was written and what was not.
                     break;
                 }
-                $players[$key] = ['text' => $text, 'by' => self::cleanBy($by), 'at' => time()];
+                $players[$key] = array_filter(
+                    $next,
+                    static fn ($v, $k) => $k === 'text' || $v !== '',
+                    ARRAY_FILTER_USE_BOTH
+                ) + ['by' => self::cleanBy($by), 'at' => time()];
                 $written++;
             }
 
@@ -344,7 +405,35 @@ final class Notes
         return is_string($out) ? mb_substr(trim($out), 0, self::MAX_BY) : '';
     }
 
-    /** @return array<string,array{text:string,by:string,at:int}> */
+    /**
+     * The structured fields present in an arbitrary array, cleaned.
+     *
+     * Single-line — a newline in a pronoun set is nothing but an accident — and
+     * held to MAX_FIELD. Empty values are omitted rather than kept as ''.
+     *
+     * @return array<string,string>
+     */
+    private static function cleanFields(array $raw): array
+    {
+        $clean = [];
+        foreach (self::FIELDS as $field) {
+            $out = preg_replace('/[\x00-\x1F\x7F]/u', ' ', (string) ($raw[$field] ?? ''));
+            $out = is_string($out) ? trim(preg_replace('/\s+/', ' ', $out) ?? '') : '';
+            $out = mb_substr($out, 0, self::MAX_FIELD);
+            if ($out !== '') {
+                $clean[$field] = $out;
+            }
+        }
+        return $clean;
+    }
+
+    /** The structured fields already on a stored entry, empties omitted. */
+    private static function fieldsOf(array $entry): array
+    {
+        return self::cleanFields($entry);
+    }
+
+    /** @return array<string,array<string,mixed>> */
     private static function cleanPlayers(mixed $raw): array
     {
         if (!is_array($raw) && !is_object($raw)) {
@@ -357,14 +446,16 @@ final class Notes
                 continue;
             }
             $text = self::cleanText((string) ($entry['text'] ?? ''));
-            if ($text === '') {
+            $fields = self::cleanFields($entry);
+            if ($text === '' && $fields === []) {
                 continue;
             }
-            $clean[(string) $id] = [
-                'text' => $text,
-                'by' => self::cleanBy((string) ($entry['by'] ?? '')),
-                'at' => (int) ($entry['at'] ?? 0),
-            ];
+            $clean[(string) $id] = ['text' => $text]
+                + $fields
+                + [
+                    'by' => self::cleanBy((string) ($entry['by'] ?? '')),
+                    'at' => (int) ($entry['at'] ?? 0),
+                ];
             if (count($clean) >= self::MAX_PLAYERS_PER_ROOM) {
                 break;
             }

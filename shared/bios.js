@@ -70,9 +70,33 @@
         'Clubs played for before'
     ];
 
+    /**
+     * The structured columns: answers that are looked up at speed rather than
+     * read out, so they must not disappear into the composed note. Each imports
+     * into its own field on the player's entry and is shown beside the name.
+     *
+     * Pronouns are here for the reason section 5 gives: self-declared or absent,
+     * never guessed — and a player filling in their own row IS the
+     * self-declaration. Nickname exists upstream (`uo_player_profile.nickname`)
+     * but no Live! payload carries it, so the round trip is how it reaches the
+     * desk today.
+     */
+    var FIELDS = [
+        { key: 'nickname', header: 'Nickname', aliases: ['nickname', 'nick name', 'nick'] },
+        { key: 'pronouns', header: 'Pronouns', aliases: ['pronouns', 'pronoun'] },
+        {
+            key: 'pronunciation', header: 'Name pronunciation',
+            aliases: ['name pronunciation', 'pronunciation', 'pronounced', 'pronounce', 'how to say it']
+        }
+    ];
+
     var ID_ALIASES = ['player id', 'player_id', 'playerid', 'id', 'identifier'];
     var NAME_ALIASES = ['name', 'player', 'player name', 'full name'];
     var NUMBER_ALIASES = ['number', 'no', 'no.', 'num', '#', 'jersey', 'jersey number'];
+
+    var FIELD_ALIASES = FIELDS.reduce(function (all, f) {
+        return all.concat(f.aliases);
+    }, []);
 
     function norm(s) {
         return String(s === null || s === undefined ? '' : s).trim().toLowerCase();
@@ -102,14 +126,42 @@
         return null;
     }
 
-    /** Everything that is not an identity column carries content. */
+    /** Everything that is not an identity or structured-field column composes into the note. */
     function contentHeaders(headers) {
         return headers.filter(function (h) {
             var n = norm(h);
             return ID_ALIASES.indexOf(n) === -1
                 && NAME_ALIASES.indexOf(n) === -1
-                && NUMBER_ALIASES.indexOf(n) === -1;
+                && NUMBER_ALIASES.indexOf(n) === -1
+                && FIELD_ALIASES.indexOf(n) === -1;
         });
+    }
+
+    /** Which structured fields this file carries: field key -> the file's header. */
+    function fieldHeaders(headers) {
+        var found = {};
+        FIELDS.forEach(function (f) {
+            var h = findHeader(headers, f.aliases);
+            if (h !== null) { found[f.key] = h; }
+        });
+        return found;
+    }
+
+    /**
+     * One player's existing entry, however the caller shaped it.
+     *
+     * The page passes full entries; older callers and half the tests pass the
+     * note text alone. Both mean the same thing: what is already written here.
+     */
+    function existingOf(value) {
+        var entry = { text: '', nickname: '', pronouns: '', pronunciation: '' };
+        if (typeof value === 'string') { entry.text = value; return entry; }
+        if (value && typeof value === 'object') {
+            Object.keys(entry).forEach(function (k) {
+                if (typeof value[k] === 'string') { entry[k] = value[k]; }
+            });
+        }
+        return entry;
     }
 
     /**
@@ -137,26 +189,34 @@
             row[ID_HEADER] = p.id;
             row[NUMBER_HEADER] = (p.num === null || p.num === undefined) ? '' : p.num;
             row[NAME_HEADER] = p.name;
+            FIELDS.forEach(function (f) { row[f.header] = ''; });
             PROMPTS.forEach(function (h) { row[h] = ''; });
             return row;
         });
     }
 
     function exportHeaders() {
-        return [ID_HEADER, NUMBER_HEADER, NAME_HEADER].concat(PROMPTS);
+        return [ID_HEADER, NUMBER_HEADER, NAME_HEADER]
+            .concat(FIELDS.map(function (f) { return f.header; }))
+            .concat(PROMPTS);
     }
 
     /**
      * Decide what an imported file would do, without doing any of it.
      *
      * `roster` is ONE team's players ({id, num, name}); `existing` maps player id
-     * to a note already written. Returns a report the page renders as a preview
-     * and then applies verbatim — the decision lives here, tested, rather than in
-     * the click handler.
+     * to what is already written — a full entry, or the note text alone. Returns
+     * a report the page renders as a preview and then applies verbatim — the
+     * decision lives here, tested, rather than in the click handler.
+     *
+     * "Import fills what is empty and never overwrites" holds per CHANNEL: the
+     * note and each structured field are filled or kept independently, so a row
+     * whose note was typed at the desk can still bring pronouns nobody had.
      *
      * @return {{
      *   accepted: Array, rejected: Array, kept: Array, empty: number,
-     *   idHeader: ?string, contentHeaders: Array, matched: number, total: number
+     *   idHeader: ?string, contentHeaders: Array, fieldHeaders: Object,
+     *   matched: number, total: number
      * }}
      */
     function match(parsed, roster, existing) {
@@ -165,10 +225,12 @@
         var idHeader = findHeader(headers, ID_ALIASES);
         var nameHeader = findHeader(headers, NAME_ALIASES);
         var content = contentHeaders(headers);
+        var fields = fieldHeaders(headers);
+        var fieldKeys = Object.keys(fields);
 
         var report = {
             accepted: [], rejected: [], kept: [], empty: 0,
-            idHeader: idHeader, contentHeaders: content,
+            idHeader: idHeader, contentHeaders: content, fieldHeaders: fields,
             matched: 0, total: (parsed.rows || []).length
         };
         if (!idHeader) {
@@ -176,7 +238,7 @@
                 + 'as produced by the export.';
             return report;
         }
-        if (!content.length) {
+        if (!content.length && !fieldKeys.length) {
             report.fatal = 'No content columns — every column in this file is an '
                 + 'identity column, so there is nothing to import.';
             return report;
@@ -233,15 +295,35 @@
             report.matched += 1;
 
             var text = compose(row, content);
-            if (!text) { report.empty += 1; return; }
+            var cur = existingOf(existing[raw]);
 
-            // Never overwrite what a commentator typed. Their own observations
-            // have no other home; a player's answers can be re-imported.
-            if (existing[raw] && String(existing[raw]).trim()) {
+            // Fill what is empty, keep what was written — per channel. What a
+            // commentator typed has no other home; a player's answers can simply
+            // be imported again.
+            var toText = '';
+            var toFields = {};
+            var any = false;
+            if (text) {
+                any = true;
+                if (!cur.text.trim()) { toText = text; }
+            }
+            fieldKeys.forEach(function (k) {
+                var v = String(row[fields[k]] === undefined ? '' : row[fields[k]]).trim();
+                if (!v) { return; }
+                any = true;
+                if (!cur[k].trim()) { toFields[k] = v; }
+            });
+
+            if (!any) { report.empty += 1; return; }
+            if (!toText && !Object.keys(toFields).length) {
+                // Everything this row carries is already written here.
                 report.kept.push({ line: line, name: player.name });
                 return;
             }
-            report.accepted.push({ player: player.id, name: player.name, text: text });
+            report.accepted.push({
+                player: player.id, name: player.name,
+                text: toText, fields: toFields
+            });
         });
 
         return report;
@@ -252,9 +334,11 @@
         NAME_HEADER: NAME_HEADER,
         NUMBER_HEADER: NUMBER_HEADER,
         PROMPTS: PROMPTS,
+        FIELDS: FIELDS,
         exportHeaders: exportHeaders,
         exportRows: exportRows,
         contentHeaders: contentHeaders,
+        fieldHeaders: fieldHeaders,
         compose: compose,
         sameName: sameName,
         match: match

@@ -3,10 +3,12 @@
  * Prepared talking points about players, for the commentary position.
  *
  *   GET  ?view=live/overlays/notes&code=K7QM4
- *        -> {"players":{"1234":{"text":"…","by":"Sam","at":N}},"touched":N,"writable":bool}
+ *        -> {"players":{"1234":{"text":"…","pronouns":"she/her","by":"Sam","at":N}},"touched":N,"writable":bool}
  *
- *   POST {"code":"K7QM4","player":1234,"text":"…","by":"Sam"}
- *        -> write one player's note; an empty text clears it
+ *   POST {"code":"K7QM4","player":1234,"text":"…","nickname":"…","pronouns":"…","pronunciation":"…","by":"Sam"}
+ *        -> write one player's whole entry. The structured fields are the FULL
+ *           desired state — an absent or empty key clears that field — and
+ *           everything empty clears the entry.
  *
  * **Unauthenticated, like lines.php and for the same reason.** The code is a
  * namespace rather than a credential; nothing stored here reaches a viewer, so
@@ -108,7 +110,12 @@ if (!array_key_exists('text', $payload) || !is_string($payload['text'])) {
     fail(400, 'Expected {"text": "..."}.');
 }
 
-$result = $store->save($code, $playerId, $payload['text'], (string) ($payload['by'] ?? ''));
+$fields = [];
+foreach (Notes::FIELDS as $field) {
+    $fields[$field] = is_string($payload[$field] ?? null) ? $payload[$field] : '';
+}
+
+$result = $store->save($code, $playerId, $payload['text'], (string) ($payload['by'] ?? ''), $fields);
 if (!$result['ok']) {
     fail(500, (string) $result['error']);
 }

@@ -260,6 +260,8 @@ try {
     .roster td.who button { background: none; border: 0; color: var(--ink); font: inherit;
                             font-weight: 600; cursor: pointer; padding: 0; text-align: left; }
     .roster td.who button:hover { color: var(--link); text-decoration: underline; }
+    .roster td.who .say { margin-left: .5rem; color: var(--ink-mute); font-size: .82rem;
+        white-space: nowrap; }
     /* A player with no points yet is the DEFAULT state, not an exception — on a
        fresh game it is most of the roster. So the row dims only its statistics,
        never the jersey number or the name, which are the two things a
@@ -374,6 +376,8 @@ try {
                         letter-spacing: .1em; color: var(--ink-mute); font-weight: 700; }
     .onfield .line { display: flex; flex-wrap: wrap; gap: .35rem 1.4rem; }
     .onfield .p { font-size: 1.5rem; font-weight: 700; line-height: 1.25; }
+    .onfield .p .pr { color: var(--ink-mute); font-size: .95rem; font-weight: 600;
+        margin-left: .4rem; margin-right: 0; }
     .onfield .p span { color: var(--ink-mute); font-size: 1.05rem; font-weight: 600; margin-right: .3rem;
                        font-variant-numeric: tabular-nums; }
     .onfield .empty { color: var(--ink-mute); font-size: .95rem; }
@@ -417,6 +421,16 @@ try {
        A talking-points box, filled in before the game from whatever the teams
        hand over. Monospace would be wrong: this is prose to be read aloud, not
        a code. It gets real height because a two-line box invites two lines. */
+    .note .fields { display: grid; grid-template-columns: repeat(3, 1fr); gap: .5rem;
+        margin-bottom: .5rem; }
+    .note .fields .field { display: flex; flex-direction: column; gap: .2rem; }
+    .note .fields .field span { font-size: .72rem; color: var(--ink-mute);
+        text-transform: uppercase; letter-spacing: .04em; }
+    .note .fields .field input { font: inherit; font-size: .9rem; padding: .35rem .5rem;
+        border: 1px solid var(--line); border-radius: 4px; background: var(--bg);
+        color: var(--ink); min-width: 0; }
+    .note .fields .field input:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+    #sheetCard .sub.say { color: var(--ink); font-weight: 600; }
     .note textarea { width: 100%; min-height: 6.5rem; resize: vertical; font: inherit;
                      font-size: .92rem; line-height: 1.45; padding: .5rem .6rem;
                      background: var(--bg); color: var(--ink); border: 1px solid var(--line);
@@ -554,6 +568,7 @@ try {
         suggestedCode: <?= $json($suggestedCode) ?>,
         codeLength: <?= (int) Lines::CODE_LENGTH ?>,
         noteMax: <?= (int) Notes::MAX_TEXT ?>,
+        fieldMax: <?= (int) Notes::MAX_FIELD ?>,
         noteDays: <?= (int) round(Notes::STALE_SECONDS / 86400) ?>
     };
 
@@ -919,6 +934,7 @@ try {
             btn.setAttribute('data-player', p.id);
             markNote(btn, noteFor(p.id));
             who.append(btn);
+            markSay(who, noteFor(p.id));
             tr.append(who);
 
             tr.append(el('td', null, p.gGoals || '·'));
@@ -997,6 +1013,42 @@ try {
     }
 
     /**
+     * The identity line: nickname, pronouns, how to say the name.
+     *
+     * These are the parts of an entry read at a glance rather than opened, so
+     * they sit beside the name instead of inside the note. Absent means absent —
+     * no placeholder, nothing implying the player was asked — and pronouns in
+     * particular are shown only as declared, never derived (§5).
+     */
+    function sayLine(note) {
+        if (!note) { return ''; }
+        var bits = [];
+        if (note.nickname) { bits.push('“' + note.nickname + '”'); }
+        if (note.pronouns) { bits.push(note.pronouns); }
+        if (note.pronunciation) { bits.push('say ' + note.pronunciation); }
+        return bits.join(' · ');
+    }
+
+    /**
+     * Stamp the identity line into a roster cell, in place — same reasoning as
+     * markNote(): re-rendering the list to add one label would throw the reader
+     * back to the top of a scrolled panel.
+     */
+    function markSay(cell, note) {
+        var existing = cell.querySelector('.say');
+        var text = sayLine(note);
+        if (text) {
+            if (!existing) {
+                existing = el('span', 'say');
+                cell.append(existing);
+            }
+            existing.textContent = text;
+        } else if (existing) {
+            existing.remove();
+        }
+    }
+
+    /**
      * Stamp one roster button with whether that player has a note.
      *
      * Presence only, never a preview: this is scanned down a column of 28 rows
@@ -1005,6 +1057,9 @@ try {
      * neither a screen reader nor a reader who cannot separate the two hues.
      */
     function markNote(btn, note) {
+        // The dot means talking points. An entry holding only the structured
+        // fields shows those beside the name instead, so it earns no dot.
+        note = note && note.text ? note : null;
         var existing = btn.querySelector('.dot');
         var spoken = btn.querySelector('.sr-only');
         btn.title = note ? 'Details · has talking points' : 'Details';
@@ -1031,7 +1086,9 @@ try {
     function syncNoteMarkers() {
         var buttons = document.querySelectorAll('.roster td.who button[data-player]');
         Array.prototype.forEach.call(buttons, function (btn) {
-            markNote(btn, noteFor(btn.getAttribute('data-player')));
+            var note = noteFor(btn.getAttribute('data-player'));
+            markNote(btn, note);
+            markSay(btn.parentNode, note);
         });
     }
 
@@ -1060,17 +1117,25 @@ try {
      * so the sheet can say so rather than leaving someone guessing whether their
      * partner will see it.
      */
-    function pushNote(playerId, text, onDone) {
+    function pushNote(playerId, entry, onDone) {
         if (!syncCode || !playerId) { return; }
         lastNoteWrite = Date.now();
         var key = String(playerId);
-        var trimmed = String(text || '').trim();
+        var clean = { text: String(entry.text || '').trim() };
+        ['nickname', 'pronouns', 'pronunciation'].forEach(function (k) {
+            clean[k] = String(entry[k] || '').trim();
+        });
+        var anything = clean.text || clean.nickname || clean.pronouns || clean.pronunciation;
 
         // Reflect it locally first. The roster marker and a sheet reopened
         // straight away should agree with what was just typed, whatever the
         // network is doing.
-        if (trimmed) {
-            notes[key] = { text: trimmed, by: myName, at: Math.floor(Date.now() / 1000) };
+        if (anything) {
+            notes[key] = {
+                text: clean.text, nickname: clean.nickname,
+                pronouns: clean.pronouns, pronunciation: clean.pronunciation,
+                by: myName, at: Math.floor(Date.now() / 1000)
+            };
         } else {
             delete notes[key];
         }
@@ -1086,7 +1151,9 @@ try {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 code: syncCode, player: Number(playerId),
-                text: trimmed, by: myName
+                text: clean.text, nickname: clean.nickname,
+                pronouns: clean.pronouns, pronunciation: clean.pronunciation,
+                by: myName
             })
         })
             .then(window.Tracking.readJson)
@@ -1135,10 +1202,17 @@ try {
         window.setTimeout(function () { URL.revokeObjectURL(url); }, 0);
     }
 
-    /** What this desk has already written, as plain text per player id. */
-    function notesAsText() {
+    /** What this desk has already written, one full entry per player id. */
+    function notesForImport() {
         var out = {};
-        Object.keys(notes).forEach(function (k) { out[k] = notes[k].text; });
+        Object.keys(notes).forEach(function (k) {
+            out[k] = {
+                text: notes[k].text || '',
+                nickname: notes[k].nickname || '',
+                pronouns: notes[k].pronouns || '',
+                pronunciation: notes[k].pronunciation || ''
+            };
+        });
         return out;
     }
 
@@ -1156,7 +1230,7 @@ try {
             // re-exports it appears to have a dead button.
             input.value = '';
             var parsed = window.Csv.parse(String(reader.result || ''));
-            var report = window.Bios.match(parsed, rosterByNumber(side), notesAsText());
+            var report = window.Bios.match(parsed, rosterByNumber(side), notesForImport());
             openImportPreview(side, report);
         };
         // UTF-8, which is what every spreadsheet exports and what the BOM in our
@@ -1183,11 +1257,12 @@ try {
         if (report.fatal) {
             card.append(el('p', 'err', report.fatal));
         } else {
+            var columnsRead = Object.keys(report.fieldHeaders || {}).map(function (k) {
+                return report.fieldHeaders[k];
+            }).concat(report.contentHeaders);
             card.append(el('div', 'sub',
                 report.total + (report.total === 1 ? ' row' : ' rows') + ' read'
-                + (report.contentHeaders.length
-                    ? ' · ' + report.contentHeaders.join(' · ')
-                    : '')));
+                + (columnsRead.length ? ' · ' + columnsRead.join(' · ') : '')));
 
             var tally = el('div', 'tally');
             var line = function (n, label, cls) {
@@ -1272,7 +1347,11 @@ try {
                 code: syncCode,
                 by: myName,
                 players: accepted.map(function (a) {
-                    return { player: a.player, text: a.text };
+                    var entry = { player: a.player, text: a.text };
+                    Object.keys(a.fields || {}).forEach(function (k) {
+                        entry[k] = a.fields[k];
+                    });
+                    return entry;
                 })
             })
         })
@@ -1318,7 +1397,7 @@ try {
             + 'you have seen what it would do.';
 
         bar.append(input, label);
-        bar.append(el('span', 'muted', 'players fill it in; import fills empty notes only'));
+        bar.append(el('span', 'muted', 'players fill it in; import fills only what is empty here'));
         return bar;
     }
 
@@ -1390,6 +1469,32 @@ try {
 
         box.append(el('h4', null, 'Talking points'));
 
+        // The structured fields: read at a glance beside the name, so they get
+        // their own inputs rather than a line inside the note. Usually they
+        // arrive through the CSV round trip — a player's own row is the
+        // self-declaration pronouns require — but a wrong entry must be
+        // correctable at the desk in seconds, so they are editable here too.
+        var fieldsRow = el('div', 'fields');
+        var fieldInputs = {};
+        [
+            { key: 'nickname', label: 'Nickname', hint: 'as the player uses it' },
+            { key: 'pronouns', label: 'Pronouns', hint: 'as the player declared — never guessed' },
+            { key: 'pronunciation', label: 'Say it', hint: 'how to say the name' }
+        ].forEach(function (f) {
+            var wrap = el('label', 'field');
+            wrap.append(el('span', null, f.label));
+            var input = document.createElement('input');
+            input.type = 'text';
+            input.maxLength = CONFIG.fieldMax;
+            input.placeholder = f.hint;
+            input.value = existing && existing[f.key] ? existing[f.key] : '';
+            input.setAttribute('aria-label', f.label + ' for ' + p.name);
+            wrap.append(input);
+            fieldInputs[f.key] = input;
+            fieldsRow.append(wrap);
+        });
+        box.append(fieldsRow);
+
         var area = document.createElement('textarea');
         area.value = existing ? existing.text : '';
         area.maxLength = CONFIG.noteMax;
@@ -1441,23 +1546,35 @@ try {
             if (timer) { window.clearTimeout(timer); timer = null; }
             stateLabel.className = 'state';
             stateLabel.textContent = 'Saving…';
-            pushNote(p.id, area.value, function (ok) {
+            // The whole entry in one write, so the box and the store cannot
+            // disagree about which channels exist.
+            pushNote(p.id, {
+                text: area.value,
+                nickname: fieldInputs.nickname.value,
+                pronouns: fieldInputs.pronouns.value,
+                pronunciation: fieldInputs.pronunciation.value
+            }, function (ok) {
                 stateLabel.className = 'state ' + (ok ? 'saved' : 'failed');
                 stateLabel.textContent = ok ? 'Saved' : 'Not shared — kept on this screen';
                 renderMeta();
             });
         }
 
-        area.addEventListener('input', function () {
+        function onEdit() {
             pending = true;
             stateLabel.className = 'state';
             stateLabel.textContent = 'Unsaved';
             if (timer) { window.clearTimeout(timer); }
             timer = window.setTimeout(flush, 900);
-        });
+        }
+        area.addEventListener('input', onEdit);
         // Blur and close are both flushes rather than saves in their own right,
         // so a fast typist who closes the sheet mid-pause still keeps the text.
         area.addEventListener('blur', flush);
+        Object.keys(fieldInputs).forEach(function (k) {
+            fieldInputs[k].addEventListener('input', onEdit);
+            fieldInputs[k].addEventListener('blur', flush);
+        });
         box.flushNote = flush;
         return box;
     }
@@ -1470,6 +1587,10 @@ try {
         card.append(name);
         card.append(el('div', 'sub',
             [side.team.name, p.division].filter(Boolean).join(' · ')));
+        // Nickname, pronouns, pronunciation — under the name, where somebody
+        // about to say it looks. Rendered only when something is declared.
+        var say = sayLine(noteFor(p.id));
+        if (say) { card.append(el('div', 'sub say', say)); }
 
         card.append(noteBox(p));
 
@@ -2211,6 +2332,10 @@ try {
                 var d = el('div', 'p');
                 if (p.num !== null && p.num !== undefined) { d.append(el('span', null, p.num)); }
                 d.append(document.createTextNode(p.name));
+                // Pronouns ride along here because this panel is exactly where a
+                // name is about to be said. Declared or nothing — see sayLine().
+                var n = noteFor(p.id);
+                if (n && n.pronouns) { d.append(el('span', 'pr', n.pronouns)); }
                 row.append(d);
             });
         wrap.append(row);

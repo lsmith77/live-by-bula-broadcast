@@ -218,6 +218,61 @@ test.describe('bio import: who a row is allowed to name', () => {
     expect(report.rejected[0].why).toMatch(/not a number/);
   });
 
+  test('a filled field column lands beside the name, not inside the note', () => {
+    // Pronouns, nicknames and pronunciation are looked up at speed, so they
+    // import into their own fields rather than disappearing into the composed
+    // note text.
+    const out = Csv.parse(csv([{
+      'Player ID': 301, Name: 'Alex Auer',
+      Pronouns: 'she/her', 'Other sports played': 'Handball',
+    }]));
+    const report = Bios.match(out, ROSTER, {});
+    expect(report.accepted).toHaveLength(1);
+    expect(report.accepted[0].text).toBe('Handball');
+    expect(report.accepted[0].fields).toEqual({ pronouns: 'she/her' });
+  });
+
+  test('the export carries the field columns between the name and the prompts', () => {
+    const headers = Bios.exportHeaders();
+    expect(headers.slice(3, 6)).toEqual(['Nickname', 'Pronouns', 'Name pronunciation']);
+    for (const p of Bios.PROMPTS) { expect(headers).toContain(p); }
+  });
+
+  test('a file of identifiers and pronouns alone is importable', () => {
+    // The likeliest minimal round trip: a team answers nothing else. It must not
+    // be refused as "no content columns".
+    const out = Csv.parse('Player ID,Pronouns\r\n301,they/them\r\n');
+    const report = Bios.match(out, ROSTER, {});
+    expect(report.fatal).toBeUndefined();
+    expect(report.accepted).toHaveLength(1);
+    expect(report.accepted[0].text).toBe('');
+    expect(report.accepted[0].fields).toEqual({ pronouns: 'they/them' });
+  });
+
+  test('fill and keep are decided per channel, not per row', () => {
+    // A note typed at the desk must not block the pronouns nobody had -- and the
+    // typed note must not be replaced by the row that brings them.
+    const out = Csv.parse(csv([{
+      'Player ID': 301, Name: 'Alex Auer',
+      Pronouns: 'she/her', 'Other sports played': 'from the sheet',
+    }]));
+    const report = Bios.match(out, ROSTER, { 301: { text: 'typed at the desk' } });
+    expect(report.accepted).toHaveLength(1);
+    expect(report.accepted[0].text).toBe('');
+    expect(report.accepted[0].fields).toEqual({ pronouns: 'she/her' });
+  });
+
+  test('a row whose every channel is already written is kept', () => {
+    const out = Csv.parse(csv([{
+      'Player ID': 301, Name: 'Alex Auer',
+      Pronouns: 'she/her', 'Other sports played': 'answered',
+    }]));
+    const report = Bios.match(out, ROSTER,
+      { 301: { text: 'typed', pronouns: 'they/them' } });
+    expect(report.accepted).toHaveLength(0);
+    expect(report.kept).toHaveLength(1);
+  });
+
   test('every row is accounted for', () => {
     // Nothing may be dropped in silence: the preview tally is what the reader
     // decides on, so the numbers have to add up to the file.

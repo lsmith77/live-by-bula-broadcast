@@ -239,15 +239,25 @@ test.describe('prepared notes', () => {
     expect(lines[0]).toContain('Player ID');
     expect(lines.length).toBeGreaterThan(3);
 
-    // Play the part of the team: two players answer honestly, one row is
-    // retargeted at a teammate, and one row carries a foreign identifier.
+    // Play the part of the team: two players answer honestly (one declares
+    // pronouns as well), one row is retargeted at a teammate, and one row
+    // carries a foreign identifier. Columns are found by header, the way the
+    // import itself finds them, so the test survives a column being added.
+    const headers = lines[0].split(',');
+    const col = (h) => headers.indexOf(h);
     const [r1, r2, r3] = [1, 2, 3].map((i) => lines[i].split(','));
-    r1[3] = 'Handball';
-    r1[4] = '"Followed a sibling, then stayed"';
-    r2[3] = 'Athletics';
-    r3[2] = 'NOT THE RIGHT NAME';
-    r3[3] = 'sneaky';
-    const foreign = ['999999', '9', 'Opposing Player', 'bogus', '', '', '', ''].join(',');
+    r1[col('Other sports played')] = 'Handball';
+    r1[col('How you came to ultimate')] = '"Followed a sibling, then stayed"';
+    r1[col('Pronouns')] = 'she/her';
+    r2[col('Other sports played')] = 'Athletics';
+    r3[col('Name')] = 'NOT THE RIGHT NAME';
+    r3[col('Other sports played')] = 'sneaky';
+    const foreign = headers.map((h, i) => ({
+      [col('Player ID')]: '999999',
+      [col('Number')]: '9',
+      [col('Name')]: 'Opposing Player',
+      [col('Other sports played')]: 'bogus',
+    }[i] || '')).join(',');
     const edited = info.outputPath('edited.csv');
     fs.writeFileSync(edited, `﻿${[lines[0], r1.join(','), r2.join(','), r3.join(','), foreign].join('\r\n')}\r\n`);
 
@@ -268,10 +278,86 @@ test.describe('prepared notes', () => {
     await expect(rosters.nth(0).locator('.roster .who .dot')).toHaveCount(2);
     await expect(rosters.nth(1).locator('.roster .who .dot')).toHaveCount(0);
 
-    // Two filled columns compose into labelled lines, one does not.
+    // Two filled columns compose into labelled lines, one does not — and the
+    // pronouns imported into their own field, beside the name rather than
+    // inside the note.
+    await expect(rosters.nth(0).locator('.roster td.who .say')).toHaveText(['she/her']);
     await rosters.nth(0).locator('.roster td.who button').first().click();
     await expect(page.locator('#sheet .note textarea'))
       .toHaveValue('Other sports played: Handball\nHow you came to ultimate: Followed a sibling, then stayed');
+    await expect(page.locator('#sheet .note .fields input').nth(1)).toHaveValue('she/her');
+  });
+
+  test('the structured fields are shown beside the name, not buried in a note', async ({ page, request }) => {
+    await openPage(page);
+    await page.locator('.roster td.who button').first().click();
+
+    const fields = page.locator('#sheet .note .fields input');
+    await fields.nth(0).fill('Ace');
+    await fields.nth(1).fill('she/her');
+    await fields.nth(2).fill('OW-er');
+    await fields.nth(2).blur();
+    await expect(page.locator('#sheet .note .state')).toHaveText('Saved');
+    await page.keyboard.press('Escape');
+
+    // Beside the name on the roster -- and no talking-points dot, because
+    // nothing was said about the player, only how to refer to them.
+    await expect(page.locator('.roster td.who .say').first())
+      .toHaveText('“Ace” · she/her · say OW-er');
+    await expect(page.locator('.roster .who .dot')).toHaveCount(0);
+
+    // Stored as fields, not composed into the text.
+    const stored = await (await request.get(`${NOTES}&code=${CODE}`)).json();
+    const [id] = Object.keys(stored.players);
+    expect(stored.players[id].nickname).toBe('Ace');
+    expect(stored.players[id].pronouns).toBe('she/her');
+    expect(stored.players[id].pronunciation).toBe('OW-er');
+    expect(stored.players[id].text).toBe('');
+
+    // And they survive a reload, back into their own inputs.
+    await page.reload();
+    await expect(page.locator('.roster').first()).toBeVisible();
+    await page.locator('.roster td.who button').first().click();
+    await expect(page.locator('#sheet .note .fields input').nth(1)).toHaveValue('she/her');
+    await expect(page.locator('#sheetCard .sub.say')).toHaveText('“Ace” · she/her · say OW-er');
+  });
+
+  test('an import fills a missing pronoun but never the typed note', async ({ page }, info) => {
+    // Fill-what-is-empty holds per CHANNEL: the desk's note stands, the pronouns
+    // nobody had arrive anyway.
+    const fs = require('fs');
+    await openPage(page);
+
+    const [download] = await Promise.all([
+      page.waitForEvent('download'),
+      page.locator('.biobar').first().locator('button.barbtn').first().click(),
+    ]);
+    const exported = info.outputPath('export3.csv');
+    await download.saveAs(exported);
+    const lines = fs.readFileSync(exported, 'utf8').replace(/^﻿/, '')
+      .split('\r\n').filter(Boolean);
+    const headers = lines[0].split(',');
+    const col = (h) => headers.indexOf(h);
+
+    await page.locator('.roster td.who button').first().click();
+    await page.locator('#sheet .note textarea').fill('Typed at the desk.');
+    await page.locator('#sheet .note textarea').blur();
+    await expect(page.locator('#sheet .note .state')).toHaveText('Saved');
+    await page.keyboard.press('Escape');
+
+    const r1 = lines[1].split(',');
+    r1[col('Other sports played')] = 'From the sheet';
+    r1[col('Pronouns')] = 'they/them';
+    const edited = info.outputPath('edited3.csv');
+    fs.writeFileSync(edited, `${[lines[0], r1.join(',')].join('\r\n')}\r\n`);
+    await page.locator('.biobar').first().locator('input[type=file]').setInputFiles(edited);
+    await expect(page.locator('#sheet')).toHaveClass(/open/);
+    await page.locator('#sheetCard .barbtn.primary').click();
+    await expect(page.locator('#importFlash')).toContainText('1 note imported');
+
+    await page.locator('.roster td.who button').first().click();
+    await expect(page.locator('#sheet .note textarea')).toHaveValue('Typed at the desk.');
+    await expect(page.locator('#sheet .note .fields input').nth(1)).toHaveValue('they/them');
   });
 
   test('re-importing does not overwrite what the desk typed', async ({ page }, info) => {
@@ -298,8 +384,9 @@ test.describe('prepared notes', () => {
     await page.keyboard.press('Escape');
 
     // Now import a file that would replace it.
+    const col = (h) => lines[0].split(',').indexOf(h);
     const r1 = lines[1].split(',');
-    r1[3] = 'From the sheet';
+    r1[col('Other sports played')] = 'From the sheet';
     const edited = info.outputPath('edited2.csv');
     fs.writeFileSync(edited, `${[lines[0], r1.join(',')].join('\r\n')}\r\n`);
     await page.locator('.biobar').first().locator('input[type=file]').setInputFiles(edited);
