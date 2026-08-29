@@ -41,6 +41,36 @@ test.describe('commentator', () => {
     }
   });
 
+  test('the matching tags clear AAA in both themes', async ({ page, request }) => {
+    // The FMP tag was drawn in teal-800 on teal-100: 6.73:1, under this page's
+    // bar, and no contrast test covered the matching tints at all. They are
+    // read at a desk under whatever light the venue has.
+    // The mixed fixture, because a matching only renders in mixed — and the
+    // player has to be one of ITS players, not the open fixture's.
+    await page.evaluate(() => localStorage.setItem('uo-lines-code-703', 'ZTEST'));
+    await page.goto('/c/703');
+    await expect(page.locator('.roster').first()).toBeVisible();
+    const id = await page.locator('.roster').first()
+      .locator('td.who button[data-player]').first().getAttribute('data-player');
+    await request.post('/index.php?view=live/overlays/notes', {
+      data: { code: 'ZTEST', player: Number(id), text: '', matching: 'FMP', by: 'T' },
+    });
+
+    for (const theme of ['daylight', 'night']) {
+      await page.evaluate(({ g, t }) => {
+        localStorage.setItem(`uo-lines-code-${g}`, 'ZTEST');
+        localStorage.setItem('uo-commentator-theme', t);
+      }, { g: 703, t: theme });
+      await page.goto('/c/703');
+      await expect(page.locator('.roster').first()).toBeVisible();
+
+      const tag = page.locator('.roster td.who .say .mt').first();
+      await expect(tag, `${theme}: a tag to measure`).toBeVisible();
+      const ratio = await contrastOf(page, '.roster td.who .say .mt');
+      expect(ratio, `${theme}: matching tag contrast`).toBeGreaterThanOrEqual(AAA);
+    }
+  });
+
   test('the notes box and its roster marker clear AAA too', async ({ page }) => {
     // The marker was first drawn in --accent, which is a FILL colour: it is the
     // background of a pressed button, with white text on top. Against the panel

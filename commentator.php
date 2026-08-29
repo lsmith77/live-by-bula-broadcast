@@ -122,8 +122,13 @@ try {
 
         /* Matching tints: teal and violet, deliberately neither of the
            stereotyped pair. The term carries the meaning; colour only lets a
-           line be scanned. */
-        --fmp-bg: #ccfbf1;  --fmp-ink: #115e59;
+           line be scanned — which is the whole basis on which these two are
+           allowed to be near-identical in LUMINANCE (1.05:1 against each
+           other, and red-green colour blindness collapses them further). Read
+           the tag, never the tint.
+           The inks are the part that has to measure: teal-900 rather than
+           teal-800, which came to 6.73:1 here and missed this page's AAA bar. */
+        --fmp-bg: #ccfbf1;  --fmp-ink: #134e4a;
         --mmp-bg: #ede9fe;  --mmp-ink: #5b21b6;
 
         /* Glare eats thin strokes before it eats thick ones. */
