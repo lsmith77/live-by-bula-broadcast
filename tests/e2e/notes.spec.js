@@ -37,6 +37,9 @@ async function resetRoom(request) {
   for (const id of Object.keys(current.players || {})) {
     await request.post(NOTES, { data: { code: CODE, player: Number(id), text: '' } });
   }
+  for (const id of Object.keys(current.teams || {})) {
+    await request.post(NOTES, { data: { code: CODE, team: Number(id), text: '' } });
+  }
 }
 
 /** Open the commentator page already in the test room, as a named desk. */
@@ -652,6 +655,63 @@ test.describe('prepared notes', () => {
     expect(rows[1].split('\t')[3]).not.toBe('');
     const popup = await popupP;
     if (popup) { await popup.close(); }
+  });
+
+  test('the TEAM row fills the About-the-team box, and never overwrites it', async ({ page, request }, info) => {
+    const fs = require('fs');
+    await openPage(page);
+
+    // Typed at the desk first.
+    const box = page.locator('.panel .teamnote textarea').first();
+    await box.fill('Founded on a beach in 1998.');
+    await box.blur();
+    await expect(page.locator('.panel .teamnote .state').first()).toHaveText('Saved');
+
+    const [download] = await Promise.all([
+      page.waitForEvent('download'),
+      page.locator('.biobar').first().locator('button.barbtn').first().click(),
+    ]);
+    const exported = info.outputPath('export-teamrow.csv');
+    await download.saveAs(exported);
+    const lines = fs.readFileSync(exported, 'utf8').replace(/^﻿/, '')
+      .split('\r\n').filter(Boolean);
+    const headers = lines[0].split(',');
+    const col = (h) => headers.indexOf(h);
+
+    // The sheet's TEAM row brings a history — but the desk already wrote one,
+    // so it is kept; the roster answers still import.
+    const teamRow = lines[lines.length - 1].split(',');
+    expect(teamRow[col('Player ID')]).toBe('TEAM');
+    teamRow[col('Team history')] = 'From the sheet.';
+    const r1 = lines[1].split(',');
+    r1[col('Other sports played')] = 'Handball';
+    const edited = info.outputPath('edited-teamrow.csv');
+    fs.writeFileSync(edited,
+      `${[lines[0], r1.join(','), teamRow.join(',')].join('\r\n')}\r\n`);
+    await page.locator('.biobar').first().locator('input[type=file]').setInputFiles(edited);
+    await expect(page.locator('#sheet')).toHaveClass(/open/);
+    // The player row imports; the TEAM row is counted among the kept.
+    await expect(page.locator('#sheetCard')).toContainText('already written here, kept');
+    await page.locator('#sheetCard .barbtn.primary').click();
+    await expect(page.locator('#importFlash')).toContainText('imported');
+
+    await expect(page.locator('.panel .teamnote textarea').first())
+      .toHaveValue('Founded on a beach in 1998.');
+
+    // With the desk box empty, the same row lands.
+    await box.fill('');
+    await box.blur();
+    await expect(page.locator('.panel .teamnote .state').first()).toHaveText('Saved');
+    await page.locator('.biobar').first().locator('input[type=file]').setInputFiles(edited);
+    await expect(page.locator('#sheet')).toHaveClass(/open/);
+    await page.locator('#sheetCard .barbtn.primary').click();
+    await expect(page.locator('#importFlash')).toContainText('imported');
+    await expect(page.locator('.panel .teamnote textarea').first())
+      .toHaveValue('From the sheet.');
+
+    const stored = await (await request.get(`${NOTES}&code=${CODE}`)).json();
+    const teamTexts = Object.values(stored.teams).map((t) => t.text);
+    expect(teamTexts).toContain('From the sheet.');
   });
 
   test('the room is the code alone, so notes outlive one fixture', async ({ request }) => {

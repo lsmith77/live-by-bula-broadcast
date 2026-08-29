@@ -481,6 +481,8 @@ try {
         color: var(--ink); min-width: 0; }
     .note .fields .field input:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
     #sheetCard .sub.say { color: var(--ink); font-weight: 600; }
+    .note.teamnote { margin: .6rem 0 .2rem; }
+    .note.teamnote textarea { min-height: 3.2rem; }
     .note textarea { width: 100%; min-height: 6.5rem; resize: vertical; font: inherit;
                      font-size: .92rem; line-height: 1.45; padding: .5rem .6rem;
                      background: var(--bg); color: var(--ink); border: 1px solid var(--line);
@@ -1005,9 +1007,95 @@ try {
         panel.append(el('p', 'muted',
             list.length + ' players · G / A / Pts are this game, Tot is the tournament'
             + (blocks ? ', Blk is tournament blocks from completed games' : '')));
+        panel.append(teamNoteBox(side));
         panel.append(bioBar(side));
         panel.append(pronounCheck(side));
         return panel;
+    }
+
+    function teamNoteText(side) {
+        var entry = teamNotes[String(side.team.team_id)];
+        return entry && entry.text ? entry.text : '';
+    }
+
+    function pushTeamNote(side, text, onDone) {
+        if (!syncCode) { return; }
+        lastNoteWrite = Date.now();
+        var key = String(side.team.team_id);
+        var trimmed = String(text || '').trim();
+        if (trimmed) {
+            teamNotes[key] = { text: trimmed, by: myName, at: Math.floor(Date.now() / 1000) };
+        } else {
+            delete teamNotes[key];
+        }
+        fetch(CONFIG.notesUrl, {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                code: syncCode, team: Number(side.team.team_id),
+                text: trimmed, by: myName
+            })
+        })
+            .then(window.Tracking.readJson)
+            .then(function (b) {
+                if (b && b.teams) { teamNotes = b.teams; }
+                if (onDone) { onDone(true); }
+            })
+            .catch(function () { if (onDone) { onDone(false); } });
+    }
+
+    /**
+     * The team's own note — history, achievements, the material that belongs
+     * to nobody's row. Filled by the TEAM row of the bio round trip, or typed
+     * here; the same debounced-save shape as the player note box.
+     */
+    function teamNoteBox(side) {
+        var box = el('div', 'note teamnote');
+        box.append(el('h4', null, 'About the team'));
+
+        var area = document.createElement('textarea');
+        area.value = teamNoteText(side);
+        area.maxLength = CONFIG.noteMax;
+        area.placeholder = 'History, achievements — what the team sent about itself. '
+            + 'The TEAM row of the exported sheet lands here too.';
+        area.setAttribute('aria-label', 'Team note for ' + (side.team.name || 'this team'));
+        box.append(area);
+
+        var meta = el('div', 'meta');
+        var stateLabel = el('span', 'state');
+        meta.append(stateLabel);
+        box.append(meta);
+
+        var timer = null;
+        var pending = false;
+        function flush() {
+            if (!pending) { return; }
+            pending = false;
+            if (timer) { window.clearTimeout(timer); timer = null; }
+            stateLabel.className = 'state';
+            stateLabel.textContent = 'Saving…';
+            pushTeamNote(side, area.value, function (ok) {
+                stateLabel.className = 'state ' + (ok ? 'saved' : 'failed');
+                stateLabel.textContent = ok ? 'Saved' : 'Not shared — kept on this screen';
+            });
+        }
+        area.addEventListener('input', function () {
+            pending = true;
+            stateLabel.className = 'state';
+            stateLabel.textContent = 'Unsaved';
+            if (timer) { window.clearTimeout(timer); }
+            timer = window.setTimeout(flush, 900);
+        });
+        area.addEventListener('blur', flush);
+        // Catch up when the room's state arrives after the render — but never
+        // under someone's fingers.
+        prchecks.push(function () {
+            if (pending || document.activeElement === area) { return; }
+            var current = teamNoteText(side);
+            if (area.value !== current) { area.value = current; }
+        });
+        return box;
     }
 
     /**
@@ -1140,9 +1228,11 @@ try {
 
     /** player id -> {text, by, at}, as last read from the room. */
     var notes = {};
+    /** team id -> {text, by, at}: history, achievements — nobody's row. */
+    var teamNotes = {};
     var lastNoteWrite = 0;
 
-    /** Refreshers for the prep-time pronoun checks, re-run when notes arrive. */
+    /** Prep-panel refreshers (pronoun checks, team boxes), re-run when the room arrives. */
     var prchecks = [];
 
     function noteFor(playerId) {
@@ -1287,6 +1377,7 @@ try {
             .then(function (b) {
                 if (!b || !b.players) { return; }
                 notes = b.players;
+                teamNotes = b.teams || {};
                 syncNoteMarkers();
                 prchecks.forEach(function (fill) { fill(); });
             });
@@ -1347,7 +1438,7 @@ try {
         })
             .then(window.Tracking.readJson)
             .then(function (b) {
-                if (b && b.players) { notes = b.players; }
+                if (b && b.players) { notes = b.players; teamNotes = b.teams || teamNotes; }
                 if (onDone) { onDone(true); }
             })
             .catch(function () { if (onDone) { onDone(false); } });
@@ -1439,7 +1530,9 @@ try {
             // re-exports it appears to have a dead button.
             input.value = '';
             var parsed = window.Csv.parse(String(reader.result || ''));
-            var report = window.Bios.match(parsed, rosterByNumber(side), notesForImport(), bioTeam(side));
+            var existing = notesForImport();
+            existing[window.Bios.TEAM_ROW_ID] = { text: teamNoteText(side) };
+            var report = window.Bios.match(parsed, rosterByNumber(side), existing, bioTeam(side));
             openImportPreview(side, report);
         };
         // UTF-8, which is what every spreadsheet exports and what the BOM in our
@@ -1530,7 +1623,7 @@ try {
             apply.addEventListener('click', function () {
                 apply.disabled = true;
                 apply.textContent = 'Importing…';
-                applyImport(report.accepted, function (ok, written) {
+                applyImport(side, report.accepted, function (ok, written) {
                     if (!ok) {
                         apply.disabled = false;
                         apply.textContent = 'Retry';
@@ -1559,7 +1652,20 @@ try {
      * which is right for debounced typing and would silently discard most of a
      * twenty-eight player import while reporting success.
      */
-    function applyImport(accepted, done) {
+    function applyImport(side, accepted, done) {
+        var teamEntry = null;
+        var players = [];
+        accepted.forEach(function (a) {
+            if (a.player === window.Bios.TEAM_ROW_ID) {
+                teamEntry = a;
+                return;
+            }
+            var entry = { player: a.player, text: a.text };
+            Object.keys(a.fields || {}).forEach(function (k) {
+                entry[k] = a.fields[k];
+            });
+            players.push(entry);
+        });
         fetch(CONFIG.notesUrl, {
             method: 'POST',
             credentials: 'same-origin',
@@ -1567,19 +1673,17 @@ try {
             body: JSON.stringify({
                 code: syncCode,
                 by: myName,
-                players: accepted.map(function (a) {
-                    var entry = { player: a.player, text: a.text };
-                    Object.keys(a.fields || {}).forEach(function (k) {
-                        entry[k] = a.fields[k];
-                    });
-                    return entry;
-                })
+                players: players,
+                teamnote: teamEntry
+                    ? { team: Number(side.team.team_id), text: teamEntry.text }
+                    : undefined
             })
         })
             .then(window.Tracking.readJson)
             .then(function (b) {
-                if (b && b.players) { notes = b.players; }
+                if (b && b.players) { notes = b.players; teamNotes = b.teams || teamNotes; }
                 syncNoteMarkers();
+                prchecks.forEach(function (fill) { fill(); });
                 done(true, (b && b.written) || 0);
             })
             .catch(function () { done(false, 0); });
@@ -1616,11 +1720,18 @@ try {
             flashMessage('This browser cannot copy from a script — use Export CSV.');
             return;
         }
-        // The tab opens synchronously, inside the click's user activation —
-        // opened after the async clipboard write, some browsers would block it
-        // as a popup.
-        window.open('https://sheets.new', '_blank', 'noopener');
+        // Copy FIRST, open the tab from the fulfilment. The other order fails
+        // in practice: window.open moves focus to the new tab, and the async
+        // clipboard API refuses to write from a document that is no longer
+        // focused — a fresh sheet and an empty clipboard. The click's transient
+        // activation comfortably survives the write, so the popup is not
+        // blocked from the callback.
         navigator.clipboard.writeText(text).then(function () {
+            // The .new shortcuts take a title; if Google ever stops honouring
+            // it, the sheet is merely untitled.
+            var title = bioFileName(side).replace(/\.csv$/, '');
+            window.open('https://sheets.new/?title=' + encodeURIComponent(title),
+                '_blank', 'noopener');
             flashMessage('Copied. Paste into the new sheet (Ctrl+V or Cmd+V), then share it with the team.');
         }, function () {
             flashMessage('Could not copy — use Export CSV instead.');
@@ -2555,6 +2666,7 @@ try {
             input.value = v;
             state.line = {};       // a different room is a different selection
             notes = {};            // ... and a different set of prepared notes
+            teamNotes = {};
             pullLines();
             pullNotes();
             render();

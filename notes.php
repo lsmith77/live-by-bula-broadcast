@@ -5,6 +5,10 @@
  *   GET  ?view=live/overlays/notes&code=K7QM4
  *        -> {"players":{"1234":{"text":"…","pronouns":"she/her","by":"Sam","at":N}},"touched":N,"writable":bool}
  *
+ *   POST {"code":"K7QM4","team":304,"text":"…","by":"Sam"}
+ *        -> write one TEAM's note — history, achievements, the material that
+ *           belongs to nobody's row; an empty text clears it
+ *
  *   POST {"code":"K7QM4","player":1234,"text":"…","nickname":"…","pronouns":"…","pronunciation":"…","pronounsok":true,"by":"Sam"}
  *        -> write one player's whole entry. The structured fields are the FULL
  *           desired state — an absent or empty key clears that field — and
@@ -70,6 +74,7 @@ if (!$isPost) {
     $state = $store->load($code);
     echo json_encode([
         'players' => (object) $state['players'],
+        'teams' => (object) $state['teams'],
         'touched' => $state['touched'],
         'writable' => $store->isWritable(),
     ]);
@@ -89,16 +94,40 @@ if (isset($payload['players'])) {
         (string) ($payload['by'] ?? ''),
         // Default closed: an import fills gaps and never overwrites, unless the
         // caller says otherwise. Nothing asks otherwise today.
-        ($payload['overwrite'] ?? false) !== true
+        ($payload['overwrite'] ?? false) !== true,
+        is_array($payload['teamnote'] ?? null) ? $payload['teamnote'] : null,
     );
     if (!$result['ok']) {
         fail(500, (string) $result['error']);
     }
     echo json_encode([
         'players' => (object) $result['state']['players'],
+        'teams' => (object) $result['state']['teams'],
         'touched' => $result['state']['touched'],
         'written' => $result['written'],
         'kept' => $result['kept'],
+        'writable' => true,
+    ]);
+    exit;
+}
+
+// One team's note, the desk's own edit path.
+if (isset($payload['team'])) {
+    $teamId = (int) $payload['team'];
+    if ($teamId <= 0) {
+        fail(400, 'Missing team.');
+    }
+    if (!array_key_exists('text', $payload) || !is_string($payload['text'])) {
+        fail(400, 'Expected {"text": "..."}.');
+    }
+    $result = $store->saveTeamNote($code, $teamId, $payload['text'], (string) ($payload['by'] ?? ''));
+    if (!$result['ok']) {
+        fail(500, (string) $result['error']);
+    }
+    echo json_encode([
+        'players' => (object) $result['state']['players'],
+        'teams' => (object) $result['state']['teams'],
+        'touched' => $result['state']['touched'],
         'writable' => true,
     ]);
     exit;
@@ -131,6 +160,7 @@ if (!$result['ok']) {
 
 echo json_encode([
     'players' => (object) $result['state']['players'],
+    'teams' => (object) $result['state']['teams'],
     'touched' => $result['state']['touched'],
     'writable' => true,
 ]);

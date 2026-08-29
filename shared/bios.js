@@ -127,6 +127,19 @@
     var TEAM_ALIASES = ['team', 'team name', 'club'];
     var TEAM_ID_ALIASES = ['team id', 'team_id', 'teamid'];
 
+    /**
+     * The TEAM row: material that belongs to nobody's row.
+     *
+     * History, achievements — asked once per sheet, on a final row whose
+     * identifier is the literal `TEAM`. Its answers import as the team's note,
+     * under the same rules as a player row: the exported team name travels
+     * with it and is checked on the way back, and an import fills the note
+     * only where the desk has not written one.
+     */
+    var TEAM_ROW_ID = 'TEAM';
+    var TEAM_PROMPTS = ['Team history', 'Team achievements'];
+    var TEAM_PROMPT_ALIASES = ['team history', 'team achievements'];
+
     var FIELD_ALIASES = FIELDS.reduce(function (all, f) {
         return all.concat(f.aliases);
     }, []);
@@ -168,6 +181,7 @@
                 && NUMBER_ALIASES.indexOf(n) === -1
                 && TEAM_ALIASES.indexOf(n) === -1
                 && TEAM_ID_ALIASES.indexOf(n) === -1
+                && TEAM_PROMPT_ALIASES.indexOf(n) === -1
                 && FIELD_ALIASES.indexOf(n) === -1;
         });
     }
@@ -217,25 +231,36 @@
         }).join('\n');
     }
 
-    /** The rows to hand a team, in roster order. `team` is {id, name}. */
+    /** The rows to hand a team, in roster order, plus the TEAM row last. `team` is {id, name}. */
     function exportRows(roster, team) {
-        return roster.map(function (p) {
+        var blank = function (row) {
+            FIELDS.forEach(function (f) { row[f.header] = ''; });
+            PROMPTS.forEach(function (h) { row[h] = ''; });
+            TEAM_PROMPTS.forEach(function (h) { row[h] = ''; });
+            row[TEAM_HEADER] = team && team.name ? team.name : '';
+            row[TEAM_ID_HEADER] = team && team.id !== null && team.id !== undefined ? team.id : '';
+            return row;
+        };
+        var rows = roster.map(function (p) {
             var row = {};
             row[ID_HEADER] = p.id;
             row[NUMBER_HEADER] = (p.num === null || p.num === undefined) ? '' : p.num;
             row[NAME_HEADER] = p.name;
-            row[TEAM_HEADER] = team && team.name ? team.name : '';
-            row[TEAM_ID_HEADER] = team && team.id !== null && team.id !== undefined ? team.id : '';
-            FIELDS.forEach(function (f) { row[f.header] = ''; });
-            PROMPTS.forEach(function (h) { row[h] = ''; });
-            return row;
+            return blank(row);
         });
+        var teamRow = {};
+        teamRow[ID_HEADER] = TEAM_ROW_ID;
+        teamRow[NUMBER_HEADER] = '';
+        teamRow[NAME_HEADER] = team && team.name ? team.name : '';
+        rows.push(blank(teamRow));
+        return rows;
     }
 
     function exportHeaders() {
         return [ID_HEADER, NUMBER_HEADER, NAME_HEADER, TEAM_HEADER, TEAM_ID_HEADER]
             .concat(FIELDS.map(function (f) { return f.header; }))
-            .concat(PROMPTS);
+            .concat(PROMPTS)
+            .concat(TEAM_PROMPTS);
     }
 
     /**
@@ -304,7 +329,11 @@
             }
         }
 
-        if (!content.length && !fieldKeys.length) {
+        var teamPrompts = headers.filter(function (h) {
+            return TEAM_PROMPT_ALIASES.indexOf(norm(h)) !== -1;
+        });
+
+        if (!content.length && !fieldKeys.length && !teamPrompts.length) {
             report.fatal = 'No content columns — every column in this file is an '
                 + 'identity column, so there is nothing to import.';
             return report;
@@ -315,6 +344,7 @@
         roster.forEach(function (p) { byId[String(p.id)] = p; });
 
         var seen = {};
+        var seenTeamRow = false;
         (parsed.rows || []).forEach(function (row, i) {
             var line = i + 2;                       // 1-based, plus the header row
             var raw = String(row[idHeader] === undefined ? '' : row[idHeader]).trim();
@@ -324,6 +354,47 @@
                 report.rejected.push({ line: line, name: name, why: 'no identifier' });
                 return;
             }
+
+            // The TEAM row: the same discipline as a player row — the exported
+            // name travels with the identifier and is checked, a second row
+            // does not silently win, and the desk's own note is never
+            // overwritten.
+            if (raw.toUpperCase() === TEAM_ROW_ID) {
+                if (seenTeamRow) {
+                    report.rejected.push({
+                        line: line, name: name,
+                        why: 'a second TEAM row; the first one is used'
+                    });
+                    return;
+                }
+                seenTeamRow = true;
+                if (
+                    nameHeader && String(name).trim() && team && team.name
+                    && !sameName(name, team.name)
+                ) {
+                    report.rejected.push({
+                        line: line, name: name,
+                        why: 'team name does not match (this sheet is for "' + team.name + '")'
+                    });
+                    return;
+                }
+                var teamText = compose(row, teamPrompts);
+                if (!teamText) { report.empty += 1; return; }
+                if (existingOf(existing[TEAM_ROW_ID]).text.trim()) {
+                    report.kept.push({
+                        line: line,
+                        name: (team && team.name ? team.name : 'Team') + ' — team note'
+                    });
+                    return;
+                }
+                report.accepted.push({
+                    player: TEAM_ROW_ID,
+                    name: (team && team.name ? team.name : 'Team') + ' — team note',
+                    text: teamText, fields: {}
+                });
+                return;
+            }
+
             if (!/^[0-9]+$/.test(raw)) {
                 report.rejected.push({ line: line, name: name, why: 'identifier is not a number' });
                 return;
@@ -401,6 +472,8 @@
         NUMBER_HEADER: NUMBER_HEADER,
         PROMPTS: PROMPTS,
         FIELDS: FIELDS,
+        TEAM_ROW_ID: TEAM_ROW_ID,
+        TEAM_PROMPTS: TEAM_PROMPTS,
         exportHeaders: exportHeaders,
         exportRows: exportRows,
         contentHeaders: contentHeaders,

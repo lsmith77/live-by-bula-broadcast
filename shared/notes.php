@@ -3,7 +3,13 @@
  * Prepared talking points about a player, for the commentary position.
  *
  *   { "players": { "1234": { "text": "...", "pronouns": "xe/xem", "pronounsok": true, "by": "Sam", "at": 1787420000 } },
+ *     "teams": { "304": { "text": "...", "by": "Sam", "at": 1787420000 } },
  *     "touched": 1787420000 }
+ *
+ * `teams` holds one note per TEAM — history, achievements, the material that
+ * belongs to nobody's row — arriving through the bio round trip's TEAM row or
+ * typed at the desk, under the same expiry and caps discipline as everything
+ * else here.
  *
  * Besides the free-text note, an entry may carry three STRUCTURED fields —
  * `nickname`, `pronouns`, `pronunciation` (see FIELDS) — the answers a
@@ -105,6 +111,9 @@ final class Notes
     /** Rooms kept before the least recently touched are dropped. */
     private const MAX_ROOMS_TOTAL = 200;
 
+    /** Teams carrying a note in one room: several games' worth, not a directory. */
+    private const MAX_TEAMS_PER_ROOM = 8;
+
     /**
      * A room untouched for this long is deleted.
      *
@@ -156,7 +165,7 @@ final class Notes
         // any room clears out everything that has aged past the limit.
         $this->maybePrune();
 
-        $empty = ['players' => [], 'touched' => 0];
+        $empty = ['players' => [], 'teams' => [], 'touched' => 0];
         $path = $this->pathFor($code);
         if ($path === null || !is_readable($path)) {
             return $empty;
@@ -167,8 +176,52 @@ final class Notes
         }
         return [
             'players' => self::cleanPlayers($decoded['players'] ?? []),
+            'teams' => self::cleanTeams($decoded['teams'] ?? []),
             'touched' => (int) ($decoded['touched'] ?? 0),
         ];
+    }
+
+    /**
+     * Write one team's note, or clear it — the desk's edit path. An import
+     * goes through saveMany() instead, which fills only what is empty.
+     *
+     * @return array{ok: bool, error: ?string, state: array}
+     */
+    public function saveTeamNote(string $code, int $teamId, string $text, string $by = ''): array
+    {
+        $path = $this->pathFor($code);
+        if ($path === null || $teamId <= 0) {
+            return ['ok' => false, 'error' => 'Bad room.', 'state' => $this->load($code)];
+        }
+        return $this->withLock($path, function () use ($path, $code, $teamId, $text, $by) {
+            $state = $this->load($code);
+            $teams = $state['teams'];
+            $clean = self::cleanText($text);
+            $key = (string) $teamId;
+            $existing = $teams[$key] ?? null;
+            if ($clean === '' ? $existing === null : ($existing !== null && $existing['text'] === $clean)) {
+                return ['ok' => true, 'error' => null, 'state' => $state];
+            }
+            if ($clean === '') {
+                unset($teams[$key]);
+            } else {
+                if ($existing === null && count($teams) >= self::MAX_TEAMS_PER_ROOM) {
+                    return [
+                        'ok' => false,
+                        'error' => 'This room already holds notes for '
+                            . self::MAX_TEAMS_PER_ROOM . ' teams.',
+                        'state' => $state,
+                    ];
+                }
+                $teams[$key] = ['text' => $clean, 'by' => self::cleanBy($by), 'at' => time()];
+            }
+            $next = ['players' => $state['players'], 'teams' => $teams, 'touched' => time()];
+            $this->prune();
+            if (!$this->write($path, $next)) {
+                return ['ok' => false, 'error' => 'Could not write the room.', 'state' => $state];
+            }
+            return ['ok' => true, 'error' => null, 'state' => $next];
+        });
     }
 
     /**
@@ -257,7 +310,7 @@ final class Notes
                     + ['by' => self::cleanBy($by), 'at' => time()];
             }
 
-            $next = ['players' => $players, 'touched' => time()];
+            $next = ['players' => $players, 'teams' => $state['teams'], 'touched' => time()];
 
             // Unconditional here, unlike the throttled sweep on read, and the
             // difference is not an oversight. On read, pruning enforces RETENTION
@@ -291,11 +344,20 @@ final class Notes
      * seconds old; enforcing it here means a partner writing during the preview
      * cannot have their note overwritten by an import that never saw it.
      *
+     * `$team` is the TEAM row's note, applied under the same lock and the same
+     * fill-only-what-is-empty rule: ['team' => id, 'text' => '...'], or null.
+     *
      * @param  array<array{player:int,text?:string,nickname?:string,pronouns?:string,pronunciation?:string}> $entries
+     * @param  ?array{team:int,text:string} $team
      * @return array{ok: bool, error: ?string, state: array, written: int, kept: int}
      */
-    public function saveMany(string $code, array $entries, string $by = '', bool $ifAbsent = true): array
-    {
+    public function saveMany(
+        string $code,
+        array $entries,
+        string $by = '',
+        bool $ifAbsent = true,
+        ?array $team = null,
+    ): array {
         $path = $this->pathFor($code);
         if ($path === null) {
             return [
@@ -307,11 +369,26 @@ final class Notes
             $entries = array_slice($entries, 0, self::MAX_PLAYERS_PER_ROOM);
         }
 
-        return $this->withLock($path, function () use ($path, $code, $entries, $by, $ifAbsent) {
+        return $this->withLock($path, function () use ($path, $code, $entries, $by, $ifAbsent, $team) {
             $state = $this->load($code);
             $players = $state['players'];
+            $teams = $state['teams'];
             $written = 0;
             $kept = 0;
+
+            if (is_array($team)) {
+                $teamId = (int) ($team['team'] ?? 0);
+                $teamText = self::cleanText((string) ($team['text'] ?? ''));
+                if ($teamId > 0 && $teamText !== '') {
+                    $key = (string) $teamId;
+                    if ($ifAbsent && isset($teams[$key]) && trim($teams[$key]['text']) !== '') {
+                        $kept++;
+                    } elseif (isset($teams[$key]) || count($teams) < self::MAX_TEAMS_PER_ROOM) {
+                        $teams[$key] = ['text' => $teamText, 'by' => self::cleanBy($by), 'at' => time()];
+                        $written++;
+                    }
+                }
+            }
 
             foreach ($entries as $entry) {
                 if (!is_array($entry)) {
@@ -373,7 +450,7 @@ final class Notes
                 $written++;
             }
 
-            $next = ['players' => $players, 'touched' => time()];
+            $next = ['players' => $players, 'teams' => $teams, 'touched' => time()];
             $this->prune();
             if (!$this->write($path, $next)) {
                 return [
@@ -463,6 +540,34 @@ final class Notes
     private static function fieldsOf(array $entry): array
     {
         return self::cleanFields($entry);
+    }
+
+    /** @return array<string,array{text:string,by:string,at:int}> */
+    private static function cleanTeams(mixed $raw): array
+    {
+        if (!is_array($raw) && !is_object($raw)) {
+            return [];
+        }
+        $clean = [];
+        foreach ((array) $raw as $teamId => $entry) {
+            $id = (int) $teamId;
+            if ($id <= 0 || !is_array($entry)) {
+                continue;
+            }
+            $text = self::cleanText((string) ($entry['text'] ?? ''));
+            if ($text === '') {
+                continue;
+            }
+            $clean[(string) $id] = [
+                'text' => $text,
+                'by' => self::cleanBy((string) ($entry['by'] ?? '')),
+                'at' => (int) ($entry['at'] ?? 0),
+            ];
+            if (count($clean) >= self::MAX_TEAMS_PER_ROOM) {
+                break;
+            }
+        }
+        return $clean;
     }
 
     /** @return array<string,array<string,mixed>> */

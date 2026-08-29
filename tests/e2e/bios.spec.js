@@ -171,12 +171,46 @@ test.describe('bio import: who a row is allowed to name', () => {
   });
 
   test('an untouched export imports nothing rather than blanking the roster', () => {
-    // A team that uploads the file and never fills it in must not wipe anything.
+    // A team that uploads the file and never fills it in must not wipe
+    // anything. Three player rows plus the empty TEAM row.
     const out = Csv.parse(csv(Bios.exportRows(ROSTER)));
     const report = Bios.match(out, ROSTER, {});
     expect(report.accepted).toHaveLength(0);
-    expect(report.empty).toBe(3);
+    expect(report.empty).toBe(4);
     expect(report.matched).toBe(3);
+  });
+
+  test('the TEAM row imports as the team note, under the same rules', () => {
+    const rows = Bios.exportRows(ROSTER, { id: 77, name: 'Mosquitos' });
+    rows[3]['Team history'] = 'Founded 1998 on a beach.';
+    rows[3]['Team achievements'] = 'National champions 2019.';
+    const out = Csv.parse(csv(rows));
+    const report = Bios.match(out, ROSTER, {}, { id: 77, name: 'Mosquitos' });
+    expect(report.accepted).toHaveLength(1);
+    expect(report.accepted[0].player).toBe('TEAM');
+    expect(report.accepted[0].text).toBe(
+      'Team history: Founded 1998 on a beach.\nTeam achievements: National champions 2019.');
+  });
+
+  test('a retargeted TEAM row is refused by the name that travelled with it', () => {
+    const rows = Bios.exportRows(ROSTER, { id: 77, name: 'Mosquitos' });
+    rows[3].Name = 'Someone Else';
+    rows[3]['Team history'] = 'sneaky';
+    const out = Csv.parse(csv(rows));
+    const report = Bios.match(out, ROSTER, {}, { id: 77, name: 'Mosquitos' });
+    expect(report.accepted).toHaveLength(0);
+    expect(report.rejected[0].why).toMatch(/team name does not match/);
+  });
+
+  test("the desk's team note is kept, not overwritten", () => {
+    const rows = Bios.exportRows(ROSTER, { id: 77, name: 'Mosquitos' });
+    rows[3]['Team history'] = 'From the sheet.';
+    const out = Csv.parse(csv(rows));
+    const report = Bios.match(out, ROSTER,
+      { TEAM: { text: 'Typed at the desk.' } }, { id: 77, name: 'Mosquitos' });
+    expect(report.accepted).toHaveLength(0);
+    expect(report.kept).toHaveLength(1);
+    expect(report.kept[0].name).toMatch(/team note/);
   });
 
   test('a note a commentator already wrote is kept, not overwritten', () => {
