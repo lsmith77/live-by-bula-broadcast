@@ -113,7 +113,7 @@ test('commentator, play by play', async ({ page, request }) => {
 
   // Shorter than the prep shots: this view ends at the team blocks, and dead
   // space under them reads as a broken page in a README.
-  await page.setViewportSize({ width: 1440, height: 640 });
+  await page.setViewportSize({ width: 1440, height: 830 });
   await page.goto(`/c/${GAME_ID}`);
   await expect(page.locator('.roster').first()).toBeVisible();
 
@@ -122,7 +122,10 @@ test('commentator, play by play', async ({ page, request }) => {
     .locator('td.who button[data-player]')
     .evaluateAll((btns) => btns.map((b) => Number(b.getAttribute('data-player'))));
   const seeded = [
-    { pronouns: 'she/her', nickname: 'Ace', pronunciation: 'OW-er' },
+    {
+      pronouns: 'she/her', nickname: 'Ace', pronunciation: 'OW-er',
+      text: 'Captain. Handball first, then ultimate at university — watch the pulls.',
+    },
     { pronouns: 'they/them' },
     { pronouns: 'he/him' },
   ].map((fields, i) => ({ player: ids[i], fields }));
@@ -151,6 +154,11 @@ test('commentator, play by play', async ({ page, request }) => {
     await page.locator('#steps .tbtn.primary').click();
     await expect(page.locator('.onfield .p').first()).toBeVisible();
     await expect(page.locator('.onfield .p .pr').first()).toBeVisible();
+
+    // Two quick cards on their keys: the prepared captain, and an opponent.
+    await page.keyboard.press('Digit1');
+    await page.keyboard.press('KeyZ');
+    await expect(page.locator('#quickcards .qcard')).toHaveCount(2);
     await page.waitForTimeout(600);
     await page.screenshot({ path: path.join(OUT, 'commentator-play.png') });
 

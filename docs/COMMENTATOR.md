@@ -130,6 +130,8 @@ So:
 
 Same store as pronunciation, same graduation path — **also built**, as a structured `pronouns` field on the notes store. The right way to fill it is the bio round trip (§5a), because a player typing their own row *is* the self-declaration this section requires; the desk input exists so a wrong entry is corrected in seconds, not so a desk can guess. It is shown wherever a name is about to be said — the roster, the player sheet, and beside each name on the play-by-play field view — and the rules above are enforced by shape: free text, optional, absent renders nothing. The graduation path is more concrete than it first appeared, because UltiOrganizer already has a player-owned profile with a consent mechanism.
 
+**On the play view, focus follows risk.** Most rosters are overwhelmingly `he/him` and `she/her`; a commentator's reading habit serves those correctly without looking, and the cost of a lapse concentrates on everyone else. The field panel therefore shows every declared set but emphasises the ones that are neither of those two — keyed on the declared string alone, nothing inferred — and carries the rest of the identity line (nickname, how to say the name) as hover text, so the line keeps its number-to-name scannability. This singles people out, deliberately: the page is a private working surface behind the room code, never on air, protected at the same weight as the rest of the notes store (§5a), and getting a person's pronouns right outranks a uniform-looking list.
+
 ### What registration already provides
 
 Worth establishing, because it answers "who supplies this" better than any local store can.
@@ -502,9 +504,17 @@ Once four points have been played the ratio panel adds the split: how each team 
 
 That makes it another entry on the same list as possession: the pattern is derivable, the labels are not, and the fix is upstream. If UltiOrganizer recorded the first point's ratio alongside the score, every mixed game ever played would become analysable this way at once.
 
+## 6d. Quick cards: one key per player on the field — **built**
+
+Mid-point there is no roster on screen and no time for a dialog, so every on-field player has a key, printed on their chip: the digit row for the top team, the bottom letter row for the bottom team, mirroring the frame. Pressing it pins a compact card — number, name, the identity line, this game and the tournament, and the prepared note, which is the payoff — into a fixed region directly under the lines. A second player sits beside the first, which is what a matchup needs; a third replaces the oldest; the same key removes its own card; Escape clears the region.
+
+Keys are matched on the **physical key** (`KeyboardEvent.code`), so the scheme survives QWERTZ and AZERTY unchanged, and the labels on the chips are corrected per layout where the browser can say (`navigator.keyboard.getLayoutMap()`). The bottom team's row is the Z-row rather than the row directly below the digits, because the possession keys already own letters up there — U is the undo log and I the stoppage toggle (§6a2) — and one key doing two things mid-point would be worse than a slightly less obvious row. The Z-row carries no reserved key at all.
+
+The attention rules are §7's, one notch relaxed: the region is fixed, below the lines, overlays nothing a commentator might be reading, and nothing ever appears unasked. The relaxation is that a deliberate keypress may shift the season blocks under it — acceptable for an action the commentator chose, where §7 rules it out for an automatic one.
+
 ## 7. The auto-surfacing behaviour
 
-The idea: when something happens — a goal, a block — the person involved is pulled up automatically for a few seconds, with a control to pin it.
+The idea: when something happens — a goal, a block — the person involved is pulled up automatically for a few seconds, with a control to pin it. (The *deliberate* version — the commentator pulls a player up by key — is built, §6d; this section is about the automatic trigger, which is the risky half.)
 
 This is the feature most worth getting right and the easiest to make actively harmful.
 
