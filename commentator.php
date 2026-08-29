@@ -428,6 +428,12 @@ try {
     .qcard .say .hi { color: var(--ink); font-weight: 700; }
     .qcard .qline { font-size: .9rem; margin-top: .35rem; white-space: nowrap; }
     .qcard .qnote { margin: .45rem 0 0; white-space: pre-wrap; font-size: .95rem; }
+    .qcard .qpoints { display: flex; flex-wrap: wrap; gap: 2px; margin-top: .45rem; }
+    .qcard .qp { width: .95rem; height: .95rem; border-radius: 2px; background: var(--sunk);
+        font-size: .62rem; font-weight: 700; line-height: .95rem; text-align: center;
+        color: transparent; }
+    .qcard .qp.won { background: var(--accent-soft); }
+    .qcard .qp.me { background: var(--accent); color: var(--accent-ink); }
     .onfield .p span { color: var(--ink-mute); font-size: 1.05rem; font-weight: 600; margin-right: .3rem;
                        font-variant-numeric: tabular-nums; }
     .onfield .empty { color: var(--ink-mute); font-size: .95rem; }
@@ -2958,10 +2964,41 @@ try {
             'Tournament  ' + (p.tGoals || 0) + ' G · ' + (p.tAssists || 0) + ' A · '
             + (p.tTotal || 0) + ' Pts'
             + (blocks ? ' · ' + (p.tBlocks || 0) + ' Blk' : '')));
+        var strip = pointStrip(side, p);
+        if (strip) { card.append(strip); }
         // The payoff: what was prepared about this player, at the moment it is
         // worth saying.
         if (n && n.text) { card.append(el('p', 'qnote', n.text)); }
         return card;
+    }
+
+    /**
+     * The game so far, one cell per point: filled when this side scored it,
+     * lettered where this player took the goal (G) or the assist (A) — "what
+     * have they done today", readable mid-point without opening anything.
+     *
+     * Points PLAYED are absent deliberately, not forgotten: no line history
+     * exists (a selection is kept only for the current point), and blocks are
+     * in no per-game payload (`STUDIO.md` §3.4) — and absence must never read
+     * as "did nothing".
+     */
+    function pointStrip(side, p) {
+        var goals = ((state.payload && state.payload.goals) || []).slice()
+            .sort(function (a, b) { return (Number(a.num) || 0) - (Number(b.num) || 0); });
+        if (!goals.length) { return null; }
+        var strip = el('div', 'qpoints');
+        goals.forEach(function (g) {
+            var won = (Number(g.ishomegoal) === 1) === side.isHome;
+            var mark = '';
+            if (Number(g.scorer) === Number(p.id)) { mark = 'G'; }
+            else if (Number(g.assist) === Number(p.id)) { mark = 'A'; }
+            var cell = el('span', 'qp' + (won ? ' won' : '') + (mark ? ' me' : ''), mark);
+            cell.title = 'Point ' + g.num + ' — '
+                + (won ? (side.team.name || 'this side') + ' scored' : 'conceded')
+                + (mark === 'G' ? ', their goal' : (mark === 'A' ? ', their assist' : ''));
+            strip.append(cell);
+        });
+        return strip;
     }
 
     function renderQuickCards() {

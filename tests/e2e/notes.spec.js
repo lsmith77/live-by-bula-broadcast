@@ -470,6 +470,11 @@ test.describe('prepared notes', () => {
       await expect(page.locator('#quickcards .qcard').first())
         .toContainText('Captain. Started playing in Graz.');
       await expect(page.locator('#quickcards .qcard .say .hi')).toHaveText('they/them');
+      // The point strip: one cell per point of the 8-6 fixture game, and the
+      // scored/conceded split reads from each card's own side.
+      await expect(page.locator('#quickcards .qcard').first().locator('.qp')).toHaveCount(14);
+      await expect(page.locator('#quickcards .qcard').first().locator('.qp.won')).toHaveCount(8);
+      await expect(page.locator('#quickcards .qcard').nth(1).locator('.qp.won')).toHaveCount(6);
 
       // Another number replaces the pair rather than growing a stack.
       await page.keyboard.press('Digit3');
