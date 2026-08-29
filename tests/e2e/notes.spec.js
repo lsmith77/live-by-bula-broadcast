@@ -301,9 +301,11 @@ test.describe('prepared notes', () => {
     await page.keyboard.press('Escape');
 
     // Beside the name on the roster -- and no talking-points dot, because
-    // nothing was said about the player, only how to refer to them.
+    // nothing was said about the player, only how to refer to them. she/her is
+    // one of the two common sets, so it earns no emphasis.
     await expect(page.locator('.roster td.who .say').first())
       .toHaveText('“Ace” · she/her · say OW-er');
+    await expect(page.locator('.roster td.who .say .hi')).toHaveCount(0);
     await expect(page.locator('.roster .who .dot')).toHaveCount(0);
 
     // Stored as fields, not composed into the text.
@@ -320,6 +322,30 @@ test.describe('prepared notes', () => {
     await page.locator('.roster td.who button').first().click();
     await expect(page.locator('#sheet .note .fields input').nth(1)).toHaveValue('she/her');
     await expect(page.locator('#sheetCard .sub.say')).toHaveText('“Ace” · she/her · say OW-er');
+  });
+
+  test('a less common pronoun set is emphasised, a common one is not', async ({ page }) => {
+    // Habit reads he/him and she/her correctly without looking; the cost of a
+    // lapse concentrates on everyone else, so those entries must not be
+    // skimmable. Keyed on the declared string alone -- nothing is inferred.
+    await openPage(page);
+    const rows = page.locator('.roster').first().locator('td.who');
+
+    await rows.nth(0).locator('button').click();
+    await page.locator('#sheet .note .fields input').nth(1).fill('they/them');
+    await page.locator('#sheet .note .fields input').nth(1).blur();
+    await expect(page.locator('#sheet .note .state')).toHaveText('Saved');
+    await page.keyboard.press('Escape');
+
+    await rows.nth(1).locator('button').click();
+    await page.locator('#sheet .note .fields input').nth(1).fill('he/him');
+    await page.locator('#sheet .note .fields input').nth(1).blur();
+    await expect(page.locator('#sheet .note .state')).toHaveText('Saved');
+    await page.keyboard.press('Escape');
+
+    await expect(rows.nth(0).locator('.say .hi')).toHaveText('they/them');
+    await expect(rows.nth(1).locator('.say')).toHaveText('he/him');
+    await expect(rows.nth(1).locator('.say .hi')).toHaveCount(0);
   });
 
   test('an import fills a missing pronoun but never the typed note', async ({ page }, info) => {
@@ -398,6 +424,73 @@ test.describe('prepared notes', () => {
 
     await page.locator('.roster td.who button').first().click();
     await expect(page.locator('#sheet .note textarea')).toHaveValue('Typed at the desk.');
+  });
+
+  test('a key per on-field player pulls up a quick card; Escape clears', async ({ page, request }) => {
+    // The play view's whole point is speed: mid-point there is no roster on
+    // screen and no time for a dialog, so Digit1..7 pin the top team's players
+    // and the bottom letter row the bottom team's. Cards carry the prepared
+    // note, which is why this lives beside the notes tests.
+    await openPage(page);
+    const firstId = await page.locator('.roster').first()
+      .locator('td.who button[data-player]').first()
+      .getAttribute('data-player');
+    await request.post(NOTES, {
+      data: {
+        code: CODE, player: Number(firstId), by: 'Tester',
+        text: 'Captain. Started playing in Graz.', pronouns: 'they/them',
+      },
+    });
+    await page.reload();
+    await expect(page.locator('.roster').first()).toBeVisible();
+    await expect(page.locator('.roster td.who .say').first()).toBeVisible();
+
+    // Pick a line of seven a side, whatever the room held before.
+    await page.locator('#tabPlay').click();
+    for (const panel of [0, 1]) {
+      const chips = page.locator('.cols .panel').nth(panel).locator('.nums button');
+      const count = await chips.count();
+      for (let i = 0; i < count; i += 1) {
+        const on = await chips.nth(i).evaluate((b) => b.classList.contains('on'));
+        if ((i < 7) !== on) { await chips.nth(i).click(); }
+      }
+    }
+    await page.locator('#steps .tbtn.primary').click();
+    await expect(page.locator('.onfield .p').first()).toBeVisible();
+    // Every on-field player shows the key that pulls them up.
+    await expect(page.locator('.onfield .p kbd')).toHaveCount(14);
+
+    try {
+      // Top row, first player: the card carries the note and the identity line.
+      await page.keyboard.press('Digit1');
+      await expect(page.locator('#quickcards .qcard')).toHaveCount(1);
+      await expect(page.locator('#quickcards .qcard').first())
+        .toContainText('Captain. Started playing in Graz.');
+      await expect(page.locator('#quickcards .qcard .say .hi')).toHaveText('they/them');
+
+      // A player from the other team sits beside the first; a third replaces
+      // the oldest rather than growing a stack.
+      await page.keyboard.press('KeyZ');
+      await expect(page.locator('#quickcards .qcard')).toHaveCount(2);
+      await page.keyboard.press('Digit2');
+      await expect(page.locator('#quickcards .qcard')).toHaveCount(2);
+      await expect(page.locator('#quickcards .qcard').first())
+        .not.toContainText('Captain. Started playing in Graz.');
+
+      // The same key removes its own card; Escape clears the region.
+      await page.keyboard.press('Digit2');
+      await expect(page.locator('#quickcards .qcard')).toHaveCount(1);
+      await page.keyboard.press('Escape');
+      await expect(page.locator('#quickcards .qcard')).toHaveCount(0);
+      await expect(page.locator('#quickcards')).toBeHidden();
+    } finally {
+      // Empty both lines chip by chip, pushing each change to the room.
+      await page.locator('#steps .tbtn', { hasText: 'Change line' }).click();
+      for (const panel of [0, 1]) {
+        const on = page.locator('.cols .panel').nth(panel).locator('.nums button.on');
+        while (await on.count()) { await on.first().click(); }
+      }
+    }
   });
 
   test('the room is the code alone, so notes outlive one fixture', async ({ request }) => {

@@ -262,6 +262,7 @@ try {
     .roster td.who button:hover { color: var(--link); text-decoration: underline; }
     .roster td.who .say { margin-left: .5rem; color: var(--ink-mute); font-size: .82rem;
         white-space: nowrap; }
+    .roster td.who .say .hi, #sheetCard .sub.say .hi { color: var(--ink); font-weight: 700; }
     /* A player with no points yet is the DEFAULT state, not an exception — on a
        fresh game it is most of the roster. So the row dims only its statistics,
        never the jersey number or the name, which are the two things a
@@ -378,6 +379,20 @@ try {
     .onfield .p { font-size: 1.5rem; font-weight: 700; line-height: 1.25; }
     .onfield .p .pr { color: var(--ink-mute); font-size: .95rem; font-weight: 600;
         margin-left: .4rem; margin-right: 0; }
+    .onfield .p .pr.hi { color: var(--ink); font-weight: 700; }
+    .onfield .p kbd { font-family: inherit; font-size: .72rem; font-weight: 600;
+        color: var(--ink-mute); border: 1px solid var(--line); border-radius: 3px;
+        padding: 0 .3rem; margin-right: .35rem; vertical-align: .25em; }
+    .quickcards { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: .75rem; margin-top: .75rem; }
+    .qcard { background: var(--panel); border: 1px solid var(--line); border-radius: 6px;
+        padding: .6rem .9rem; }
+    .qcard h4 { margin: 0; font-size: 1.15rem; }
+    .qcard .muted { font-size: .8rem; }
+    .qcard .say { color: var(--ink-mute); font-size: .85rem; margin-top: .1rem; }
+    .qcard .say .hi { color: var(--ink); font-weight: 700; }
+    .qcard .qline { font-size: .9rem; margin-top: .35rem; white-space: nowrap; }
+    .qcard .qnote { margin: .45rem 0 0; white-space: pre-wrap; font-size: .95rem; }
     .onfield .p span { color: var(--ink-mute); font-size: 1.05rem; font-weight: 600; margin-right: .3rem;
                        font-variant-numeric: tabular-nums; }
     .onfield .empty { color: var(--ink-mute); font-size: .95rem; }
@@ -1030,19 +1045,51 @@ try {
     }
 
     /**
+     * Whether a declared pronoun set deserves visual emphasis.
+     *
+     * Most rosters are overwhelmingly he/him and she/her, and a commentator's
+     * habit serves those correctly without looking. The cost of a lapse
+     * concentrates entirely on everyone else — so those are the entries that
+     * must not be skimmed past. Emphasis is keyed on the declared string alone:
+     * nothing is inferred, and a player who declared a common set still shows
+     * it, un-emphasised, so absence keeps meaning "not declared" (§5).
+     *
+     * This does single people out, and that is acceptable here and only here:
+     * the page is a private working surface behind the room code, never on air,
+     * and getting a person's pronouns right outranks a uniform-looking list.
+     */
+    function emphasizedPronouns(value) {
+        var n = String(value || '').toLowerCase().replace(/\s+/g, '');
+        return n !== '' && n !== 'he/him' && n !== 'she/her';
+    }
+
+    /** Fill a container with the identity line, emphasising what must not be skimmed. */
+    function sayInto(node, note) {
+        node.replaceChildren();
+        var add = function (text, cls) {
+            if (node.childNodes.length) { node.append(document.createTextNode(' · ')); }
+            node.append(el('span', cls, text));
+        };
+        if (note.nickname) { add('“' + note.nickname + '”', null); }
+        if (note.pronouns) {
+            add(note.pronouns, emphasizedPronouns(note.pronouns) ? 'hi' : null);
+        }
+        if (note.pronunciation) { add('say ' + note.pronunciation, null); }
+    }
+
+    /**
      * Stamp the identity line into a roster cell, in place — same reasoning as
      * markNote(): re-rendering the list to add one label would throw the reader
      * back to the top of a scrolled panel.
      */
     function markSay(cell, note) {
         var existing = cell.querySelector('.say');
-        var text = sayLine(note);
-        if (text) {
+        if (sayLine(note)) {
             if (!existing) {
                 existing = el('span', 'say');
                 cell.append(existing);
             }
-            existing.textContent = text;
+            sayInto(existing, note);
         } else if (existing) {
             existing.remove();
         }
@@ -1589,8 +1636,12 @@ try {
             [side.team.name, p.division].filter(Boolean).join(' · ')));
         // Nickname, pronouns, pronunciation — under the name, where somebody
         // about to say it looks. Rendered only when something is declared.
-        var say = sayLine(noteFor(p.id));
-        if (say) { card.append(el('div', 'sub say', say)); }
+        var sayNote = noteFor(p.id);
+        if (sayLine(sayNote)) {
+            var idLine = el('div', 'sub say');
+            sayInto(idLine, sayNote);
+            card.append(idLine);
+        }
 
         card.append(noteBox(p));
 
@@ -2314,33 +2365,173 @@ try {
         return panel;
     }
 
-    function onFieldPanel(side, cls) {
-        var wrap = el('div', 'side' + (cls ? ' ' + cls : ''));
-        wrap.append(el('h3', null, side.team.name || '—'));
-        var line = lineFor(side);
+    /** The on-field players of one side, in the order the panel shows them. */
+    function fieldOrder(side) {
         var byId = {};
         rosterByNumber(side).forEach(function (p) { byId[p.id] = p; });
+        return lineFor(side).map(function (id) { return byId[id]; }).filter(Boolean)
+            .sort(function (a, b) { return (a.num || 0) - (b.num || 0); });
+    }
 
-        if (!line.length) {
+    function onFieldPanel(side, cls) {
+        var wrap = el('div', 'side' + (cls ? ' ' + cls : ''));
+        var rowIdx = cls === 'away' ? 1 : 0;
+        wrap.append(el('h3', null, side.team.name || '—'));
+
+        if (!lineFor(side).length) {
             wrap.append(el('div', 'empty', 'Nobody selected — pick a line first.'));
             return wrap;
         }
         var row = el('div', 'line');
-        line.map(function (id) { return byId[id]; }).filter(Boolean)
-            .sort(function (a, b) { return (a.num || 0) - (b.num || 0); })
-            .forEach(function (p) {
+        fieldOrder(side)
+            .forEach(function (p, idx) {
                 var d = el('div', 'p');
+                // The key that pulls this player's card up, from the same row of
+                // the keyboard as this row of the frame.
+                var hint = idx < 7 ? (quickLabels[rowIdx] || [])[idx] : '';
+                if (hint) { d.append(el('kbd', null, hint)); }
                 if (p.num !== null && p.num !== undefined) { d.append(el('span', null, p.num)); }
                 d.append(document.createTextNode(p.name));
                 // Pronouns ride along here because this panel is exactly where a
-                // name is about to be said. Declared or nothing — see sayLine().
+                // name is about to be said — with the less common sets
+                // emphasised, since those are the ones a reading habit gets
+                // wrong. The rest of the identity line (nickname, how to say the
+                // name) is hover text: prepared before the game, available
+                // mid-point without spending any scan width.
                 var n = noteFor(p.id);
-                if (n && n.pronouns) { d.append(el('span', 'pr', n.pronouns)); }
+                if (n && n.pronouns) {
+                    d.append(el('span',
+                        emphasizedPronouns(n.pronouns) ? 'pr hi' : 'pr', n.pronouns));
+                }
+                var full = sayLine(n);
+                if (full) { d.title = full; }
                 row.append(d);
             });
         wrap.append(row);
         return wrap;
     }
+
+    /* ---------------------------------------------------------------
+       Quick cards: one key per player on the field
+
+       A commentator mid-point has no roster in view and no time for a dialog,
+       so each on-field player gets a key — the digit row for the top team, the
+       bottom letter row for the bottom team, mirroring the frame. Pressing it
+       pins a compact card (identity line, scoring, the prepared note) into a
+       fixed region under the field panels; a second player sits beside the
+       first for a matchup, a third replaces the oldest, the same key removes
+       its own card, and Escape clears the region.
+
+       Keys are matched on `e.code` — the PHYSICAL key — so the scheme survives
+       QWERTZ and AZERTY; the labels shown on the chips are corrected from the
+       layout where the browser can say (navigator.keyboard.getLayoutMap).
+       The bottom row is Z-row rather than the Q-row below the digits because
+       the possession keys already own letters up there: U is the undo log and
+       I the stoppage toggle (§6a2), and a key that did both would be worse
+       than a less obvious one. Z-row has no reserved key at all.
+       --------------------------------------------------------------- */
+
+    var QUICK_ROWS = [
+        ['Digit1', 'Digit2', 'Digit3', 'Digit4', 'Digit5', 'Digit6', 'Digit7'],
+        ['KeyZ', 'KeyX', 'KeyC', 'KeyV', 'KeyB', 'KeyN', 'KeyM']
+    ];
+    var quickLabels = [
+        ['1', '2', '3', '4', '5', '6', '7'],
+        ['Z', 'X', 'C', 'V', 'B', 'N', 'M']
+    ];
+    if (navigator.keyboard && navigator.keyboard.getLayoutMap) {
+        navigator.keyboard.getLayoutMap().then(function (map) {
+            quickLabels = QUICK_ROWS.map(function (codes, r) {
+                return codes.map(function (code, i) {
+                    var label = map.get(code);
+                    return label ? label.toUpperCase() : quickLabels[r][i];
+                });
+            });
+            if (state.mode === 'play') { render(); }
+        }).catch(function () { /* the QWERTY labels stand */ });
+    }
+
+    /** Up to two of {sideIndex, playerId}, oldest first. */
+    var quick = [];
+
+    function toggleQuick(sideIndex, pos) {
+        var p = fieldOrder(sides()[sideIndex])[pos];
+        if (!p) { return; }
+        var at = -1;
+        quick.forEach(function (q, i) {
+            if (q.sideIndex === sideIndex && q.playerId === p.id) { at = i; }
+        });
+        if (at !== -1) {
+            quick.splice(at, 1);
+        } else {
+            quick.push({ sideIndex: sideIndex, playerId: p.id });
+            if (quick.length > 2) { quick.shift(); }
+        }
+        renderQuickCards();
+    }
+
+    function quickCard(q) {
+        var side = sides()[q.sideIndex];
+        var p = null;
+        rosterByNumber(side).forEach(function (r) {
+            if (String(r.id) === String(q.playerId)) { p = r; }
+        });
+        if (!p) { return null; }
+
+        var card = el('div', 'qcard');
+        card.append(el('h4', null,
+            (p.num !== null && p.num !== undefined ? '#' + p.num + '  ' : '') + p.name));
+        card.append(el('div', 'muted', side.team.name || ''));
+        var n = noteFor(p.id);
+        if (sayLine(n)) {
+            var s = el('div', 'say');
+            sayInto(s, n);
+            card.append(s);
+        }
+        var blocks = blocksTracked();
+        card.append(el('div', 'qline',
+            'This game  ' + (p.gGoals || 0) + ' G · ' + (p.gAssists || 0) + ' A · '
+            + (p.gTotal || 0) + ' Pts'));
+        card.append(el('div', 'qline',
+            'Tournament  ' + (p.tGoals || 0) + ' G · ' + (p.tAssists || 0) + ' A · '
+            + (p.tTotal || 0) + ' Pts'
+            + (blocks ? ' · ' + (p.tBlocks || 0) + ' Blk' : '')));
+        // The payoff: what was prepared about this player, at the moment it is
+        // worth saying.
+        if (n && n.text) { card.append(el('p', 'qnote', n.text)); }
+        return card;
+    }
+
+    function renderQuickCards() {
+        var box = document.getElementById('quickcards');
+        if (!box) { return; }
+        box.replaceChildren();
+        quick.forEach(function (q) {
+            var card = quickCard(q);
+            if (card) { box.append(card); }
+        });
+        box.hidden = !box.childNodes.length;
+    }
+
+    document.addEventListener('keydown', function (e) {
+        if (e.metaKey || e.ctrlKey || e.altKey) { return; }
+        var tag = (e.target && e.target.tagName) || '';
+        if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA' || e.target.isContentEditable) { return; }
+        if (state.mode !== 'play' || state.step !== 2) { return; }
+        if (sheet.classList.contains('open')) { return; }
+        if (e.key === 'Escape') {
+            if (quick.length) { quick = []; renderQuickCards(); }
+            return;
+        }
+        for (var r = 0; r < QUICK_ROWS.length; r += 1) {
+            var i = QUICK_ROWS[r].indexOf(e.code);
+            if (i !== -1) {
+                e.preventDefault();
+                toggleQuick(r, i);
+                return;
+            }
+        }
+    });
 
     /**
      * Possession, and how scrappy the point is.
@@ -2638,6 +2829,13 @@ try {
             field.append(onFieldPanel(s[0]));
             field.append(onFieldPanel(s[1], 'away'));
             body.append(field);
+            // The quick-card region sits directly under the lines it is pulled
+            // from, above the season numbers that do not change mid-point.
+            var qc = el('div', 'quickcards');
+            qc.id = 'quickcards';
+            qc.hidden = true;
+            body.append(qc);
+            renderQuickCards();
         }
 
         body.append(teamStatsRow());
