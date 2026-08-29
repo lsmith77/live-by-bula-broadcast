@@ -679,6 +679,7 @@ Everything below was established against real payloads and the UO schema while b
 | **No team colour** | kits without a manual picker | `uo_pool.color` and `uo_series.color` exist; `uo_team` has none. Worked around with `conf/team-colors.json` |
 | **Timekeeper caps not bound to a game** | a countdown target when the pool has none | `uo_timekeeper_template.half_time_cap` / `time_cap` (55/100 min) live in a standalone app, chosen in the operator's browser, never attached to a game and never in the API |
 | **No line/roster-on-field data** | "who is on this point" graphics, which is a genuinely novel overlay | not recorded at any level |
+| **Players per line not recorded** | correct line counts for 6v6, 4v4 and other non-default formats | nothing states a format's players-per-side; consumers can only derive 7 or 5 from the season type, or read it off a declared ratio |
 
 ### 10.3 Operational, not data
 

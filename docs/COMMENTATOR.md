@@ -93,7 +93,7 @@ All of the following come from the goal list, `entity=teams` and `entity=referen
 
 Three consequences:
 
-- **Sort rosters by number, always**, with statistics as columns rather than as the ordering.
+- **Sort rosters by number**, with statistics as columns rather than as the ordering. One amendment since this was written: in a mixed division the default is matching bands — the primary ratio's matching first, numbers within each band — because the tinted blocks are how a mixed roster is actually read during prep; the `#` chip stays one click away for the pure shirt-number lookup this bullet argues for.
 - **Numbers are per team, not unique.** Both sides can field a #7, so a number alone is ambiguous. Both rosters must be visible at once, side by side and separately labelled, and any number-driven search must resolve within a team rather than across the game.
 - **The whole roster must be listed, not only the players who have done something.** A commentator needs #14 before #14 has scored.
 
@@ -527,6 +527,10 @@ The attention rules are §7's, one notch relaxed: the region is fixed, below the
 With matchings (§5a) and this point's ratio (§6b) in hand, the line picker stops making the commentator count. On the roster the matching tints the whole row and is named by a small tag; on the field view it is the tag alone — teal for FMP, violet for MMP, deliberately neither of the stereotyped colours, the term carrying the meaning and the tint only making a list readable in colour blocks. On the picker the tint moves onto the chips themselves — a picker is clicked, not read, so a label under every number was clutter — the chips order by matching with the tighter quota's players first, and the per-matching count sits in the panel header beside the team name: `Harbour Herons · 3 / 7 · MMP 2 of 3 · FMP 1 of 4`.
 
 A matching whose quota is exactly filled sets its unpicked players aside — every one of them could only make the line illegal — and unpicking somebody brings them all back; the picked stay visible, so a swap is one unpick away. Players without matching data always list last and are never hidden: absent is not a matching, and an empty spreadsheet cell must not make somebody disappear from a picker. Setting a filled group aside is a deliberate exception to "show the consequence; never block the click" (`AGENTS.md`): a displaced card is often intended, an eighth FMP never is.
+
+**A team with no matchings at all gets a warning, not zeros.** Counts of "0 of 3" beside a full line read as a broken picker when the truth is a room without the metadata — so when nobody on a mixed roster carries a matching, the counts and grouping stand down and one line says what is missing and where it comes from: the team's sheet, in the room the sync code names.
+
+**The line size is derived, because nothing records it.** The "x / 7" cap and the quotas come from the declared ratio's halves when one exists, else the WFDF default for the season type — outdoor 7, indoor and beach 5. A 6v6 or 4v4 format is invisible to every payload (`STUDIO.md` §10.2); until that lands upstream, a desk covering one corrects the count by declaring the format's ratio.
 
 The grouping decisions live in `shared/lineup.js`, pure and tested directly; the point's ratio derives from the declared first point plus the ABBA pattern (`shared/ratio.js`), so the ratio panel and the picker cannot disagree about which ratio this point is. Before anyone declares point 1's ratio, the picker is the plain flat list.
 

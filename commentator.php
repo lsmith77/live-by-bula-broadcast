@@ -385,6 +385,7 @@ try {
     .nums button small { display: block; font-size: .62rem; font-weight: 500;
                          color: var(--ink-mute); letter-spacing: .02em; }
     .pickhead .gcount { font-size: .8rem; color: var(--ink-mute); white-space: nowrap; }
+    .panel .mtwarn { margin: .1rem 0 .5rem; font-size: .85rem; }
     .nums button.fmp { background: var(--fmp-bg); color: var(--fmp-ink); }
     .nums button.fmp small { color: var(--fmp-ink); }
     .nums button.mmp { background: var(--mmp-bg); color: var(--mmp-ink); }
@@ -399,7 +400,8 @@ try {
     .onfield .side h3 { margin: 0 0 .35rem; font-size: .8rem; text-transform: uppercase;
                         letter-spacing: .1em; color: var(--ink-mute); font-weight: 700; }
     .onfield .line { display: flex; flex-wrap: wrap; gap: .35rem 1.4rem; }
-    .onfield .p { font-size: 1.5rem; font-weight: 700; line-height: 1.25; }
+    .onfield .line + .line { margin-top: .3rem; }
+    .onfield .p { font-size: 1.75rem; font-weight: 700; line-height: 1.25; }
     .onfield .p .pr { color: var(--ink-mute); font-size: .95rem; font-weight: 600;
         margin-left: .4rem; margin-right: 0; }
     .onfield .p .pr.hi { color: var(--ink); font-weight: 700; }
@@ -777,26 +779,53 @@ try {
             { key: 'points', label: 'Points' },
             { key: 'tour', label: 'Tournament' }
         ];
+        // In mixed, matching bands are the default reading of a roster —
+        // primary ratio's matching first, numbers within — with # one click
+        // away for the pure shirt-number lookup §5 argues for.
+        if (isMixedDivision()) { opts.unshift({ key: 'matching', label: 'Matching' }); }
         if (blocksTracked()) { opts.push({ key: 'blocks', label: 'Blocks' }); }
         return opts;
     }
-    var sortKey = 'num';
+    var sortKey = null;
+
+    function currentSortKey() {
+        return sortKey || (isMixedDivision() ? 'matching' : 'num');
+    }
+
+    /** The majority matching of the governing ratio — the "4" of 4MMP. */
+    function majorityMatching() {
+        var counts = window.Ratio.counts(currentRatioFull() || ratioPair()[0]);
+        if (!counts) { return 'MMP'; }
+        return counts.MMP >= counts.FMP ? 'MMP' : 'FMP';
+    }
 
     function sortRoster(list) {
+        var key = currentSortKey();
         var byName = function (a, b) { return a.name.localeCompare(b.name); };
-        var desc = function (get) {
-            return function (a, b) { return get(b) - get(a) || byName(a, b); };
-        };
-        if (sortKey === 'goals') { return list.sort(desc(function (p) { return p.gGoals; })); }
-        if (sortKey === 'assists') { return list.sort(desc(function (p) { return p.gAssists; })); }
-        if (sortKey === 'points') { return list.sort(desc(function (p) { return p.gTotal; })); }
-        if (sortKey === 'tour') { return list.sort(desc(function (p) { return p.tTotal; })); }
-        if (sortKey === 'blocks') { return list.sort(desc(function (p) { return p.tBlocks; })); }
-        return list.sort(function (a, b) {
+        var byNum = function (a, b) {
             var an = a.num === null || a.num === undefined ? 9999 : Number(a.num);
             var bn = b.num === null || b.num === undefined ? 9999 : Number(b.num);
             return an - bn || byName(a, b);
-        });
+        };
+        var desc = function (get) {
+            return function (a, b) { return get(b) - get(a) || byName(a, b); };
+        };
+        if (key === 'matching') {
+            var first = majorityMatching();
+            var rank = function (p) {
+                var n = noteFor(p.id);
+                var m = n && n.matching;
+                if (!m) { return 2; }              // no data reads last, as data
+                return m === first ? 0 : 1;
+            };
+            return list.sort(function (a, b) { return rank(a) - rank(b) || byNum(a, b); });
+        }
+        if (key === 'goals') { return list.sort(desc(function (p) { return p.gGoals; })); }
+        if (key === 'assists') { return list.sort(desc(function (p) { return p.gAssists; })); }
+        if (key === 'points') { return list.sort(desc(function (p) { return p.gTotal; })); }
+        if (key === 'tour') { return list.sort(desc(function (p) { return p.tTotal; })); }
+        if (key === 'blocks') { return list.sort(desc(function (p) { return p.tBlocks; })); }
+        return list.sort(byNum);
     }
 
     /** Roster sorted by jersey number — the lookup a commentator performs most. */
@@ -1201,9 +1230,9 @@ try {
         var bar = el('div', 'pickhead');
         bar.append(el('span', 'muted', 'Sort by'));
         sortOptions().forEach(function (s) {
-            var b = el('button', 'chip' + (sortKey === s.key ? ' on' : ''), s.label);
+            var b = el('button', 'chip' + (currentSortKey() === s.key ? ' on' : ''), s.label);
             b.type = 'button';
-            b.setAttribute('aria-pressed', sortKey === s.key ? 'true' : 'false');
+            b.setAttribute('aria-pressed', currentSortKey() === s.key ? 'true' : 'false');
             b.addEventListener('click', function () { sortKey = s.key; renderPrep(); });
             bar.append(b);
         });
@@ -2286,6 +2315,22 @@ try {
 
     function firstRatioIsLocal() { return !possession.ratio1 && !!localRatioValue(); }
 
+    /**
+     * Players per line: the declared ratio's halves when one exists, else the
+     * WFDF default for the season type — outdoor 7, indoor and beach 5.
+     *
+     * UltiOrganizer records no players-per-line anywhere, so a 6v6 or 4v4
+     * format cannot be detected from any payload — another entry on the
+     * upstream gaps list (`STUDIO.md` §10.2). Until then a desk covering one
+     * corrects the count by declaring the format's ratio.
+     */
+    function lineSize() {
+        var counts = window.Ratio.counts(currentRatioFull());
+        if (counts) { return counts.MMP + counts.FMP; }
+        var type = String(((state.payload || {}).seasoninfo || {}).type || 'outdoor').toLowerCase();
+        return type === 'indoor' || type === 'beach' ? 5 : 7;
+    }
+
     /** This point's full ratio ('4MMP/3FMP'), or null before anyone declared point 1's. */
     function currentRatioFull() {
         var first = firstRatioValue();
@@ -2774,7 +2819,15 @@ try {
         // With matchings and this point's ratio in hand, the header counts
         // each matching against its quota, tighter quota first — "MMP 2 of 3"
         // is the question a mixed line answers seven times.
-        var assist = mixed && window.Lineup
+        //
+        // With NO matchings at all, the counts and grouping stand down rather
+        // than showing "0 of 3" against a full line — a room without the
+        // metadata must look like missing metadata, not like a broken picker.
+        var hasMatchings = list.some(function (p) {
+            var n = noteFor(p.id);
+            return !!(n && n.matching);
+        });
+        var assist = mixed && hasMatchings && window.Lineup
             ? window.Lineup.groups(
                 list.map(function (p) {
                     var n = noteFor(p.id);
@@ -2786,8 +2839,9 @@ try {
 
         var head = el('div', 'pickhead');
         head.append(el('strong', null, side.team.name || '—'));
-        var count = el('span', 'count' + (line.length === 7 ? ' ok' : (line.length > 7 ? ' over' : '')),
-            line.length + ' / 7');
+        var size = lineSize();
+        var count = el('span', 'count' + (line.length === size ? ' ok' : (line.length > size ? ' over' : '')),
+            line.length + ' / ' + size);
         head.append(count);
         if (assist) {
             assist.groups.forEach(function (g) {
@@ -2802,6 +2856,13 @@ try {
         if (!list.length) {
             panel.append(el('p', 'muted', 'No roster available.'));
             return panel;
+        }
+
+        if (mixed && !hasMatchings) {
+            panel.append(el('p', 'muted mtwarn',
+                'No FMP/MMP data for this team, so nothing here can group, count '
+                + 'or hide. Import the team’s sheet on the prep screen, or check '
+                + 'the sync code — matchings live in the room the code names.'));
         }
 
         function chip(p) {
@@ -2873,41 +2934,50 @@ try {
             wrap.append(el('div', 'empty', 'Nobody selected — pick a line first.'));
             return wrap;
         }
-        var row = el('div', 'line');
-        fieldOrder(side)
-            .forEach(function (p, idx) {
-                // A button, because a click pins the same quick card that typing
-                // the shirt number does. The number on the chip is the key hint.
-                var d = el('button', 'p');
-                d.type = 'button';
-                d.addEventListener('click', function () { toggleQuickPlayer(rowIdx, p); });
-                if (p.num !== null && p.num !== undefined) { d.append(el('span', null, p.num)); }
-                d.append(document.createTextNode(p.name));
-                // Pronouns ride along here because this panel is exactly where a
-                // name is about to be said — with the less common sets
-                // emphasised, since those are the ones a reading habit gets
-                // wrong. The rest of the identity line (nickname, how to say the
-                // name) is hover text: prepared before the game, available
-                // mid-point without spending any scan width.
-                var n = noteFor(p.id);
-                if (n && n.pronouns) {
-                    d.append(el('span',
-                        emphasizedPronouns(n.pronouns) ? 'pr hi' : 'pr', n.pronouns));
-                }
-                // The matching as a tinted tag — the term is the signal, the
-                // tint only makes a line scannable, and the pair is neither of
-                // the stereotyped colours.
-                if (mixed && n && n.matching) {
-                    d.append(el('span', 'mt ' + n.matching.toLowerCase(), n.matching));
-                }
-                var full = sayLine(n);
-                if (mixed && n && n.matching) {
-                    full = n.matching + (full ? ' · ' + full : '');
-                }
-                if (full) { d.title = full; }
-                row.append(d);
-            });
-        wrap.append(row);
+        function fieldChip(p) {
+            // A button, because a click pins the same quick card that typing
+            // the shirt number does. The number on the chip is the key hint.
+            var d = el('button', 'p');
+            d.type = 'button';
+            d.addEventListener('click', function () { toggleQuickPlayer(rowIdx, p); });
+            if (p.num !== null && p.num !== undefined) { d.append(el('span', null, p.num)); }
+            d.append(document.createTextNode(p.name));
+            // Pronouns ride along here because this panel is exactly where a
+            // name is about to be said — with the less common sets
+            // emphasised, since those are the ones a reading habit gets
+            // wrong. The rest of the identity line (nickname, how to say the
+            // name) is hover text: prepared before the game, available
+            // mid-point without spending any scan width.
+            var n = noteFor(p.id);
+            if (n && n.pronouns) {
+                d.append(el('span',
+                    emphasizedPronouns(n.pronouns) ? 'pr hi' : 'pr', n.pronouns));
+            }
+            // The matching as a tinted tag — the term is the signal, the
+            // tint only makes a line scannable, and the pair is neither of
+            // the stereotyped colours.
+            if (mixed && n && n.matching) {
+                d.append(el('span', 'mt ' + n.matching.toLowerCase(), n.matching));
+            }
+            var full = sayLine(n);
+            if (mixed && n && n.matching) {
+                full = n.matching + (full ? ' · ' + full : '');
+            }
+            if (full) { d.title = full; }
+            return d;
+        }
+
+        // Two deliberate rows — 4 then 3 at sevens, 3 then 2 at fives — rather
+        // than one flex line deciding for itself: the split is stable, so a
+        // name keeps its place on the screen for the whole point.
+        var all = fieldOrder(side);
+        var half = Math.ceil(all.length / 2);
+        [all.slice(0, half), all.slice(half)].forEach(function (rowPlayers) {
+            if (!rowPlayers.length) { return; }
+            var row = el('div', 'line');
+            rowPlayers.forEach(function (p) { row.append(fieldChip(p)); });
+            wrap.append(row);
+        });
         return wrap;
     }
 

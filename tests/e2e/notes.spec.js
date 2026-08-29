@@ -614,6 +614,16 @@ test.describe('prepared notes', () => {
     await expect(page.locator('.roster tbody tr.fmp, .roster tbody tr.mmp')).toHaveCount(0);
   });
 
+  test('a mixed picker without matchings says so instead of counting zeros', async ({ page }) => {
+    // A room without the metadata must look like missing metadata, not like a
+    // broken picker: no tint, no "0 of 3" against a full line — a warning that
+    // says where the data comes from.
+    await openPage(page, 703);
+    await page.locator('#tabPlay').click();
+    await expect(page.locator('.panel .mtwarn').first()).toContainText('No FMP/MMP data');
+    await expect(page.locator('.pickhead .gcount')).toHaveCount(0);
+  });
+
   test("the wrong team's sheet is refused as a file, pointing at the right panel", async ({ page }, info) => {
     const fs = require('fs');
     await openPage(page);
