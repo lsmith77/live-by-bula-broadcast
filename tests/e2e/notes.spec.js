@@ -589,9 +589,9 @@ test.describe('prepared notes', () => {
     await expect(page.locator('.roster').first()).toBeVisible();
     await expect(page.locator('.roster td.who .say .mt').first()).toHaveText('FMP');
 
-    // The line picker carries it too — a legal mixed line is picked by it.
+    // The line picker carries it too, as the chip's own tint.
     await page.locator('#tabPlay').click();
-    await expect(page.locator('.nums button .mt').first()).toHaveText('FMP');
+    await expect(page.locator('.nums button.fmp').first()).toBeVisible();
   });
 
   test('matching stays off the screen outside mixed', async ({ page, request }) => {
@@ -717,6 +717,58 @@ test.describe('prepared notes', () => {
     const stored = await (await request.get(`${NOTES}&code=${CODE}`)).json();
     const teamTexts = Object.values(stored.teams).map((t) => t.text);
     expect(teamTexts).toContain('From the sheet.');
+  });
+
+  test('an unlinked desk can declare the first ratio — on this screen only', async ({ page, request }) => {
+    // The ratio is read off the paper scoresheet, so a desk that never links
+    // must not lose the ABBA panel and the grouped picker over it. The
+    // declaration is local, says so, and a shared value would replace it.
+    // The room may already hold a shared ratio from other suites, so the poll
+    // is stripped of it — this test is about the desk that has nothing.
+    await page.route((u) => u.href.includes('view=live/overlays/possession'), async (route) => {
+      if (route.request().method() !== 'GET') { return route.continue(); }
+      const res = await route.fetch();
+      const body = await res.json();
+      body.ratio1 = null;
+      return route.fulfill({ response: res, json: body });
+    });
+    await openPage(page, 703);
+    const buttons = page.locator('.roster').first().locator('td.who button[data-player]');
+    const ids = [
+      await buttons.nth(0).getAttribute('data-player'),
+      await buttons.nth(1).getAttribute('data-player'),
+    ];
+    await request.post(NOTES, {
+      data: { code: CODE, player: Number(ids[0]), text: '', matching: 'FMP', by: 'T' },
+    });
+    await request.post(NOTES, {
+      data: { code: CODE, player: Number(ids[1]), text: '', matching: 'MMP', by: 'T' },
+    });
+    await page.reload();
+    await expect(page.locator('.roster').first()).toBeVisible();
+
+    await page.locator('#tabPlay').click();
+    const sel = page.locator('#tracking select.tsel');
+    await expect(sel).toBeEnabled();
+    await sel.selectOption({ index: 1 });
+
+    // The panel runs, the caveat is explicit, and the picker leads with the
+    // tighter quota's players — for THIS point, not point 1: at 5-4 the next
+    // point is 10, a B slot, so declaring 4MMP for point 1 makes this point
+    // 3MMP and the MMP chips the short list.
+    await expect(page.locator('.abbarun .abbapt.now')).toBeVisible();
+    await expect(page.locator('.abba')).toContainText('this screen only');
+    await expect(page.locator('.cols .panel').first().locator('.nums button').first())
+      .toHaveClass(/mmp/);
+    // The quota counts sit in the header beside the team name.
+    await expect(page.locator('.pickhead .gcount').first()).toContainText('MMP 0 of 3');
+
+    // It survives a reload — which stays in play mode, the mode being in the
+    // URL — and is still local.
+    await page.reload();
+    await expect(page.locator('.nums').first()).toBeVisible();
+    await expect(page.locator('.abbarun .abbapt.now')).toBeVisible();
+    await expect(page.locator('.abba')).toContainText('this screen only');
   });
 
   test('the room is the code alone, so notes outlive one fixture', async ({ request }) => {

@@ -382,6 +382,11 @@ try {
                    cursor: pointer; line-height: 1.1; }
     .nums button small { display: block; font-size: .62rem; font-weight: 500;
                          color: var(--ink-mute); letter-spacing: .02em; }
+    .pickhead .gcount { font-size: .8rem; color: var(--ink-mute); white-space: nowrap; }
+    .nums button.fmp { background: var(--fmp-bg); color: var(--fmp-ink); }
+    .nums button.fmp small { color: var(--fmp-ink); }
+    .nums button.mmp { background: var(--mmp-bg); color: var(--mmp-ink); }
+    .nums button.mmp small { color: var(--mmp-ink); }
     .nums button.on { background: var(--accent); border-color: var(--accent); color: #fff; }
     .nums button.on small { color: var(--accent-soft); }
 
@@ -402,7 +407,6 @@ try {
         color: inherit; cursor: pointer; text-align: left; }
     .onfield button.p:hover { color: var(--link); }
     #quickbuf { font-weight: 700; color: var(--ink); min-width: 2rem; display: inline-block; }
-    .panel .ghead { display: flex; align-items: baseline; gap: .5rem; margin: .6rem 0 .3rem; }
     .prcheck { margin-top: .6rem; }
     .prcheck h4 { margin: 0 0 .15rem; font-size: .85rem; }
     .prcheck .muted { margin: 0 0 .35rem; font-size: .8rem; }
@@ -479,7 +483,9 @@ try {
        a code. It gets real height because a two-line box invites two lines. */
     .note .fields { display: grid; grid-template-columns: repeat(3, 1fr); gap: .5rem;
         margin-bottom: .5rem; }
-    .note .fields .field { display: flex; flex-direction: column; gap: .2rem; }
+    /* min-width: 0 on the grid item, or a long placeholder sets the column's
+       minimum and pushes the row out of the card. */
+    .note .fields .field { display: flex; flex-direction: column; gap: .2rem; min-width: 0; }
     .note .fields .field span { font-size: .72rem; color: var(--ink-mute);
         text-transform: uppercase; letter-spacing: .04em; }
     .note .fields .field input { font: inherit; font-size: .9rem; padding: .35rem .5rem;
@@ -2219,8 +2225,48 @@ try {
      *
      * Writable by whoever holds the room code, for the same reason possession
      * is: the commentary desk has the scoresheet in front of them.
+     *
+     * BUT an unlinked desk may still declare it — the ratio is read off the
+     * paper scoresheet, and a desk that never links should not lose the ABBA
+     * panel and the line picker over it. That declaration lives in THIS
+     * browser only, clearly labelled so, and the shared value is the
+     * authority: the moment one exists it wins, the local one is dropped, and
+     * the takeover is said once rather than silently reshuffling the panel.
+     * A local value is never pushed into the room by anything but a person's
+     * own click — an unshared guess must not reach the stage as a side effect
+     * of linking.
      */
-    function firstRatioValue() { return possession.ratio1 || null; }
+    var RATIO_KEY = 'uo-ratio1-' + CONFIG.gameId;
+    /** One-shot note after the shared ratio replaced a local one. */
+    var ratioNote = null;
+
+    function localRatioValue() {
+        try {
+            var v = window.localStorage.getItem(RATIO_KEY) || '';
+            return ratioPair().indexOf(v) !== -1 ? v : null;
+        } catch (e) { return null; }
+    }
+
+    function rememberLocalRatio(v) {
+        try {
+            if (v) { window.localStorage.setItem(RATIO_KEY, v); }
+            else { window.localStorage.removeItem(RATIO_KEY); }
+        } catch (e) { /* private mode */ }
+    }
+
+    /** Shared wins; local only ever fills a gap. Run before every render. */
+    function reconcileRatio() {
+        var local = localRatioValue();
+        if (!local || !possession.ratio1) { return; }
+        if (possession.ratio1 !== local) {
+            ratioNote = { local: local, shared: possession.ratio1 };
+        }
+        rememberLocalRatio(null);
+    }
+
+    function firstRatioValue() { return possession.ratio1 || localRatioValue() || null; }
+
+    function firstRatioIsLocal() { return !possession.ratio1 && !!localRatioValue(); }
 
     /** This point's full ratio ('4MMP/3FMP'), or null before anyone declared point 1's. */
     function currentRatioFull() {
@@ -2232,9 +2278,17 @@ try {
     }
 
     function setFirstRatio(v) {
-        if (!possession.canTrack) { return; }
+        if (!possession.canTrack) {
+            rememberLocalRatio(v);
+            render();
+            return;
+        }
         track.setRatio(v)
-            .then(function (state) { possession = state; render(); })
+            .then(function (state) {
+                possession = state;
+                rememberLocalRatio(null);
+                render();
+            })
             .catch(function () { /* transient */ });
     }
 
@@ -2697,43 +2751,11 @@ try {
         var panel = el('div', 'panel');
         var list = rosterByNumber(side);
         var line = lineFor(side);
-
-        var head = el('div', 'pickhead');
-        head.append(el('strong', null, side.team.name || '—'));
-        var count = el('span', 'count' + (line.length === 7 ? ' ok' : (line.length > 7 ? ' over' : '')),
-            line.length + ' / 7');
-        head.append(count);
-        panel.append(head);
-
-        if (!list.length) {
-            panel.append(el('p', 'muted', 'No roster available.'));
-            return panel;
-        }
-
         var mixed = isMixedSide(side);
-        function chip(p) {
-            var b = el('button', line.indexOf(p.id) !== -1 ? 'on' : '');
-            b.type = 'button';
-            b.append(document.createTextNode(
-                p.num === null || p.num === undefined ? '–' : String(p.num)));
-            // Surname under the number: the number is what is on the shirt, the
-            // name is what gets said.
-            b.append(el('small', null, p.name.split(' ').slice(-1)[0]));
-            // The matching under the surname, in mixed — clicking a legal line
-            // together is exactly when it is needed (§10.5).
-            var n = noteFor(p.id);
-            if (mixed && n && n.matching) {
-                b.append(el('small', 'mt ' + n.matching.toLowerCase(), n.matching));
-            }
-            b.addEventListener('click', function () { toggleNum(side, p.id); });
-            return b;
-        }
 
-        // With matchings and this point's ratio in hand, the picker groups by
-        // matching — the tighter quota first, so the short list is clicked
-        // first — and a group whose quota is exactly filled hides its unpicked
-        // players: they could only make the line illegal, and unpicking from
-        // the group brings them back. The decisions live in shared/lineup.js.
+        // With matchings and this point's ratio in hand, the header counts
+        // each matching against its quota, tighter quota first — "MMP 2 of 3"
+        // is the question a mixed line answers seven times.
         var assist = mixed && window.Lineup
             ? window.Lineup.groups(
                 list.map(function (p) {
@@ -2744,39 +2766,74 @@ try {
                 line)
             : null;
 
+        var head = el('div', 'pickhead');
+        head.append(el('strong', null, side.team.name || '—'));
+        var count = el('span', 'count' + (line.length === 7 ? ' ok' : (line.length > 7 ? ' over' : '')),
+            line.length + ' / 7');
+        head.append(count);
+        if (assist) {
+            assist.groups.forEach(function (g) {
+                var gc = el('span', 'gcount');
+                gc.append(el('span', 'mt ' + g.matching.toLowerCase(), g.matching));
+                gc.append(document.createTextNode(' ' + g.picked + ' of ' + g.quota));
+                head.append(gc);
+            });
+        }
+        panel.append(head);
+
+        if (!list.length) {
+            panel.append(el('p', 'muted', 'No roster available.'));
+            return panel;
+        }
+
+        function chip(p) {
+            var n = noteFor(p.id);
+            var matching = mixed && n && n.matching ? n.matching : '';
+            // The matching is the chip's own tint rather than a label — the
+            // picker is clicked, not read, and the grouping order plus the
+            // title carry the meaning for anyone the tint does not reach.
+            var cls = (line.indexOf(p.id) !== -1 ? 'on' : '')
+                + (matching ? ' ' + matching.toLowerCase() : '');
+            var b = el('button', cls.trim());
+            b.type = 'button';
+            b.append(document.createTextNode(
+                p.num === null || p.num === undefined ? '–' : String(p.num)));
+            // Surname under the number: the number is what is on the shirt, the
+            // name is what gets said.
+            b.append(el('small', null, p.name.split(' ').slice(-1)[0]));
+            b.title = p.name + (matching ? ' — ' + matching : '');
+            b.addEventListener('click', function () { toggleNum(side, p.id); });
+            return b;
+        }
+
+        var nums = el('div', 'nums');
+        panel.append(nums);
+
+        // The chips order by matching — the tighter quota's players first, so
+        // the short list is clicked first — and a group whose quota is exactly
+        // filled hides its unpicked players: they could only make the line
+        // illegal, and unpicking from the group brings them back. Players
+        // without matching data always list last and are never hidden. The
+        // decisions live in shared/lineup.js.
         if (!assist) {
-            var nums = el('div', 'nums');
             list.forEach(function (p) { nums.append(chip(p)); });
-            panel.append(nums);
             return panel;
         }
 
         var byId = {};
         list.forEach(function (p) { byId[String(p.id)] = p; });
-        var section = function (headParts, players, hideUnpicked) {
-            var ghead = el('div', 'ghead');
-            headParts.forEach(function (part) { ghead.append(part); });
-            panel.append(ghead);
-            var nums = el('div', 'nums');
-            players.forEach(function (gp) {
+        assist.groups.forEach(function (g) {
+            g.players.forEach(function (gp) {
                 var p = byId[String(gp.id)];
                 if (!p) { return; }
-                if (hideUnpicked && line.indexOf(p.id) === -1) { return; }
+                if (g.full && line.indexOf(p.id) === -1) { return; }
                 nums.append(chip(p));
             });
-            panel.append(nums);
-        };
-        assist.groups.forEach(function (g) {
-            section([
-                el('span', 'mt ' + g.matching.toLowerCase(), g.matching),
-                el('span', 'muted', g.picked + ' of ' + g.quota
-                    + (g.full ? ' — done, the rest are set aside' : ''))
-            ], g.players, g.full);
         });
-        if (assist.unknown.length) {
-            section([el('span', 'muted', 'No matching data — always listed')],
-                assist.unknown, false);
-        }
+        assist.unknown.forEach(function (gp) {
+            var p = byId[String(gp.id)];
+            if (p) { nums.append(chip(p)); }
+        });
         return panel;
     }
 
@@ -3157,10 +3214,12 @@ try {
 
         var sel = document.createElement('select');
         sel.className = 'tsel';
-        sel.disabled = !possession.canTrack;
-        sel.title = current
-            ? 'Gender ratio on point 1. Everything else follows the ABBA pattern from it.'
-            : 'Set the gender ratio on point 1, from the paper scoresheet.';
+        sel.title = possession.canTrack
+            ? (current
+                ? 'Gender ratio on point 1. Everything else follows the ABBA pattern from it.'
+                : 'Set the gender ratio on point 1, from the paper scoresheet.')
+            : 'Gender ratio on point 1 — kept on this screen only until the desk is '
+                + 'linked; a shared value replaces it.';
         sel.setAttribute('aria-label', 'Gender ratio on point 1');
 
         var opts = [['', 'ratio pt 1']].concat(pair.map(function (r) {
@@ -3345,9 +3404,10 @@ try {
                     + '\u2014 it is circled on the paper scoresheet \u2014 and the rest of '
                     + 'the game follows the ABBA pattern from it, here and on the '
                     + 'progression card.'
-                : 'Nobody has set the ratio for point 1 yet. The Studio operator sets it, '
-                    + 'or a commentator holding the code. Nothing records it \u2014 it is '
-                    + 'circled on the paper scoresheet.'));
+                : 'Set the ratio for point 1 in the toolbar \u2014 it is circled on the '
+                    + 'paper scoresheet. Until this desk is linked it lives on this screen '
+                    + 'only; a value shared by the operator or a linked desk replaces it.'));
+            appendRatioNote(box);
             return box;
         }
 
@@ -3385,7 +3445,39 @@ try {
             box.append(tbl);
         }
 
+        // The local-declaration caveat, and the one-click way out of it once
+        // the desk is linked. Nothing local is ever shared without this click.
+        if (firstRatioIsLocal()) {
+            var caveat = el('p', 'muted',
+                'Set on this screen only — the stage and other desks cannot see it. ');
+            if (possession.canTrack) {
+                var share = el('button', 'chip',
+                    'Share ' + shortRatio(firstRatio) + ' with the room');
+                share.type = 'button';
+                share.addEventListener('click', function () {
+                    setFirstRatio(localRatioValue());
+                });
+                caveat.append(share);
+            }
+            box.append(caveat);
+        }
+        appendRatioNote(box);
+
         return box;
+    }
+
+    /** The one-shot "shared replaced local" note, wherever the panel renders. */
+    function appendRatioNote(box) {
+        if (!ratioNote) { return; }
+        var note = el('p', 'muted');
+        note.append(document.createTextNode(
+            'The shared ratio (' + shortRatio(ratioNote.shared) + ' pt 1) replaced the one '
+            + 'set on this screen (' + shortRatio(ratioNote.local) + ' pt 1). '));
+        var ok = el('button', 'chip', 'OK');
+        ok.type = 'button';
+        ok.addEventListener('click', function () { ratioNote = null; render(); });
+        note.append(ok);
+        box.append(note);
     }
 
     function renderPlay() {
@@ -3432,6 +3524,7 @@ try {
        --------------------------------------------------------------- */
 
     function render() {
+        reconcileRatio();
         renderTop();
         document.getElementById('tabPrep').setAttribute('aria-pressed', state.mode === 'prep' ? 'true' : 'false');
         document.getElementById('tabPlay').setAttribute('aria-pressed', state.mode === 'play' ? 'true' : 'false');
