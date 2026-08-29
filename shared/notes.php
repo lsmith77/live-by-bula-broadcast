@@ -232,13 +232,19 @@ final class Notes
      * touch disjoint keys and cannot conflict. Where they do overlap the last
      * write wins, and the page shows who wrote it.
      *
-     * `$fields` is the FULL desired state of the structured fields, not a delta:
-     * a key that is absent or empty clears that field. The sheet edits all four
-     * channels in one box and flushes them together, so "what the box shows is
-     * what is stored" is the only contract a caller can reason about. Everything
-     * empty deletes the entry rather than storing a blank, so clearing what a
-     * commentator no longer wants actually removes it instead of leaving an
-     * entry that counts against the room's cap and expires on its own schedule.
+     * `$fields` is a DELTA over the structured fields: a key that is present
+     * sets that field (empty string clears it), a key that is absent leaves the
+     * stored value alone. It was a full-state write at first, and that is how a
+     * player's matching vanished in practice: a page loaded before a field
+     * existed saved "everything it knew" and silently dropped the field it did
+     * not. Under delta semantics a stale page can only touch what it sends.
+     * An entry whose every channel ends up empty is deleted rather than stored
+     * blank, so clearing what a commentator no longer wants actually removes it
+     * instead of leaving an entry that counts against the room's cap.
+     *
+     * `$pronounsOk` follows the same shape: true or false states it, null
+     * ("not stated") keeps the existing mark as long as the pronouns it
+     * reviewed stand unedited.
      *
      * @param  array<string,string> $fields
      * @return array{ok: bool, error: ?string, state: array}
@@ -249,7 +255,7 @@ final class Notes
         string $text,
         string $by = '',
         array $fields = [],
-        bool $pronounsOk = false,
+        ?bool $pronounsOk = null,
     ): array {
         $path = $this->pathFor($code);
         if ($path === null || $playerId <= 0) {
@@ -260,10 +266,31 @@ final class Notes
             $state = $this->load($code);
             $players = $state['players'];
             $clean = self::cleanText($text);
-            $cleanFields = self::cleanFields($fields);
+
+            $existing = $players[(string) $playerId] ?? null;
+            $existingFields = $existing !== null ? self::fieldsOf($existing) : [];
+
+            // The delta: present keys set or clear, absent keys keep.
+            $cleanFields = $existingFields;
+            foreach (self::FIELDS as $field) {
+                if (!array_key_exists($field, $fields)) {
+                    continue;
+                }
+                $one = self::cleanFields([$field => $fields[$field]]);
+                if (isset($one[$field])) {
+                    $cleanFields[$field] = $one[$field];
+                } else {
+                    unset($cleanFields[$field]);
+                }
+            }
+
             // "Reviewed, keep as written" only means something about a declared
             // set, so it cannot outlive the pronouns it reviewed.
-            $ok = $pronounsOk && isset($cleanFields['pronouns']);
+            $ok = $pronounsOk === null
+                ? (!empty($existing['pronounsok'])
+                    && ($cleanFields['pronouns'] ?? null) === ($existingFields['pronouns'] ?? null)
+                    && isset($cleanFields['pronouns']))
+                : ($pronounsOk && isset($cleanFields['pronouns']));
 
             // Skip a write that would change nothing, rather than one that
             // arrives too soon.
@@ -279,13 +306,12 @@ final class Notes
             // Comparing content instead is strictly better. It drops exactly the
             // writes worth dropping -- a debounced save firing twice with the
             // same text -- and never loses one that would have changed anything.
-            $existing = $players[(string) $playerId] ?? null;
             $emptied = $clean === '' && $cleanFields === [];
             $unchanged = $emptied
                 ? $existing === null
                 : ($existing !== null
                     && $existing['text'] === $clean
-                    && self::fieldsOf($existing) === $cleanFields
+                    && $existingFields === $cleanFields
                     && !empty($existing['pronounsok']) === $ok);
             if ($unchanged) {
                 return ['ok' => true, 'error' => null, 'state' => $state];

@@ -10,11 +10,13 @@
  *           belongs to nobody's row; an empty text clears it
  *
  *   POST {"code":"K7QM4","player":1234,"text":"…","nickname":"…","pronouns":"…","pronunciation":"…","pronounsok":true,"by":"Sam"}
- *        -> write one player's whole entry. The structured fields are the FULL
- *           desired state — an absent or empty key clears that field — and
- *           everything empty clears the entry. `pronounsok` marks the declared
- *           pronouns as reviewed (keep-as-written); it survives only while the
- *           pronouns it reviewed stand unedited.
+ *        -> write one player's entry, as a DELTA: a structured-field key that
+ *           is present sets the field (empty string clears it), an absent key
+ *           leaves the stored value alone — so a stale page can only touch
+ *           what it sends. An entry whose every channel ends up empty is
+ *           deleted. `pronounsok` marks the declared pronouns as reviewed
+ *           (keep-as-written); absent keeps the mark while the pronouns stand
+ *           unedited, and it never survives an edited declaration.
  *
  * **Unauthenticated, like lines.php and for the same reason.** The code is a
  * namespace rather than a credential; nothing stored here reaches a viewer, so
@@ -141,9 +143,13 @@ if (!array_key_exists('text', $payload) || !is_string($payload['text'])) {
     fail(400, 'Expected {"text": "..."}.');
 }
 
+// A DELTA: only the keys the caller actually sent reach the store, so a page
+// that predates a field cannot clear it by saving "everything it knows".
 $fields = [];
 foreach (Notes::FIELDS as $field) {
-    $fields[$field] = is_string($payload[$field] ?? null) ? $payload[$field] : '';
+    if (array_key_exists($field, $payload) && is_string($payload[$field])) {
+        $fields[$field] = $payload[$field];
+    }
 }
 
 $result = $store->save(
@@ -152,7 +158,7 @@ $result = $store->save(
     $payload['text'],
     (string) ($payload['by'] ?? ''),
     $fields,
-    ($payload['pronounsok'] ?? false) === true,
+    array_key_exists('pronounsok', $payload) ? $payload['pronounsok'] === true : null,
 );
 if (!$result['ok']) {
     fail(500, (string) $result['error']);
