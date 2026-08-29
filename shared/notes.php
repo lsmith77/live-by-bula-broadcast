@@ -2,7 +2,7 @@
 /**
  * Prepared talking points about a player, for the commentary position.
  *
- *   { "players": { "1234": { "text": "...", "pronouns": "she/her", "by": "Sam", "at": 1787420000 } },
+ *   { "players": { "1234": { "text": "...", "pronouns": "xe/xem", "pronounsok": true, "by": "Sam", "at": 1787420000 } },
  *     "touched": 1787420000 }
  *
  * Besides the free-text note, an entry may carry three STRUCTURED fields —

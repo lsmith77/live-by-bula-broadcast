@@ -5,10 +5,12 @@
  *   GET  ?view=live/overlays/notes&code=K7QM4
  *        -> {"players":{"1234":{"text":"…","pronouns":"she/her","by":"Sam","at":N}},"touched":N,"writable":bool}
  *
- *   POST {"code":"K7QM4","player":1234,"text":"…","nickname":"…","pronouns":"…","pronunciation":"…","by":"Sam"}
+ *   POST {"code":"K7QM4","player":1234,"text":"…","nickname":"…","pronouns":"…","pronunciation":"…","pronounsok":true,"by":"Sam"}
  *        -> write one player's whole entry. The structured fields are the FULL
  *           desired state — an absent or empty key clears that field — and
- *           everything empty clears the entry.
+ *           everything empty clears the entry. `pronounsok` marks the declared
+ *           pronouns as reviewed (keep-as-written); it survives only while the
+ *           pronouns it reviewed stand unedited.
  *
  * **Unauthenticated, like lines.php and for the same reason.** The code is a
  * namespace rather than a credential; nothing stored here reaches a viewer, so

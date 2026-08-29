@@ -2,7 +2,7 @@
  * The player-bio round trip: export a team's roster, have the players fill it in,
  * import it back.
  *
- *     export CSV (id + name, empty prompt columns)
+ *     export CSV (id + name, empty field and prompt columns)
  *       -> team uploads it to a shared sheet
  *       -> each player edits their own row
  *       -> export CSV

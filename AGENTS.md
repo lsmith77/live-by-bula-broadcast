@@ -24,7 +24,7 @@ Runtime code sits at the top level, because a routed view's path *is* its URL �
 |---|---|
 | `scoreboard.php` `stage.php` `commentator.php` `index.php` | routed pages |
 | `show.php` `colors.php` `lines.php` `notes.php` | routed JSON endpoints |
-| `shared/` | CSS, the PHP stores behind those endpoints, and the JS modules every surface shares: `possession.js` `stoppage.js` `field.js` `ratio.js` `tracking.js` `secret.js` |
+| `shared/` | CSS, the PHP stores behind those endpoints, and the JS modules every surface shares: `possession.js` `stoppage.js` `field.js` `ratio.js` `tracking.js` `secret.js` `csv.js` `bios.js` |
 | `conf/` | operator state written by the web server — **gitignored** |
 | `logos/` | per-installation team logos — **contents gitignored** |
 | `docs/` `tests/` `fixtures/` `install/` | not served to viewers |
