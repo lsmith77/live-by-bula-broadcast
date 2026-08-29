@@ -348,6 +348,8 @@ game                    may override           ("this final also records possess
 
 **This is an existing UltiOrganizer pattern, not a new one.** Game rules already cascade exactly this way: `uo_pooltemplate` holds a reusable format, `uo_pool` carries the live values — `timeoutlen`, `halftime`, `winningscore`, `timecap`, `scorecap`, `timeouts`, `timeoutsper` — and `uo_game.halftime` already demonstrates a per-game override of a pool setting. The ask is to extend a shape the schema and the admin UI both already have, which makes it a much smaller request than inventing a capture-policy concept.
 
+**The same declaration should drive the Scorekeeper's input surface.** Everything above frames the policy for consumers — telling a card what a zero means — but it answers the scorekeeper's question too: which inputs this game's sheet shows. A pool-play game under a goals-only policy gets a leaner sheet with no block button to ignore; a final declared to record possession gets the extra controls, and the staffing to use them. That closes the loop that makes the declaration trustworthy in the first place: the sheet offers exactly what the event promised to capture, so the data does not quietly fall short of the policy because an input was buried among ones nobody was using.
+
 Two properties worth specifying in the ask:
 
 - **Declared, not inferred.** The flag records an *intention to capture*, so absence of data under a policy of "we record blocks" is genuinely "no blocks", and is trustworthy. A flag derived from whether rows happen to exist would restate the problem rather than solve it.
