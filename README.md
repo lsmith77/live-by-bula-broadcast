@@ -125,6 +125,8 @@ Two kinds of help would make more difference to this project than more features.
 
 If you are broadcasting an Ultimate event and willing to try it, or to run the self-test and report what happened, that is worth more than any amount of further development. Failures are the useful part: an overlay that never updated, a graphic that looked wrong on air, an instruction that made no sense at the side of a pitch.
 
+There is also a wishlist pointed the other way: [docs/UPSTREAM.md](docs/UPSTREAM.md) collects what these overlays want from UltiOrganizer and Live! by BULA themselves — one entry per ask, with what it unlocks and a link to the full case.
+
 Open an issue either way.
 
 ## Development

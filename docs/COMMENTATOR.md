@@ -567,7 +567,7 @@ Erasure runs the same way in reverse. Today, deleting or anonymising a player is
 
 ### Scope
 
-**None of this can happen in this repository.** `PLAN.md` §6 forbids schema changes here, and federation is a UltiOrganizer-wide change to identity, privacy and the API long before it is anything a commentator sees. It is recorded in these documents because the commentator page is where its absence is felt most sharply, not because it is a task on this project's list. `PLAN.md` §5 carries it as an upstream ask.
+**None of this can happen in this repository.** `PLAN.md` §6 forbids schema changes here, and federation is a UltiOrganizer-wide change to identity, privacy and the API long before it is anything a commentator sees. It is recorded in these documents because the commentator page is where its absence is felt most sharply, not because it is a task on this project's list. `UPSTREAM.md` carries it as an upstream ask.
 
 ## 9. MVP
 

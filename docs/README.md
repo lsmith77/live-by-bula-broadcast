@@ -94,7 +94,7 @@ The step from *one overlay per URL* to *one stage per broadcast with an operator
 
 Its long middle section — **"What the data actually supports"** — is the most reusable part of the whole set: every statistic checked against real payloads and the UO schema, with a verdict. It is what stops a card being designed around data that does not exist. Turnovers do not exist anywhere in the schema; blocks do, behind a setting that ships off; break chances cannot be derived at all.
 
-**Go here for:** whether a card can be built, what a slot may contain, why a control is not disabled, and the list of upstream asks.
+**Go here for:** whether a card can be built, what a slot may contain, why a control is not disabled, and the full cases behind the upstream asks.
 
 ### [`POSTPRODUCTION.md`](POSTPRODUCTION.md) — adding an overlay after the fact
 
@@ -109,6 +109,12 @@ The information surface for the people calling the game. Prep mode (rosters, tea
 It opens with the observation that governs the whole document: **the incompleteness that blocks a graphic does not block a commentator.** A block count nobody can vouch for is unusable as a lower third and perfectly usable to someone who can say "at least four". That asymmetry is why this surface can show things the Studio cannot.
 
 **Go here for:** what a commentator needs, how line sharing works and why its write is unauthenticated, and the pronunciation and pronoun questions.
+
+### [`UPSTREAM.md`](UPSTREAM.md) — what is wanted from upstream
+
+The digest of asks against UltiOrganizer and Live! by BULA — one entry per ask with what it unlocks, roughly what it costs, and a link to its full case in the documents above. The page to hand to an upstream maintainer, and the text to paste from when opening an issue.
+
+**Go here for:** the upstream wishlist in one place.
 
 ---
 

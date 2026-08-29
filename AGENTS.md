@@ -133,5 +133,6 @@ Fixtures: `fixtures/dev-fixture.sql` (idempotent — two 28-player squads, one f
 - `docs/STUDIO.md` — the stage, slots, cards, show state, and the full account of what the data supports.
 - `docs/COMMENTATOR.md` — the second screen, line sharing, prepared talking points (§5a), the naming/pronunciation questions, and the federation idea (§8a).
 - `docs/POSTPRODUCTION.md` — adding an overlay to a game that was recorded without a switcher: alignment, anchors, and what is not solved.
+- `docs/UPSTREAM.md` — the digest of asks against UltiOrganizer and Live!, one entry per ask linking to its full case in `STUDIO.md` or `COMMENTATOR.md`.
 
 Keep them in sync with the code. When a doc and the code disagree, the doc is a bug — this project's docs are load-bearing, because most of what they record is *why* something is the way it is, which the code cannot say.
