@@ -55,6 +55,20 @@
     var NAME_HEADER = 'Name';
 
     /**
+     * Whose sheet this is, on every row.
+     *
+     * The CSV is team-specific, and it spends its life being forwarded around a
+     * team — so it says whose it is twice over: `Team` is the human check (a
+     * player opening the sheet sees at a glance whether they were sent the
+     * right one), `Team ID` is the machine check (an import refuses another
+     * team's file outright instead of rejecting twenty-eight rows one by one).
+     * Deleting the columns disables only this check; the per-row roster guard
+     * stands regardless.
+     */
+    var TEAM_HEADER = 'Team';
+    var TEAM_ID_HEADER = 'Team ID';
+
+    /**
      * The empty columns the export ships with.
      *
      * These are the fields section 5 asks upstream for, as prompts. A blank
@@ -93,6 +107,8 @@
     var ID_ALIASES = ['player id', 'player_id', 'playerid', 'id', 'identifier'];
     var NAME_ALIASES = ['name', 'player', 'player name', 'full name'];
     var NUMBER_ALIASES = ['number', 'no', 'no.', 'num', '#', 'jersey', 'jersey number'];
+    var TEAM_ALIASES = ['team', 'team name', 'club'];
+    var TEAM_ID_ALIASES = ['team id', 'team_id', 'teamid'];
 
     var FIELD_ALIASES = FIELDS.reduce(function (all, f) {
         return all.concat(f.aliases);
@@ -133,6 +149,8 @@
             return ID_ALIASES.indexOf(n) === -1
                 && NAME_ALIASES.indexOf(n) === -1
                 && NUMBER_ALIASES.indexOf(n) === -1
+                && TEAM_ALIASES.indexOf(n) === -1
+                && TEAM_ID_ALIASES.indexOf(n) === -1
                 && FIELD_ALIASES.indexOf(n) === -1;
         });
     }
@@ -182,13 +200,15 @@
         }).join('\n');
     }
 
-    /** The rows to hand a team, in roster order. */
-    function exportRows(roster) {
+    /** The rows to hand a team, in roster order. `team` is {id, name}. */
+    function exportRows(roster, team) {
         return roster.map(function (p) {
             var row = {};
             row[ID_HEADER] = p.id;
             row[NUMBER_HEADER] = (p.num === null || p.num === undefined) ? '' : p.num;
             row[NAME_HEADER] = p.name;
+            row[TEAM_HEADER] = team && team.name ? team.name : '';
+            row[TEAM_ID_HEADER] = team && team.id !== null && team.id !== undefined ? team.id : '';
             FIELDS.forEach(function (f) { row[f.header] = ''; });
             PROMPTS.forEach(function (h) { row[h] = ''; });
             return row;
@@ -196,7 +216,7 @@
     }
 
     function exportHeaders() {
-        return [ID_HEADER, NUMBER_HEADER, NAME_HEADER]
+        return [ID_HEADER, NUMBER_HEADER, NAME_HEADER, TEAM_HEADER, TEAM_ID_HEADER]
             .concat(FIELDS.map(function (f) { return f.header; }))
             .concat(PROMPTS);
     }
@@ -219,11 +239,13 @@
      *   matched: number, total: number
      * }}
      */
-    function match(parsed, roster, existing) {
+    function match(parsed, roster, existing, team) {
         existing = existing || {};
         var headers = parsed.headers || [];
         var idHeader = findHeader(headers, ID_ALIASES);
         var nameHeader = findHeader(headers, NAME_ALIASES);
+        var teamIdHeader = findHeader(headers, TEAM_ID_ALIASES);
+        var teamNameHeader = findHeader(headers, TEAM_ALIASES);
         var content = contentHeaders(headers);
         var fields = fieldHeaders(headers);
         var fieldKeys = Object.keys(fields);
@@ -238,6 +260,33 @@
                 + 'as produced by the export.';
             return report;
         }
+
+        // Whose file is this? Refused as a FILE, before any row is looked at:
+        // rejecting twenty-eight rows one by one says "something is wrong",
+        // where this says what happened — the wrong team's sheet was picked.
+        // Only when the file names a team at all, and never when any row claims
+        // the importing team (a merged or hand-edited file falls through to the
+        // per-row roster guard, which decides row by row either way).
+        if (teamIdHeader && team && team.id !== null && team.id !== undefined) {
+            var claimed = [];
+            (parsed.rows || []).forEach(function (row) {
+                var v = String(row[teamIdHeader] === undefined ? '' : row[teamIdHeader]).trim();
+                if (v && claimed.indexOf(v) === -1) { claimed.push(v); }
+            });
+            if (claimed.length && claimed.indexOf(String(team.id)) === -1) {
+                var fileTeam = '';
+                if (teamNameHeader) {
+                    var first = (parsed.rows || [])[0] || {};
+                    fileTeam = String(first[teamNameHeader] === undefined ? '' : first[teamNameHeader]).trim();
+                }
+                report.wrongTeam = { id: claimed[0], name: fileTeam };
+                report.fatal = 'This is ' + (fileTeam ? '"' + fileTeam + '"' : 'another team')
+                    + '’s sheet (team ' + claimed[0] + '), not '
+                    + (team.name || 'this team') + '’s.';
+                return report;
+            }
+        }
+
         if (!content.length && !fieldKeys.length) {
             report.fatal = 'No content columns — every column in this file is an '
                 + 'identity column, so there is nothing to import.';

@@ -1333,14 +1333,22 @@ try {
        about a file an entire team could edit.
        --------------------------------------------------------------- */
 
+    function bioTeam(side) {
+        return { id: side.team.team_id, name: side.team.name || '' };
+    }
+
     function bioFileName(side) {
         var name = (side.team.name || 'team').toLowerCase()
             .replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
-        return (name || 'team') + '-bios.csv';
+        // The team id in the name for the same reason it is in the rows: the
+        // file gets forwarded around, and its name should say whose it is.
+        var id = side.team.team_id !== null && side.team.team_id !== undefined
+            ? '-' + side.team.team_id : '';
+        return (name || 'team') + id + '-bios.csv';
     }
 
     function exportBios(side) {
-        var rows = window.Bios.exportRows(rosterByNumber(side));
+        var rows = window.Bios.exportRows(rosterByNumber(side), bioTeam(side));
         var text = window.Csv.stringify(window.Bios.exportHeaders(), rows);
         // A Blob and a temporary link: the file is built here and never goes near
         // the server, which is also why this works with the network down.
@@ -1383,7 +1391,7 @@ try {
             // re-exports it appears to have a dead button.
             input.value = '';
             var parsed = window.Csv.parse(String(reader.result || ''));
-            var report = window.Bios.match(parsed, rosterByNumber(side), notesForImport());
+            var report = window.Bios.match(parsed, rosterByNumber(side), notesForImport(), bioTeam(side));
             openImportPreview(side, report);
         };
         // UTF-8, which is what every spreadsheet exports and what the BOM in our
@@ -1409,6 +1417,18 @@ try {
 
         if (report.fatal) {
             card.append(el('p', 'err', report.fatal));
+            // The commonest way to pick the wrong file is to pick the OTHER
+            // team's, so when that is what happened, say where it goes.
+            if (report.wrongTeam) {
+                sides().forEach(function (s) {
+                    if (String(s.team.team_id) === String(report.wrongTeam.id)
+                        && String(s.team.team_id) !== String(side.team.team_id)) {
+                        card.append(el('p', 'muted',
+                            'That is the sheet for ' + (s.team.name || 'the other team')
+                            + ' — use the Import button on their panel.'));
+                    }
+                });
+            }
         } else {
             var columnsRead = Object.keys(report.fieldHeaders || {}).map(function (k) {
                 return report.fieldHeaders[k];
@@ -1517,12 +1537,46 @@ try {
             .catch(function () { done(false, 0); });
     }
 
-    function flashCount(written) {
+    function flashMessage(text) {
         var box = document.getElementById('importFlash');
         if (!box) { return; }
-        box.textContent = written + (written === 1 ? ' note imported.' : ' notes imported.');
+        box.textContent = text;
         box.className = 'flashline on';
         window.setTimeout(function () { box.className = 'flashline'; }, 6000);
+    }
+
+    function flashCount(written) {
+        flashMessage(written + (written === 1 ? ' note imported.' : ' notes imported.'));
+    }
+
+    /**
+     * The same table, straight onto the clipboard for a Google Sheet.
+     *
+     * The 20% of the export flow that was friction: download a CSV, open Sheets,
+     * import the file. This is the 80% shortcut — copy as TSV, open a fresh
+     * sheet, paste — with no OAuth, no per-installation Google project, and no
+     * third-party script on an operator page. A full Drive integration was
+     * considered and declined for exactly those costs, and a fetch-by-URL
+     * import was declined because it would push teams toward making a document
+     * full of player personal data link-public (`docs/COMMENTATOR.md` §5a).
+     */
+    function copyBios(side) {
+        var rows = window.Bios.exportRows(rosterByNumber(side), bioTeam(side));
+        var text = window.Csv.stringify(window.Bios.exportHeaders(), rows,
+            { delimiter: '\t', bom: false }).replace(/\r\n$/, '');
+        if (!navigator.clipboard || !navigator.clipboard.writeText) {
+            flashMessage('This browser cannot copy from a script — use Export CSV.');
+            return;
+        }
+        // The tab opens synchronously, inside the click's user activation —
+        // opened after the async clipboard write, some browsers would block it
+        // as a popup.
+        window.open('https://sheets.new', '_blank', 'noopener');
+        navigator.clipboard.writeText(text).then(function () {
+            flashMessage('Copied. Paste into the new sheet (Ctrl+V or Cmd+V), then share it with the team.');
+        }, function () {
+            flashMessage('Could not copy — use Export CSV instead.');
+        });
     }
 
     function bioBar(side) {
@@ -1534,6 +1588,13 @@ try {
             + 'Share it with the team and let the players write their own.';
         out.addEventListener('click', function () { exportBios(side); });
         bar.append(out);
+
+        var copy = el('button', 'barbtn', 'Copy for Sheets');
+        copy.type = 'button';
+        copy.title = 'Copy the same table and open a fresh Google Sheet — paste it there, '
+            + 'no download needed.';
+        copy.addEventListener('click', function () { copyBios(side); });
+        bar.append(copy);
 
         // A visually-hidden file input with a label styled as a button: the input
         // stays keyboard-reachable and announced, which a div-plus-click is not.

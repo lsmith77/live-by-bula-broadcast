@@ -232,10 +232,47 @@ test.describe('bio import: who a row is allowed to name', () => {
     expect(report.accepted[0].fields).toEqual({ pronouns: 'she/her' });
   });
 
-  test('the export carries the field columns between the name and the prompts', () => {
+  test('the export names its team and carries the field columns before the prompts', () => {
     const headers = Bios.exportHeaders();
-    expect(headers.slice(3, 6)).toEqual(['Nickname', 'Pronouns', 'Name pronunciation']);
+    expect(headers.slice(3, 5)).toEqual(['Team', 'Team ID']);
+    expect(headers.slice(5, 8)).toEqual(['Nickname', 'Pronouns', 'Name pronunciation']);
     for (const p of Bios.PROMPTS) { expect(headers).toContain(p); }
+    const rows = Bios.exportRows(ROSTER, { id: 77, name: 'Mosquitos' });
+    expect(rows[0].Team).toBe('Mosquitos');
+    expect(rows[0]['Team ID']).toBe(77);
+  });
+
+  test("another team's sheet is refused as a file, with its name", () => {
+    // Twenty-eight "not on this roster" rows say something is wrong; this says
+    // what happened — the wrong team's sheet was picked — and the page adds
+    // where it goes.
+    const rows = Bios.exportRows(ROSTER, { id: 77, name: 'Mosquitos' });
+    rows[0]['Other sports played'] = 'Handball';
+    const out = Csv.parse(csv(rows));
+    const report = Bios.match(out, ROSTER, {}, { id: 88, name: 'Lemmings' });
+    expect(report.fatal).toMatch(/Mosquitos/);
+    expect(report.fatal).toMatch(/Lemmings/);
+    expect(report.wrongTeam).toEqual({ id: '77', name: 'Mosquitos' });
+    expect(report.accepted).toHaveLength(0);
+  });
+
+  test('a file without team columns falls back to the per-row guard', () => {
+    // Deleting the columns disables only the file-level check.
+    const out = Csv.parse('Player ID,Name,Pronouns\r\n301,Alex Auer,she/they\r\n');
+    const report = Bios.match(out, ROSTER, {}, { id: 88, name: 'Lemmings' });
+    expect(report.fatal).toBeUndefined();
+    expect(report.accepted).toHaveLength(1);
+  });
+
+  test('one row claiming the importing team keeps the file admissible', () => {
+    // A hand-merged file is judged row by row rather than refused outright.
+    const rows = Bios.exportRows(ROSTER, { id: 77, name: 'Mosquitos' });
+    rows[1]['Team ID'] = '88';
+    rows[1]['Other sports played'] = 'Handball';
+    const out = Csv.parse(csv(rows));
+    const report = Bios.match(out, ROSTER, {}, { id: 88, name: 'Lemmings' });
+    expect(report.fatal).toBeUndefined();
+    expect(report.accepted).toHaveLength(1);
   });
 
   test('a file of identifiers and pronouns alone is importable', () => {

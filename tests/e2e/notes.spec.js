@@ -568,6 +568,58 @@ test.describe('prepared notes', () => {
     await expect(page.locator('#sheet')).not.toHaveClass(/open/);
   });
 
+  test("the wrong team's sheet is refused as a file, pointing at the right panel", async ({ page }, info) => {
+    const fs = require('fs');
+    await openPage(page);
+
+    const [download] = await Promise.all([
+      page.waitForEvent('download'),
+      page.locator('.biobar').first().locator('button.barbtn').first().click(),
+    ]);
+    // The file name says whose sheet it is, id included.
+    expect(download.suggestedFilename()).toMatch(/-\d+-bios\.csv$/);
+    const exported = info.outputPath('export-team.csv');
+    await download.saveAs(exported);
+    const lines = fs.readFileSync(exported, 'utf8').replace(/^﻿/, '')
+      .split('\r\n').filter(Boolean);
+    const headers = lines[0].split(',');
+    const col = (h) => headers.indexOf(h);
+    const r1 = lines[1].split(',');
+    r1[col('Other sports played')] = 'Handball';
+    const edited = info.outputPath('edited-team.csv');
+    fs.writeFileSync(edited, `${[lines[0], r1.join(',')].join('\r\n')}\r\n`);
+
+    // Into the OTHER team's panel: refused as a file, with directions.
+    await page.locator('.biobar').nth(1).locator('input[type=file]').setInputFiles(edited);
+    await expect(page.locator('#sheet')).toHaveClass(/open/);
+    await expect(page.locator('#sheetCard .err')).toContainText('sheet (team');
+    await expect(page.locator('#sheetCard'))
+      .toContainText('use the Import button on their panel');
+    await expect(page.locator('#sheetCard .barbtn.primary')).toHaveCount(0);
+  });
+
+  test('Copy for Sheets puts the same table on the clipboard', async ({ page, context }) => {
+    await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+    // The button opens sheets.new; keep the run off the network.
+    await context.route('**://sheets.new/**', (r) => r.abort());
+    await context.route('**://docs.google.com/**', (r) => r.abort());
+    await openPage(page);
+
+    const popupP = page.waitForEvent('popup', { timeout: 3000 }).catch(() => null);
+    await page.locator('.biobar').first()
+      .locator('button.barbtn', { hasText: 'Copy for Sheets' }).click();
+    await expect(page.locator('#importFlash')).toContainText('Copied');
+
+    const text = await page.evaluate(() => navigator.clipboard.readText());
+    const rows = text.split('\r\n');
+    expect(rows[0].split('\t').slice(0, 5))
+      .toEqual(['Player ID', 'Number', 'Name', 'Team', 'Team ID']);
+    // The team columns are filled, so a pasted sheet says whose it is too.
+    expect(rows[1].split('\t')[3]).not.toBe('');
+    const popup = await popupP;
+    if (popup) { await popup.close(); }
+  });
+
   test('the room is the code alone, so notes outlive one fixture', async ({ request }) => {
     // The structural guarantee behind "a note is worth the same in the final as
     // in the quarter". If this endpoint ever grew a game parameter that scoped
