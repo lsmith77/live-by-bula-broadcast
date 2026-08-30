@@ -51,6 +51,19 @@ async function resetRoom(request) {
   }
 }
 
+/**
+ * The exported file's PLAYER rows, in order, by identifier rather than position.
+ *
+ * The export leads with a NOTICE row addressed to whoever fills the sheet in,
+ * and ends with the TEAM row, so `lines[1]` is not the first player and never
+ * was guaranteed to be. Selecting on a numeric Player ID says what these tests
+ * actually mean.
+ */
+function playerLines(lines) {
+  const idAt = lines[0].split(',').indexOf('Player ID');
+  return lines.slice(1).filter((l) => /^\d+$/.test(l.split(',')[idAt].trim()));
+}
+
 /** Open the commentator page already in the test room, as a named desk. */
 async function openPage(page, game = GAME_ID) {
   await page.addInitScript(({ game, code }) => {
@@ -257,7 +270,7 @@ test.describe('prepared notes', () => {
     // import itself finds them, so the test survives a column being added.
     const headers = lines[0].split(',');
     const col = (h) => headers.indexOf(h);
-    const [r1, r2, r3] = [1, 2, 3].map((i) => lines[i].split(','));
+    const [r1, r2, r3] = playerLines(lines).slice(0, 3).map((l) => l.split(','));
     r1[col('Other sports played')] = 'Handball';
     r1[col('How you came to ultimate')] = '"Followed a sibling, then stayed"';
     r1[col('Pronouns')] = 'she/her';
@@ -383,7 +396,7 @@ test.describe('prepared notes', () => {
     await expect(page.locator('#sheet .note .state')).toHaveText('Saved');
     await page.keyboard.press('Escape');
 
-    const r1 = lines[1].split(',');
+    const r1 = playerLines(lines)[0].split(',');
     r1[col('Other sports played')] = 'From the sheet';
     r1[col('Pronouns')] = 'they/them';
     const edited = info.outputPath('edited3.csv');
@@ -423,7 +436,7 @@ test.describe('prepared notes', () => {
 
     // Now import a file that would replace it.
     const col = (h) => lines[0].split(',').indexOf(h);
-    const r1 = lines[1].split(',');
+    const r1 = playerLines(lines)[0].split(',');
     r1[col('Other sports played')] = 'From the sheet';
     const edited = info.outputPath('edited2.csv');
     fs.writeFileSync(edited, `${[lines[0], r1.join(',')].join('\r\n')}\r\n`);
@@ -656,7 +669,7 @@ test.describe('prepared notes', () => {
       .split('\r\n').filter(Boolean);
     const headers = lines[0].split(',');
     const col = (h) => headers.indexOf(h);
-    const r1 = lines[1].split(',');
+    const r1 = playerLines(lines)[0].split(',');
     r1[col('Other sports played')] = 'Handball';
     const edited = info.outputPath('edited-team.csv');
     fs.writeFileSync(edited, `${[lines[0], r1.join(',')].join('\r\n')}\r\n`);
@@ -718,7 +731,7 @@ test.describe('prepared notes', () => {
     const teamRow = lines[lines.length - 1].split(',');
     expect(teamRow[col('Player ID')]).toBe('TEAM');
     teamRow[col('Team history')] = 'From the sheet.';
-    const r1 = lines[1].split(',');
+    const r1 = playerLines(lines)[0].split(',');
     r1[col('Other sports played')] = 'Handball';
     const edited = info.outputPath('edited-teamrow.csv');
     fs.writeFileSync(edited,

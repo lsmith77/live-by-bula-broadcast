@@ -23,6 +23,15 @@ const ROSTER = [
   { id: 303, num: 12, name: 'Bea Blade' },
 ];
 
+/**
+ * The TEAM row, found by its identifier rather than its position.
+ *
+ * The export grew a NOTICE row above the players, and every `rows[3]` here
+ * silently became the wrong row. Position was never the contract; the reserved
+ * identifier is.
+ */
+const teamRow = (rows) => rows.find((r) => r['Player ID'] === Bios.TEAM_ROW_ID);
+
 /** Build a file the way a spreadsheet would export it. */
 function csv(rows, headers) {
   return Csv.stringify(headers || Bios.exportHeaders(), rows);
@@ -180,10 +189,32 @@ test.describe('bio import: who a row is allowed to name', () => {
     expect(report.matched).toBe(3);
   });
 
+  test('the sheet warns whoever fills it in, and the warning imports as nothing', () => {
+    // The warning cannot live only in the docs: the docs are read by whoever
+    // runs the broadcast, and the decision it governs is made by each player
+    // alone in a spreadsheet, deciding what to type about themselves.
+    const rows = Bios.exportRows(ROSTER, { id: 77, name: 'Mosquitos' });
+    expect(rows[0]['Player ID'], 'above the players, or it is read too late')
+      .toBe(Bios.NOTICE_ROW_ID);
+    // It says the three things that actually protect somebody: this is public,
+    // the code is not a password, and anything else goes to a person directly.
+    expect(rows[0].Name).toMatch(/PUBLIC/);
+    expect(rows[0].Name).toMatch(/not a password/);
+    expect(rows[0].Name).toMatch(/in person/);
+
+    const report = Bios.match(Csv.parse(csv(rows)), ROSTER, {},
+      { id: 77, name: 'Mosquitos' });
+    // Silently ignored — NOT rejected. A red line against the one row behaving
+    // as intended teaches the desk to read past the rejection list.
+    expect(report.rejected).toHaveLength(0);
+    expect(report.accepted).toHaveLength(0);
+    expect(report.matched, 'the notice is not a player').toBe(3);
+  });
+
   test('the TEAM row imports as the team note, under the same rules', () => {
     const rows = Bios.exportRows(ROSTER, { id: 77, name: 'Mosquitos' });
-    rows[3]['Team history'] = 'Founded 1998 on a beach.';
-    rows[3]['Team achievements'] = 'National champions 2019.';
+    teamRow(rows)['Team history'] = 'Founded 1998 on a beach.';
+    teamRow(rows)['Team achievements'] = 'National champions 2019.';
     const out = Csv.parse(csv(rows));
     const report = Bios.match(out, ROSTER, {}, { id: 77, name: 'Mosquitos' });
     expect(report.accepted).toHaveLength(1);
@@ -194,8 +225,8 @@ test.describe('bio import: who a row is allowed to name', () => {
 
   test('a retargeted TEAM row is refused by the name that travelled with it', () => {
     const rows = Bios.exportRows(ROSTER, { id: 77, name: 'Mosquitos' });
-    rows[3].Name = 'Someone Else';
-    rows[3]['Team history'] = 'sneaky';
+    teamRow(rows).Name = 'Someone Else';
+    teamRow(rows)['Team history'] = 'sneaky';
     const out = Csv.parse(csv(rows));
     const report = Bios.match(out, ROSTER, {}, { id: 77, name: 'Mosquitos' });
     expect(report.accepted).toHaveLength(0);
@@ -204,7 +235,7 @@ test.describe('bio import: who a row is allowed to name', () => {
 
   test("the desk's team note is kept, not overwritten", () => {
     const rows = Bios.exportRows(ROSTER, { id: 77, name: 'Mosquitos' });
-    rows[3]['Team history'] = 'From the sheet.';
+    teamRow(rows)['Team history'] = 'From the sheet.';
     const out = Csv.parse(csv(rows));
     const report = Bios.match(out, ROSTER,
       { TEAM: { text: 'Typed at the desk.' } }, { id: 77, name: 'Mosquitos' });

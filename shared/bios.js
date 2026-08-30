@@ -137,6 +137,34 @@
      * only where the desk has not written one.
      */
     var TEAM_ROW_ID = 'TEAM';
+
+    /**
+     * The notice the sheet carries to the people filling it in.
+     *
+     * This warning cannot live only in the docs, because the docs are read by
+     * whoever runs the broadcast and the decision it governs is made by each
+     * player, alone, in a spreadsheet, deciding what to type about themselves.
+     * Informed consent has to reach the point of writing.
+     *
+     * And it is an honest description rather than a disclaimer. The room is
+     * named by a five-character code, which `COMMENTATOR.md` §6 is explicit is
+     * "a namespace, not a credential": it keeps two desks apart and stops a
+     * passer-by wandering in. It is not a defence against anyone motivated,
+     * and the sheet itself is emailed around a team and often parked in
+     * somebody's cloud drive, which is the likelier leak by far.
+     *
+     * So the ask of the player is the one that actually protects them: treat
+     * anything written here as public, and give a commentator anything else in
+     * person.
+     */
+    var NOTICE_ROW_ID = 'NOTICE';
+    var NOTICE_TEXT = 'Please read — treat everything you write in this sheet as '
+        + 'PUBLIC. It is shared with the commentary desk over a short room code, '
+        + 'which keeps desks apart but is not a password, and this file gets '
+        + 'emailed and copied around. Anything here may be said on air or seen by '
+        + 'others, so do not write what you would not want mentioned. Tell a '
+        + 'commentator anything else in person instead. Leave this row alone; the '
+        + 'import ignores it.';
     var TEAM_PROMPTS = ['Team history', 'Team achievements'];
     var TEAM_PROMPT_ALIASES = ['team history', 'team achievements'];
 
@@ -241,12 +269,22 @@
             row[TEAM_ID_HEADER] = team && team.id !== null && team.id !== undefined ? team.id : '';
             return row;
         };
-        var rows = roster.map(function (p) {
+        // First row, above every player's: it is the row somebody sees before
+        // they start typing, which is the only moment at which it can change
+        // what they type.
+        var noticeRow = {};
+        noticeRow[ID_HEADER] = NOTICE_ROW_ID;
+        noticeRow[NUMBER_HEADER] = '';
+        noticeRow[NAME_HEADER] = NOTICE_TEXT;
+        var rows = [blank(noticeRow)];
+        rows[0][NAME_HEADER] = NOTICE_TEXT;   // blank() rewrites TEAM columns only
+
+        roster.forEach(function (p) {
             var row = {};
             row[ID_HEADER] = p.id;
             row[NUMBER_HEADER] = (p.num === null || p.num === undefined) ? '' : p.num;
             row[NAME_HEADER] = p.name;
-            return blank(row);
+            rows.push(blank(row));
         });
         var teamRow = {};
         teamRow[ID_HEADER] = TEAM_ROW_ID;
@@ -354,6 +392,13 @@
                 report.rejected.push({ line: line, name: name, why: 'no identifier' });
                 return;
             }
+
+            // The NOTICE row is addressed to the reader, not to the importer.
+            // Skipped silently and counted as nothing: reporting it as
+            // "rejected" would put a red line against the one row that is
+            // behaving exactly as intended, and teach the desk to read past
+            // the rejection list.
+            if (raw.toUpperCase() === NOTICE_ROW_ID) { return; }
 
             // The TEAM row: the same discipline as a player row — the exported
             // name travels with the identifier and is checked, a second row
@@ -473,6 +518,8 @@
         PROMPTS: PROMPTS,
         FIELDS: FIELDS,
         TEAM_ROW_ID: TEAM_ROW_ID,
+        NOTICE_ROW_ID: NOTICE_ROW_ID,
+        NOTICE_TEXT: NOTICE_TEXT,
         TEAM_PROMPTS: TEAM_PROMPTS,
         exportHeaders: exportHeaders,
         exportRows: exportRows,
