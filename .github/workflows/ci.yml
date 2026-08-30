@@ -72,7 +72,7 @@ jobs:
         # break the older host is caught here rather than there.
         php: ['8.3', '8.4']
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - uses: shivammathur/setup-php@v2
         with:
@@ -91,9 +91,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           # 22 is the supported LTS; 20 reached end of life in April 2026. The
           # checker scripts themselves run on 18 and up, so a contributor on an
@@ -122,14 +122,14 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - uses: shivammathur/setup-php@v2
         with:
           php-version: '8.3'
           coverage: none
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           # 22 is the supported LTS; 20 reached end of life in April 2026. The
           # checker scripts themselves run on 18 and up, so a contributor on an
@@ -151,7 +151,7 @@ jobs:
         id: pw
         run: echo "v=$(node -p "require('@playwright/test/package.json').version")" >> "$GITHUB_OUTPUT"
 
-      - uses: actions/cache@v4
+      - uses: actions/cache@v5
         id: browser-cache
         with:
           path: ~/.cache/ms-playwright
