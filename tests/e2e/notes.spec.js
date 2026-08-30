@@ -998,7 +998,16 @@ test.describe('prepared notes', () => {
       const chip = panel.locator('.nums button.fmp').first();
       const surname = await chip.locator('small').innerText();
       await setChip(chip, true);
-      await chip.click({ modifiers: ['Shift'] });
+      // Wait for the removal to reach the ROOM before reloading. The line lives
+      // there, so a reload racing the POST reads back the line that still has
+      // this player on it — and "off injured" is a state, so a player the room
+      // still shows on the line is not marked. That race made this test flaky
+      // in a full run and pass on its own.
+      await Promise.all([
+        page.waitForResponse((r) => r.url().includes('overlays/lines')
+          && r.request().method() === 'POST' && r.ok()),
+        chip.click({ modifiers: ['Shift'] }),
+      ]);
       await expect(page.locator('.injnote')).toHaveCount(1);
 
       // The reload stays in play mode — the mode is in the URL — so the picker
