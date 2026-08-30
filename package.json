@@ -1,9 +1,10 @@
 {
   "name": "live-by-bula-broadcast",
   "private": true,
-  "description": "Broadcast overlays for Live! by BULA \u2014 development tooling only; the project itself has no build step.",
+  "description": "Broadcast overlays for Live! by BULA — development tooling only; the project itself has no build step.",
   "scripts": {
     "test": "playwright test --config tests/playwright.config.js --project=overlays",
+    "test:unit": "playwright test --config tests/playwright.unit.config.js",
     "test:ui": "playwright test --config tests/playwright.config.js --project=overlays --ui",
     "shots": "playwright test --config tests/playwright.config.js --project=shots"
   },

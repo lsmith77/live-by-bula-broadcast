@@ -1,0 +1,117 @@
+# Continuous integration for the broadcast overlays.
+#
+# WHAT THIS CANNOT DO, AND WHY IT IS NOT AN OVERSIGHT
+#
+# These overlays run inside an UltiOrganizer installation with Live! by BULA,
+# and the browser suite deliberately drives a real instance rather than a mock
+# — the payload shape is exactly the thing that has been wrong before, so a
+# fake would prove the wrong thing convincingly. Live! is third-party software
+# distributed under a signed Terms of Use, so a public workflow cannot check it
+# out, and `live/` is gitignored in UltiOrganizer for the same reason.
+#
+# So `npm test` (the browser suite, 138 tests) stays a local gate against a real
+# instance. What runs here is everything that needs no instance — which is the
+# part carrying the rules a defect would be quietest in: an off-by-one in a
+# gender-ratio quota, a ratio shortened wrongly, an import overwriting a note
+# somebody typed at the desk.
+#
+# To add the browser suite later you need Live! reachable from the runner:
+# mirror it privately, add a deploy key or token as a secret, and stand up PHP,
+# MySQL and `fixtures/dev-fixture.sql` in a job with `ADMIN_PASS` set. Note that
+# secrets are not exposed to workflows from forked pull requests, so that job
+# would only ever run on pushes and same-repository branches.
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# A second push to the same branch makes the first run's answer irrelevant.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  php-syntax:
+    name: PHP syntax
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # The host project runs 8.3 in its own CI; 8.4 is what these files are
+        # written against locally. Both, so a syntax-level feature that would
+        # break the older host is caught here rather than there.
+        php: ['8.3', '8.4']
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          coverage: none
+
+      - name: Lint every PHP file
+        run: |
+          # -print0/-0 because a path with a space would otherwise be linted as
+          # two files that do not exist, and `php -l` reports success for those.
+          find . -name '*.php' -not -path './vendor/*' -not -path './node_modules/*' -print0 \
+            | xargs -0 -n1 -P4 php -l
+
+  units:
+    name: Shared logic
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      # `npm ci` needs a lockfile and installs devDependencies, which here is
+      # the Playwright test runner alone. No browsers are downloaded: nothing in
+      # the unit config opens a page, and `playwright install` is deliberately
+      # absent so that a spec which starts needing one fails here loudly.
+      - run: npm ci
+
+      - name: Shared modules load under CommonJS
+        run: node tests/modules.mjs
+
+      - name: Pure logic
+        run: npm run test:unit
+
+  docs:
+    name: Docs and links
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Every relative doc link resolves
+        # The docs are load-bearing here — most of what they record is *why*
+        # something is the way it is — and they cross-reference each other
+        # heavily. A rename that breaks a link is silent until somebody follows
+        # it and finds nothing.
+        run: |
+          status=0
+          while IFS= read -r -d '' file; do
+            dir=$(dirname "$file")
+            # Markdown links to relative paths only: skip http(s), anchors and
+            # mailto, and strip any #fragment before testing the path.
+            grep -oE '\]\([^)#]+\.(md|sql|conf|png|gif|sh|php|js|yml)(#[^)]*)?\)' "$file" \
+              | sed -E 's/^\]\(//; s/\)$//; s/#.*$//' \
+              | while read -r link; do
+                  case "$link" in
+                    http*|mailto:*) continue ;;
+                  esac
+                  if [ ! -e "$dir/$link" ]; then
+                    echo "$file: broken link -> $link"
+                    exit 1
+                  fi
+                done || status=1
+          done < <(find . -name '*.md' -not -path './node_modules/*' -print0)
+          exit $status

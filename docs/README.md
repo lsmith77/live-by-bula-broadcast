@@ -160,8 +160,10 @@ Nothing here is an overlay setting — every one of them belongs to UltiOrganize
 
 ```
 npm install
-npm test                      # the suite
+npm test                      # the suite, against a running instance
 ADMIN_PASS=... npm test       # including the tests that change what is on air
+npm run test:unit             # the pure logic alone: no browser, no instance
+node tests/modules.mjs        # every shared module loads under CommonJS
 npm run shots                 # regenerate the images in docs/images/
 ```
 
@@ -170,6 +172,14 @@ Playwright, against a running dev instance rather than a mock — the payload sh
 The assertions are about **geometry, contrast and state transitions** rather than markup, because that is how this code has actually failed. On a 1920×1080 canvas viewed on a laptop, eyeballing is not evidence.
 
 Tests needing the Live! admin session skip themselves without `ADMIN_PASS`, and anything that writes show state restores it afterwards — the suite borrows the same files a real broadcast reads.
+
+### What continuous integration can and cannot prove
+
+[`.github/workflows/ci.yml`](../.github/workflows/ci.yml) runs on every push and pull request: PHP syntax on 8.3 and 8.4, the shared modules' CommonJS load, `npm run test:unit`, and a check that every relative link in these docs resolves.
+
+**It cannot run the browser suite, and that is a consequence of a deliberate choice rather than a gap.** The suite drives a real Live! instance because the payload shape is exactly the thing that has been wrong before; Live! by BULA is third-party software distributed under a signed Terms of Use, so a public workflow cannot check it out — which is also why `live/` is gitignored in UltiOrganizer. A green tick therefore means the pure logic and the syntax are sound, not that the overlays work. `npm test` against a real instance remains the gate, and it is yours rather than the robot's.
+
+Adding the browser suite later means making Live! reachable from the runner: a private mirror, a deploy key or token as a secret, PHP and MySQL services, `fixtures/dev-fixture.sql` loaded, and `ADMIN_PASS` set. Secrets are not exposed to workflows from forked pull requests, so such a job would only ever run on pushes and same-repository branches.
 
 [`../tests/selftest.php`](../tests/selftest.php) is a different thing: the switcher diagnostic described above, a routed page rather than part of the suite, because it has to be loadable by the device it is diagnosing.
 

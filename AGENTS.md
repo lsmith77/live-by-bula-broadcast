@@ -137,7 +137,8 @@ Things this project keeps in two places on purpose. Each pair has been caught ou
 **Measure; do not eyeball.** On a 1920×1080 canvas viewed in a window, looking at it proves nothing. Every layout claim in this project has been settled with `getBoundingClientRect()` through headless Chrome, and several confident-looking visual judgements were wrong.
 
 - **The suite:** `npm test` (add `ADMIN_PASS=...` for the tests that change what is on air). Playwright against a running dev instance, asserting on geometry, contrast and state transitions rather than markup. Add a test whenever a defect is found — every spec in there names the regression it exists to catch.
-- **Run the gated third of the suite before handing back work that touches a store.** Without `ADMIN_PASS` the tests that change what is on air skip themselves — 58 of 188 at the time of writing — and this repository has no CI, so nothing else will ever run them. A green `npm test` is not a green suite.
+- **CI proves the part that needs no instance; you are the gate for the rest.** `.github/workflows/ci.yml` runs PHP syntax on 8.3 and 8.4, the shared modules' CommonJS load, the pure logic specs, and the docs' relative links. It cannot run the browser suite: that drives a real Live! instance on purpose, and Live! is third-party software under a signed Terms of Use that a public workflow cannot check out. So a green tick here is not a green suite.
+- **Run the gated third before handing back work that touches a store.** Without `ADMIN_PASS` the tests that change what is on air skip themselves — 58 of 190 at the time of writing — and nothing in CI will ever run them. `ADMIN_PASS=... npm test`.
 - Syntax: `php -l <file>`
 - Routes: every page should return 200 — `/s/`, `/s/<game>`, `/s/<game>/overlay`, `/c/<game>`, and `?view=live/overlays/tests/selftest`
 - Behaviour: drive the real page with the Chrome DevTools Protocol and assert on the DOM, rather than reasoning about what the code should do
