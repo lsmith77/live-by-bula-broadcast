@@ -116,13 +116,36 @@ That is a short list, which is the right size for something that interrupts.
 
 ### It has to reach somebody who is not looking at the page
 
-This is the constraint that most reminder designs would get wrong, and this codebase has already discovered it twice. The operator is watching the programme output, not the Studio — which is why possession is a keypress and why the off-air flash is `role="status"` with `aria-live="polite"`, *"announced, not just shown: an operator watching the program monitor is not looking at this bar."*
+This is the constraint most reminder designs would get wrong, and this codebase has already discovered it twice. The operator is watching the programme output, not the Studio — which is why possession is a keypress and why the off-air flash is `role="status"` with `aria-live="polite"`, *"announced, not just shown: an operator watching the program monitor is not looking at this bar."*
 
-A reminder rendered quietly into the Studio's toolbar would therefore be seen by nobody, and would look like it worked in every test. It has to be announced, or audible, or — the honest option for a one-person crew running a laptop — accept that it can only reach somebody at the keyboard and say so.
+A reminder rendered quietly into the Studio's toolbar would therefore be seen by nobody, and would look like it worked in every test.
+
+### Why the obvious answer — a beep — is usually the wrong one
+
+**Audio leaks into the commentary microphone.** A laptop chime at a desk with an open mic is on the broadcast, and unlike a graphic it cannot be taken back. Nothing in these overlays has ever made a sound; that is not an oversight to correct casually.
+
+**And it interacts badly with the rule above.** Firing at breaks in play is right for attention and wrong for audio: **a break is exactly when the mic is hot.** The commentators are filling the gap between points, which is when they talk most and when a beep is most certain to be heard. "Fire at breaks" and "use a sound" are each sensible and jointly wrong, which is the kind of thing that only shows up on the broadcast.
+
+Worth contrasting with the sibling app: UltiOrganizer's Timekeeper *does* make sound, because there the audio **is** the product — it signals a time limit to players on the pitch, and everybody hearing it is the point. Here, everybody hearing it is the failure.
+
+So the ladder runs silent-first:
+
+1. **A large visual change, not a small one.** Peripheral vision picks up area, not detail. If the Studio is on a second screen anywhere in view, a whole-page wash is noticed where a toolbar chip is invisible — and it costs nothing and leaks nothing.
+2. **A desktop notification.** Reaches an operator whose Studio window is behind something else, silently, and survives the page not being focused. It needs a permission grant, which is itself a setup-checklist item — pleasingly recursive, and a good example of a check that must be *asserted at setup* so it is not discovered missing mid-game.
+3. **A phone buzz**, if the match-control surface (`MATCHCONTROL.md`) is in somebody's hand. Silent, physical, and reaches a person who is nowhere near a screen. The honest limit: the Vibration API works on Android browsers and **not on iOS Safari**, so it is a bonus rather than a mechanism to rely on.
+4. **A sound, last, opt-in, and off by default** — for the rigs where no open microphone is near the operator.
+
+**Whether audio is safe is a fact about the rig, which is what a profile is for** (§5). A commentary booth acoustically separate from the operator can beep freely; a two-person crew sharing a table cannot. Nobody but the crew knows which they are, so nobody but the crew should be setting it — and the default has to be the safe one.
+
+### The limit worth stating plainly
+
+**A crew watching a hardware multiview cannot be reached by a browser at all.** No notification, wash or buzz appears on an ATEM's monitor output. For that setup the reminder can only reach somebody sitting at the laptop, and if nobody is, it reaches nobody.
+
+That is not a bug to design around; it is a boundary to admit. It also points the same way as `MATCHCONTROL.md` §7 did: if the Studio ever grows a preview of the output, the operator has a reason to look at the page, and every one of these problems gets easier at once.
 
 ### Rules, so it stays useful past the first hour
 
-- **Off by default, on per profile.** A "remind me" mode is opted into by a crew that wants it, which is also the answer to every rig being different.
+- **Off by default, on per profile.** A "remind me" mode is opted into by a crew that wants it, which is also the answer to every rig being different — and audio is a second, separate opt-in inside that, because a crew can want reminders and still have an open mic.
 - **Never a gate, never on air.** It informs; it does not block, and it never touches the broadcast canvas — that canvas already has one diagnostics problem (`STUDIO.md` §11) and must not get a second.
 - **Dismissible, and silent once dismissed for that game.** An operator who has decided is not asked again.
 - **Cadence in the profile, not in the code.** A four-camera rig with a spare pair of hands wants more prompts than a solo operator who cannot act on them anyway.
