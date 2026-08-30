@@ -726,14 +726,27 @@ $json = static fn ($v): string => json_encode($v, JSON_UNESCAPED_SLASHES | JSON_
      * UltiOrganizer's own scoresheet decides it. Offering a ratio control on an
      * Open game would be inviting an operator to record something meaningless.
      */
-    function ratioChoices() {
+    /**
+     * The ratios the operator may set, or null when there is no choice to make.
+     *
+     * Null in open and women's, and null at an EVEN line size in mixed too:
+     * 6v6 is 3MMP/3FMP and 4v4 is 2MMP/2FMP with nothing to decide, so the
+     * control disappears rather than offering one option.
+     */
+    /** Whether the game on show is a mixed one. */
+    function isMixedGame() {
         var game = null;
         gamesList.forEach(function (g) {
             if (Number(g.game_id) === Number(show.game)) { game = g; }
         });
-        if (!game) { return null; }
-        if (!window.Ratio.isMixed(seriesIndex[String(game.pool)])) { return null; }
-        return window.Ratio.pair(seasonType);
+        return !!game && window.Ratio.isMixed(seriesIndex[String(game.pool)]);
+    }
+
+    function ratioChoices() {
+        if (!isMixedGame()) { return null; }
+        var size = Number(possession.size) || window.Ratio.defaultSize(seasonType);
+        if (!window.Ratio.isChoice(size)) { return null; }
+        return window.Ratio.pairForSize(size);
     }
 
 
@@ -1193,14 +1206,59 @@ $json = static fn ($v): string => json_encode($v, JSON_UNESCAPED_SLASHES | JSON_
         // UltiOrganizer does not record, collected by hand. Putting it on a card
         // made it a property of one graphic, which meant the commentator panel
         // and the card each had their own copy and could disagree on air.
+        // Players per side, for every division rather than only mixed: 6v6 open
+        // is as real as 6v6 mixed, and nothing upstream records either. It sits
+        // before the ratio because it decides whether there IS a ratio — an even
+        // size forces the split, so the ratio control disappears with it.
+        var sWrap = el('span', 'kitside');
+        sWrap.append(el('span', 'muted', 'Players per side'));
+        var ssel = document.createElement('select');
+        var sizeNow = possession.size ? String(possession.size) : '';
+        ssel.className = 'autosel' + (sizeNow ? ' on' : '');
+        ssel.disabled = !showCanEdit();
+        ssel.title = 'Recorded nowhere upstream — seasoninfo.type is a surface, not a '
+            + 'size. Setting it here fixes the line cap on every desk, and in mixed '
+            + 'the quotas with it. Changing it clears a ratio that no longer fits.';
+        [['', 'default (' + window.Ratio.defaultSize(seasonType) + 'v'
+            + window.Ratio.defaultSize(seasonType) + ')']]
+            .concat(window.Ratio.sizes().map(function (n) { return [String(n), n + 'v' + n]; }))
+            .forEach(function (o) {
+                var opt = document.createElement('option');
+                opt.value = o[0];
+                opt.textContent = o[1];
+                if (o[0] === sizeNow) { opt.selected = true; }
+                ssel.append(opt);
+            });
+        ssel.addEventListener('change', function () {
+            postPossession({ game: show.game || null, size: ssel.value })
+                .then(function (state) {
+                    flash(state.size
+                        ? 'Line size is ' + state.size + 'v' + state.size + '.'
+                        : 'Line size back to the season default.');
+                })
+                .catch(function (e) { alert(e.message); });
+        });
+        sWrap.append(ssel);
+        bar.append(sWrap);
+
         var ratios = ratioChoices();
         if (!ratios) {
             // Say why rather than showing nothing. An absent control is
             // indistinguishable from a missing feature, and the first question
             // asked of this panel was "where do I enter the gender ratio".
-            bar.append(el('span', 'muted',
-                show.game ? 'No gender ratio: this division is not mixed.'
-                    : 'Pick a game to set the gender ratio.'));
+            var why;
+            if (!show.game) {
+                why = 'Pick a game to set the gender ratio.';
+            } else if (isMixedGame()) {
+                // The size decides this, so say so — otherwise the control
+                // vanishing right after the size was set reads as a fault.
+                var n = Number(possession.size) || window.Ratio.defaultSize(seasonType);
+                why = 'No gender ratio: ' + n + 'v' + n + ' splits evenly, so it is '
+                    + Math.floor(n / 2) + 'MMP/' + Math.floor(n / 2) + 'FMP every point.';
+            } else {
+                why = 'No gender ratio: this division is not mixed.';
+            }
+            bar.append(el('span', 'muted', why));
         }
         if (ratios) {
             var rWrap = el('span', 'kitside');

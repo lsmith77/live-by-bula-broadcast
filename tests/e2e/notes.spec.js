@@ -778,7 +778,7 @@ test.describe('prepared notes', () => {
     await expect(page.locator('.roster').first()).toBeVisible();
 
     await page.locator('#tabPlay').click();
-    const sel = page.locator('#tracking select.tsel');
+    const sel = page.locator('#tracking select.ratiosel');
     await expect(sel).toBeEnabled();
     await sel.selectOption({ index: 1 });
 

@@ -2328,15 +2328,9 @@ try {
      */
     function abbaSlot(n) { return window.Ratio.slot(n); }
 
-    /**
-     * The two ratios in play, by season type.
-     *
-     * Indoor and beach are five a side, outdoor seven — same source as the
-     * scoresheet (`pdfscoresheet.php:461-471`).
-     */
+    /** The ratios in play — two at an odd line size, one at an even. */
     function ratioPair() {
-        return window.Ratio.pair((state.payload && state.payload.seasoninfo
-            && state.payload.seasoninfo.type) || 'outdoor');
+        return window.Ratio.pairForSize(lineSize()) || [];
     }
 
     /**
@@ -2414,26 +2408,100 @@ try {
     function firstRatioIsLocal() { return !possession.ratio1 && !!localRatioValue(); }
 
     /**
-     * Players per line: the declared ratio's halves when one exists, else the
-     * WFDF default for the season type — outdoor 7, indoor and beach 5.
+     * Players per side, declared — shared if the desk is linked, else local.
      *
-     * UltiOrganizer records no players-per-line anywhere, so a 6v6 or 4v4
-     * format cannot be detected from any payload — another entry on the
-     * upstream gaps list (`STUDIO.md` §10.2). Until then a desk covering one
-     * corrects the count by declaring the format's ratio.
+     * Exactly the ratio's own arrangement, and for the same reason: nothing
+     * upstream carries it. `seasoninfo.type` is a SURFACE, and UltiOrganizer
+     * has no players-per-side column at game, pool, series or season level, so
+     * a 6v6 or 4v4 game can only be declared by hand. The season type's
+     * conventional size is the fallback, not the answer.
      */
-    function lineSize() {
-        var counts = window.Ratio.counts(currentRatioFull());
-        if (counts) { return counts.MMP + counts.FMP; }
-        var type = String(((state.payload || {}).seasoninfo || {}).type || 'outdoor').toLowerCase();
-        return type === 'indoor' || type === 'beach' ? 5 : 7;
+    var SIZE_KEY = 'uo-linesize-' + CONFIG.gameId;
+    /** One-shot note after a shared size replaced a local one. */
+    var sizeNote = null;
+
+    function localSizeValue() {
+        try {
+            var v = parseInt(window.localStorage.getItem(SIZE_KEY) || '', 10);
+            return window.Ratio.isSize(v) ? v : null;
+        } catch (e) { return null; }
     }
 
-    /** This point's full ratio ('4MMP/3FMP'), or null before anyone declared point 1's. */
+    function rememberLocalSize(v) {
+        try {
+            if (v) { window.localStorage.setItem(SIZE_KEY, String(v)); }
+            else { window.localStorage.removeItem(SIZE_KEY); }
+        } catch (e) { /* private mode */ }
+    }
+
+    /** Shared wins; local only ever fills a gap. Run before every render. */
+    function reconcileSize() {
+        var local = localSizeValue();
+        if (!local || !possession.size) { return; }
+        if (Number(possession.size) !== Number(local)) {
+            sizeNote = { local: local, shared: Number(possession.size) };
+        }
+        rememberLocalSize(null);
+    }
+
+    function declaredSize() { return Number(possession.size) || localSizeValue() || null; }
+
+    function sizeIsLocal() { return !possession.size && !!localSizeValue(); }
+
+    /**
+     * The line size in force — the ONE answer, used by the cap and the pair
+     * alike.
+     *
+     * These were two functions and they could disagree: with no size declared
+     * on an outdoor season, a shared `3MMP/2FMP` made the cap 5 while the pair
+     * stayed the seven-a-side one, so ABBA alternated a five-a-side ratio with
+     * a seven-a-side one and the panel contradicted the count beside it.
+     *
+     * The shared ratio is consulted, the LOCAL one is not, and that is not an
+     * oversight: a local ratio is only ever stored after being validated
+     * against `ratioPair()`, so it already sums to whatever this returns —
+     * reading it back here would close the loop through localRatioValue().
+     */
+    function lineSize() {
+        var declared = declaredSize();
+        if (declared) { return declared; }
+        var counts = window.Ratio.counts(possession.ratio1);
+        if (counts) { return counts.MMP + counts.FMP; }
+        return seasonSize();
+    }
+
+    /** The season type's conventional size, which is a default and not a fact. */
+    function seasonSize() {
+        return window.Ratio.defaultSize(
+            ((state.payload || {}).seasoninfo || {}).type);
+    }
+
+    /**
+     * Whether the ratio is something to declare at all.
+     *
+     * Only at an ODD line size, where the question is which matching gets the
+     * extra player. At 6v6 and 4v4 the split is forced, so there is nothing to
+     * choose, nothing for ABBA to alternate between, and no split to report —
+     * the whole ratio apparatus stands down exactly as it does in open and
+     * women's, while the picker's quotas carry on working from the forced 3/3.
+     */
+    function ratioIsChoice() {
+        return isMixedDivision() && window.Ratio.isChoice(lineSize());
+    }
+
+    /**
+     * This point's full ratio, or null before anyone declared point 1's.
+     *
+     * At an EVEN size it is forced and needs no declaration: one ratio exists,
+     * every point is played at it, and the picker gets its quotas for free.
+     */
     function currentRatioFull() {
-        var first = firstRatioValue();
-        if (!isMixedDivision() || !first) { return null; }
+        if (!isMixedDivision()) { return null; }
         var pair = ratioPair();
+        if (!pair.length) { return null; }
+        if (pair.length === 1) { return pair[0]; }
+        var first = firstRatioValue();
+        if (!first) { return null; }
         var other = pair[0] === first ? pair[1] : pair[0];
         return abbaSlot(currentPointNumber()) === 'A' ? first : other;
     }
@@ -3451,15 +3519,76 @@ try {
      * the code rather than taking a block in the panel that is read between
      * every point. Mixed divisions only — there is nothing to set otherwise.
      */
+    /**
+     * Players per side, in the toolbar beside the ratio.
+     *
+     * Shown for every division, not only mixed: 6v6 open is as real as 6v6
+     * mixed and the "x / 7" cap is as wrong in it. Writes go to the shared
+     * store when the desk is linked and to this screen when it is not, exactly
+     * like the ratio — and, like the ratio, a shared value replaces a local one
+     * rather than the two coexisting.
+     */
+    function renderSizeControl(box) {
+        var current = declaredSize();
+        var sel = document.createElement('select');
+        sel.className = 'tsel sizesel' + (sizeIsLocal() ? ' local' : '');
+        sel.setAttribute('aria-label', 'Players per side');
+        sel.title = possession.canTrack
+            ? 'Players per side. Nothing upstream records it, so a 6v6 or 4v4 '
+                + 'game has to be said here — it sets the line cap, and in mixed '
+                + 'the quotas with it.'
+            : 'Players per side — kept on this screen until the desk is linked; '
+                + 'a shared value replaces it.';
+
+        var opts = [['', 'size: ' + seasonSize() + 'v' + seasonSize() + ' (default)']];
+        window.Ratio.sizes().forEach(function (n) {
+            opts.push([String(n), n + 'v' + n]);
+        });
+        opts.forEach(function (o) {
+            var opt = document.createElement('option');
+            opt.value = o[0];
+            opt.textContent = o[1];
+            if (o[0] === (current ? String(current) : '')) { opt.selected = true; }
+            sel.append(opt);
+        });
+        sel.addEventListener('change', function () {
+            setLineSize(sel.value ? Number(sel.value) : null);
+        });
+        box.append(sel);
+    }
+
+    function setLineSize(v) {
+        if (!possession.canTrack) {
+            rememberLocalSize(v);
+            // A local size change has to take the local ratio with it when they
+            // no longer agree — the shared store does exactly this, and the two
+            // paths disagreeing about it is how a desk ends up with a 4MMP/3FMP
+            // declared against a six.
+            var counts = window.Ratio.counts(localRatioValue());
+            if (v && counts && counts.MMP + counts.FMP !== v) { rememberLocalRatio(null); }
+            render();
+            return;
+        }
+        track.setSize(v)
+            .then(function (state) {
+                possession = state;
+                rememberLocalSize(null);
+                render();
+            })
+            .catch(function () { /* transient */ });
+    }
+
     function renderRatioControl() {
         var box = document.getElementById('tracking');
-        if (!box || !isMixedDivision()) { return; }
+        if (!box) { return; }
+        renderSizeControl(box);
+        if (!ratioIsChoice()) { return; }
 
         var pair = ratioPair();
         var current = firstRatioValue();
 
         var sel = document.createElement('select');
-        sel.className = 'tsel';
+        sel.className = 'tsel ratiosel';
         sel.title = possession.canTrack
             ? (current
                 ? 'Gender ratio on point 1. Everything else follows the ABBA pattern from it.'
@@ -3630,7 +3759,9 @@ try {
      * next are 4M/3F, then it flips".
      */
     function ratioPanel() {
-        if (!isMixedDivision()) { return null; }
+        // Gone entirely at an even size: nothing to declare, nothing to
+        // alternate, nothing to split. See ratioIsChoice().
+        if (!ratioIsChoice()) { return null; }
 
         var box = el('div', 'abba');
         var pair = ratioPair();
@@ -3745,6 +3876,21 @@ try {
         box.append(note);
     }
 
+    /** The one-shot "shared replaced local" note for the line size. */
+    function appendSizeNote(box) {
+        if (!sizeNote) { return; }
+        var note = el('p', 'muted');
+        note.append(document.createTextNode(
+            'The shared line size (' + sizeNote.shared + 'v' + sizeNote.shared
+            + ') replaced the one set on this screen (' + sizeNote.local + 'v'
+            + sizeNote.local + '). '));
+        var ok = el('button', 'chip', 'OK');
+        ok.type = 'button';
+        ok.addEventListener('click', function () { sizeNote = null; render(); });
+        note.append(ok);
+        box.append(note);
+    }
+
     function renderPlay() {
         body.replaceChildren();
         var s = sides();
@@ -3758,6 +3904,10 @@ try {
         // the controls being pressed, and the names on the field. Season
         // records do not change while a point is being played, so they go to the
         // bottom where they can be scrolled to between points.
+        // The size note goes above everything and outside the ratio panel: at an
+        // even size that panel does not exist, and "a shared 6v6 replaced your
+        // 7v7" is exactly the case where it does not.
+        appendSizeNote(body);
         var ratio = ratioPanel();
         if (ratio) { body.append(ratio); }
         var track = trackingPanel();
@@ -3789,6 +3939,7 @@ try {
        --------------------------------------------------------------- */
 
     function render() {
+        reconcileSize();
         reconcileRatio();
         renderTop();
         document.getElementById('tabPrep').setAttribute('aria-pressed', state.mode === 'prep' ? 'true' : 'false');

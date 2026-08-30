@@ -124,7 +124,31 @@ final class Possession
     public static function defaults(): array
     {
         return ['rev' => 0, 'enabled' => false, 'code' => null,
-                'ratio1' => null, 'events' => [], 'stoppage' => null, 'touched' => 0];
+                'ratio1' => null, 'size' => null, 'events' => [], 'stoppage' => null,
+                'touched' => 0];
+    }
+
+    /**
+     * Players per side.
+     *
+     * Declared by hand because nothing upstream carries it: `seasoninfo.type`
+     * is a surface (outdoor, indoor, beach) and no table in UltiOrganizer has
+     * a players-per-side column at game, pool, series or season level. Null
+     * means nobody said, and the reader falls back to the season type's
+     * conventional size.
+     */
+    public static function isSize(int $value): bool
+    {
+        return $value >= 4 && $value <= 7;
+    }
+
+    /** How many players a ratio puts on the field, or null if it is not one. */
+    public static function ratioTotal(?string $value): ?int
+    {
+        if ($value === null || !self::isRatio($value)) {
+            return null;
+        }
+        return (int) $value[0] + (int) substr($value, strpos($value, '/') + 1, 1);
     }
 
     /**
@@ -177,6 +201,8 @@ final class Possession
             'code' => $this->loadCode(),
             'ratio1' => isset($decoded['ratio1']) && is_string($decoded['ratio1'])
                 && self::isRatio($decoded['ratio1']) ? $decoded['ratio1'] : null,
+            'size' => isset($decoded['size']) && self::isSize((int) $decoded['size'])
+                ? (int) $decoded['size'] : null,
             'events' => self::cleanEvents($decoded['events'] ?? []),
             'stoppage' => self::cleanStoppage($decoded['stoppage'] ?? null),
             'touched' => (int) ($decoded['touched'] ?? 0),
@@ -332,6 +358,36 @@ final class Possession
                 $state['ratio1'] = $raw;
             } else {
                 return ['ok' => false, 'error' => 'A ratio looks like "4MMP/3FMP".', 'state' => $state];
+            }
+        }
+
+        /**
+         * Players per side, and the ratio that has to agree with it.
+         *
+         * Same reasoning as the ratio: a fact about the game that nothing
+         * records, entered once and read by every surface. It is stored
+         * alongside rather than derived because the derivation is the wrong
+         * way round -- a ratio implies a size, but only once somebody has
+         * chosen one, and at 6v6 or 4v4 there is nothing to choose.
+         *
+         * Changing the size CLEARS a ratio that no longer fits it. Keeping
+         * "4MMP/3FMP" against a declared six would leave the two disagreeing
+         * about how many people are on the field, and every consumer resolves
+         * that disagreement differently -- the quotas from one, the cap from
+         * the other. Silence is recoverable; a confident contradiction is not.
+         */
+        if (array_key_exists('size', $change)) {
+            $raw = $change['size'];
+            if ($raw === null || $raw === '') {
+                $state['size'] = null;
+            } elseif (is_numeric($raw) && self::isSize((int) $raw)) {
+                $state['size'] = (int) $raw;
+            } else {
+                return ['ok' => false, 'error' => 'A line size is 4, 5, 6 or 7.', 'state' => $state];
+            }
+            if ($state['size'] !== null && $state['ratio1'] !== null
+                && self::ratioTotal($state['ratio1']) !== $state['size']) {
+                $state['ratio1'] = null;
             }
         }
 

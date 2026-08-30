@@ -79,6 +79,7 @@ function respond(Possession $store, bool $isAdmin, ?string $askedCode = null): v
         'game' => $store->game(),
         'events' => $state['events'],
         'ratio1' => $state['ratio1'],
+        'size' => $state['size'],
         'hasCode' => $state['code'] !== null,
         'canTrack' => $askedCode !== null && $store->allowsCode($askedCode),
         'connected' => $store->connectedCount(),
@@ -136,14 +137,15 @@ if (!$isAdmin && !$byCode) {
     exit;
 }
 
-// A code holder may set the ratio as well as possession: they are the one
-// watching the game with the scoresheet in front of them, and it is the same
-// kind of fact -- something true about the game that nothing records.
-// Corrections sit with the presses: whoever can record possession can fix what
-// they recorded, and needs to be able to do it in the next second.
+// A code holder may set the ratio and the line size as well as possession: they
+// are the one watching the game with the scoresheet in front of them, and both
+// are the same kind of fact -- something true about the game that nothing
+// records. Corrections sit with the presses: whoever can record possession can
+// fix what they recorded, and needs to be able to do it in the next second.
 $allowed = $isAdmin
-    ? ['enabled', 'game', 'code', 'score', 'defence', 'ratio1', 'undo', 'clearPoint', 'at', 'stoppage']
-    : ['score', 'defence', 'ratio1', 'undo', 'clearPoint', 'at', 'stoppage'];
+    ? ['enabled', 'game', 'code', 'score', 'defence', 'ratio1', 'size', 'undo',
+        'clearPoint', 'at', 'stoppage']
+    : ['score', 'defence', 'ratio1', 'size', 'undo', 'clearPoint', 'at', 'stoppage'];
 
 $change = [];
 foreach ($allowed as $key) {

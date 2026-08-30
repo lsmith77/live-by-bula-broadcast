@@ -885,7 +885,7 @@ test.describe('gender ratio', () => {
       // the control rather than carrying one — the selector is in the toolbar.
       await expect(panel).toContainText(/ratio for point 1|ratio for point 1 yet/i);
       await expect(panel.locator('.abbainline .item')).toHaveCount(0);
-      await expect(page.locator('#tracking .tsel')).toHaveCount(1);
+      await expect(page.locator('#tracking .ratiosel')).toHaveCount(1);
     });
   });
 
@@ -895,5 +895,101 @@ test.describe('gender ratio', () => {
     await page.locator('#tabPlay').click();
     await page.waitForTimeout(1500);
     await expect(page.locator('.abba')).toHaveCount(0);
+  });
+
+  /**
+   * Declare a line size for the mixed fixture, restoring it afterwards.
+   *
+   * The page has to be somewhere real first: writePossession fetches a relative
+   * URL from inside the page, which about:blank cannot resolve.
+   */
+  async function withSize(page, size, body) {
+    await loginAsAdmin(page, test);
+    await page.goto(`/c/${MIXED_GAME}`);
+    const before = await readPossession(page);
+    try {
+      await writePossession(page, { game: MIXED_GAME, size });
+      await body();
+    } finally {
+      await writePossession(page, { game: MIXED_GAME, size: before.size || '' });
+      await writePossession(page, { game: MIXED_GAME, ratio1: before.ratio1 || '' });
+    }
+  }
+
+  test('an even line size retires the whole ratio apparatus', async ({ page }) => {
+    // 6v6 is 3MMP/3FMP and there is nothing to decide, nothing for ABBA to
+    // alternate between, and no split to report — so it goes as completely as
+    // it does in open and women's, rather than offering one option.
+    await withSize(page, 6, async () => {
+      await page.goto(`/c/${MIXED_GAME}`);
+      await page.locator('#tabPlay').click();
+      await page.waitForTimeout(1500);
+      await expect(page.locator('.abba')).toHaveCount(0);
+      await expect(page.locator('#tracking .ratiosel')).toHaveCount(0);
+      // The size control itself stays — it is how you get back out of 6v6.
+      await expect(page.locator('#tracking .sizesel')).toHaveCount(1);
+    });
+  });
+
+  test('an even size still gives the picker its quotas, from the forced split',
+    async ({ page }) => {
+      // The ratio UI going does not mean the constraint went: 3/3 is still a
+      // rule a mixed line has to obey, and the picker still has to help.
+      await withSize(page, 6, async () => {
+        await page.goto(`/c/${MIXED_GAME}`);
+        await page.locator('#tabPlay').click();
+        await expect(page.locator('.nums').first()).toBeVisible();
+        await expect(page.locator('.pickhead').first()).toContainText('/ 6');
+      });
+    });
+
+  test('an odd size names the ratio by its larger half', async ({ page }) => {
+    // "4MMP" and "4FMP" at sevens, "3MMP" and "3FMP" at fives — the majority
+    // names the ratio, because on a fixed line size it implies the other half.
+    await withSize(page, 5, async () => {
+      await page.goto(`/c/${MIXED_GAME}`);
+      await page.locator('#tabPlay').click();
+      const sel = page.locator('#tracking .ratiosel');
+      await expect(sel).toHaveCount(1);
+      const labels = await sel.locator('option').allInnerTexts();
+      expect(labels.join(' ')).toContain('3MMP');
+      expect(labels.join(' ')).toContain('3FMP');
+      expect(labels.join(' '), 'never the minority half').not.toContain('2MMP');
+    });
+  });
+
+  test('changing the size clears a ratio that no longer fits it', async ({ page }) => {
+    await loginAsAdmin(page, test);
+    // A declared 4MMP/3FMP against a declared six would leave the two
+    // disagreeing about how many people are on the field, and every consumer
+    // resolves that differently. Silence is recoverable; a contradiction is not.
+    await page.goto(`/c/${MIXED_GAME}`);
+    const before = await readPossession(page);
+    try {
+      await writePossession(page, { game: MIXED_GAME, size: 7 });
+      await writePossession(page, { game: MIXED_GAME, ratio1: '4MMP/3FMP' });
+      expect((await readPossession(page)).ratio1).toBe('4MMP/3FMP');
+
+      const after = await writePossession(page, { game: MIXED_GAME, size: 6 });
+      expect(after.body.size).toBe(6);
+      expect(after.body.ratio1, 'the stale ratio must not survive').toBeNull();
+
+      // A size the ratio still fits leaves it alone.
+      await writePossession(page, { game: MIXED_GAME, ratio1: '3MMP/2FMP' });
+      const kept = await writePossession(page, { game: MIXED_GAME, size: 5 });
+      expect(kept.body.ratio1).toBe('3MMP/2FMP');
+    } finally {
+      await writePossession(page, { game: MIXED_GAME, size: before.size || '' });
+      await writePossession(page, { game: MIXED_GAME, ratio1: before.ratio1 || '' });
+    }
+  });
+
+  test('the store refuses a size that is not a line', async ({ page }) => {
+    await loginAsAdmin(page, test);
+    await page.goto(`/c/${MIXED_GAME}`);
+    for (const bad of [3, 8, 0, 'seven']) {
+      const r = await writePossession(page, { game: MIXED_GAME, size: bad });
+      expect(r.status, JSON.stringify(bad)).toBe(400);
+    }
   });
 });

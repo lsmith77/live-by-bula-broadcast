@@ -101,6 +101,7 @@
                     : write({ stoppage: false });
             },
             setRatio: function (ratio) { return write({ ratio1: ratio || '' }); },
+            setSize: function (size) { return write({ size: size || '' }); },
             undoLast: function (score) { return write({ score: score, undo: true }); },
             clearPoint: function (score) { return write({ score: score, clearPoint: true }); },
             deleteAt: function (score, at) { return write({ score: score, at: at }); }

@@ -838,7 +838,6 @@ $json = static fn ($v): string => json_encode($v, JSON_UNESCAPED_SLASHES | JSON_
                     .sort(function (a, b) { return a.num - b.num; });
 
                 var mixed = window.Ratio.isMixed(info.seriesname);
-                var pair = window.Ratio.pair(payload.seasoninfo && payload.seasoninfo.type);
                 // Walk the goals into steps. Each carries the point number, so
                 // its ratio slot falls out of the ABBA pattern.
                 var steps = [];
@@ -867,7 +866,20 @@ $json = static fn ($v): string => json_encode($v, JSON_UNESCAPED_SLASHES | JSON_
                     .catch(function () { return null; })
                     .then(function (declared) {
                         var first = String((declared && declared.ratio1) || '').trim();
-                        var showRatio = mixed && pair.indexOf(first) !== -1;
+                        // The line size comes from the same file as the ratio,
+                        // because the two have to agree: a 5v5 declared on an
+                        // outdoor season makes 3MMP/2FMP the valid pair, and a
+                        // card still checking the seven-a-side pair would judge
+                        // a perfectly good ratio invalid and quietly stop
+                        // labelling points. An EVEN size has one forced ratio
+                        // and nothing to label, so the card says nothing —
+                        // matching the commentator panel, which is gone there.
+                        var size = Number(declared && declared.size)
+                            || window.Ratio.defaultSize(
+                                payload.seasoninfo && payload.seasoninfo.type);
+                        var pair = window.Ratio.pairForSize(size) || [];
+                        var showRatio = mixed && pair.length > 1
+                            && pair.indexOf(first) !== -1;
                         var other = pair[0] === first ? pair[1] : pair[0];
 
                         return {
