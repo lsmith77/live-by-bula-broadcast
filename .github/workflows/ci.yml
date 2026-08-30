@@ -15,13 +15,32 @@
 # controller landed, a real HTTP suite against `php -S` that proves the routing
 # and the operator-state guards.
 #
-# To add the BROWSER suite you need Live! reachable from the runner: mirror it
-# privately, add a deploy key or token as a secret, and stand up PHP, MySQL and
-# `fixtures/dev-fixture.sql` in a job with `ADMIN_PASS` set. Note that secrets
-# are not exposed to workflows from forked pull requests, so that job would only
-# ever run on pushes and same-repository branches. The other route is standalone
-# milestone 2 (docs/STANDALONE.md): a provider reading recorded payloads would
-# let the browser suite run here with no host at all.
+# THE BROWSER SUITE COULD NOW RUN HERE, AND DELIBERATELY DOES NOT
+#
+# With the recorded provider, a capture is enough to render every page with no
+# host at all, and the standalone job proves exactly that for the commentary
+# desk. Pointing the whole browser suite at a capture would therefore work.
+#
+# It is not done because of what it would quietly stop testing. That suite
+# drives a real instance because the PAYLOAD SHAPE is the thing that has been
+# wrong before — `teams.hometeam` rather than `awayteam`, `poolinfo.timecap` in
+# minutes, an error body that is a string. A capture is real data, which makes
+# it far better than a mock, but it is data frozen on the day it was taken. Run
+# the suite against it and every one of those assertions passes forever,
+# including after Live! changes the shape underneath. That is the mock problem
+# wearing a better disguise, and it would be worst precisely when it mattered.
+#
+# So the division is: this workflow proves the logic, the routing and the
+# guards, and that a page renders from a recording. `npm test` against a real
+# instance proves the contract with Live!, and remains a human's job before a
+# branch is called done. A green tick here is not a green suite, and the docs
+# say so in the same words.
+#
+# The other route, if the contract ever needs proving automatically: mirror
+# Live! privately, add a deploy key as a secret, stand up PHP and MySQL with
+# `fixtures/dev-fixture.sql`, and set `ADMIN_PASS`. Secrets are not exposed to
+# workflows from forked pull requests, so it would only run on pushes and
+# same-repository branches.
 
 name: CI
 
@@ -105,17 +124,22 @@ jobs:
 
       - run: npm ci
 
-      # The first browser-free HTTP suite here, and the reason it can run at
-      # all: standalone mode needs no UltiOrganizer, no Live!, no database and
-      # no Apache — just PHP's built-in server. It builds its own hostless tree
-      # and drives it with Playwright's request fixture, so no browser is
-      # downloaded either.
+      # Chromium only, and only here: most of this suite drives HTTP directly,
+      # but the tests that prove a page RENDERS from a capture need a real
+      # browser. Unlike the main config this one does not ask for system
+      # Chrome, so the bundled build is what it wants.
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+
+      # The reason this can run at all: standalone mode needs no UltiOrganizer,
+      # no Live!, no database and no Apache — just PHP's built-in server and a
+      # recorded capture. It builds its own hostless tree per run.
       #
       # What it guards is the thing most worth guarding: that conf/ — which
       # holds the commentary desk's notes about named people — is not served
       # over HTTP. `php -S` does not read .htaccess, so those rules exist a
       # second time in app.php's router, and only a request can prove it.
-      - name: Routing, guards and operator-state exposure
+      - name: Routing, guards, and a page rendered from a capture
         run: npm run test:standalone
 
   docs:
