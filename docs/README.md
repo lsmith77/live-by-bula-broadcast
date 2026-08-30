@@ -138,6 +138,16 @@ And it does not stop at the first pull. **Teardown carries the two most expensiv
 
 **Go here for:** why this is a readiness display rather than a notes app, and the scoping rule that keeps it one.
 
+### [`RELAY.md`](RELAY.md) — state in the browser, server as a relay
+
+A concept, with nothing built. Could the state live in the participating browsers, with a server that only passes messages and stores nothing — cheap to run as a service, with no data to be responsible for?
+
+The encouraging half: **the stores are already most of the way to CRDTs**, not by design but because each was fixed after "two people wrote and one lost". Notes are a per-field last-write-wins map, lines a register per side, possession an append-only keyed log, and a goal is written as the point it creates rather than as `+1`.
+
+The hard half: a relay that stores nothing cannot answer a client that joins late, and the client that joins late is **the scoreboard inside a video switcher** — no keyboard, unknown engine, reloads unattended. It also covers why peer-to-peer between the desks is tempting and why venue wifi is the worst place to try it, why "no data at rest" is a weaker claim than end-to-end encryption, and the two-tier rule: broadcast surfaces stay conservative, desk surfaces may take dependencies, and neither gets a build step.
+
+**Go here for:** whether this could be a service, and what would have to be true first.
+
 ### [`MATCHCONTROL.md`](MATCHCONTROL.md) — score and clock, and who keeps them
 
 A concept, with nothing built, and not standalone-specific. A broadcast crew is one, two, three or four people depending on the day, and the wrong way to allocate the score button is to pick a crew size and design for it. `STUDIO.md` §3.5 already settled the axis — *does this compete with the capturer's main job, or is it their main job* — and for score the answer is whoever is already watching the game, which at two people is the commentator rather than the operator.
