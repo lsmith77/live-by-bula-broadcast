@@ -29,7 +29,7 @@
  * tournament — or write a separate anonymiser and be honest that its output is
  * derived rather than recorded.
  */
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, writeFileSync, readFileSync, existsSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import path from 'node:path';
 
@@ -113,14 +113,25 @@ for (const pid of playerIds) {
   await grab('player history', Provider.keyFor('playerevents', pid), () => api.playerEvents(pid));
 }
 
-save('manifest.json', {
-  captured_at: capturedAt,
-  captured_iso: new Date(capturedAt * 1000).toISOString(),
-  game: Number(gameId),
-  season: game.seasoninfo?.season_id ?? null,
-  source: base,
-  files: written.length,
-});
+// Merged rather than overwritten, so a directory can hold several games. Each
+// game keeps its OWN instant: two games captured ten minutes apart replayed
+// from one timestamp would put one of their clocks ten minutes out, silently.
+let manifest = { games: {} };
+const manifestPath = path.join(out, 'manifest.json');
+if (existsSync(manifestPath)) {
+  try {
+    manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
+    manifest.games ||= {};
+  } catch { /* a corrupt manifest is replaced, not repaired */ }
+}
+
+manifest.games[String(gameId)] = capturedAt;
+// Kept for a single-game capture read by something that predates `games`.
+manifest.captured_at = capturedAt;
+manifest.captured_iso = new Date(capturedAt * 1000).toISOString();
+manifest.season = game.seasoninfo?.season_id ?? manifest.season ?? null;
+manifest.source = base;
+save('manifest.json', manifest);
 
 console.log(`\n${written.length} files. Replay with:`);
 console.log(`  Provider.recorded({ base: '${out}' })`);

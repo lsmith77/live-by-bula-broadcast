@@ -1,0 +1,19 @@
+{
+  "playerevents": {
+    "player_id": 911,
+    "firstname": "Dana",
+    "lastname": "Gruber",
+    "num": 42,
+    "team_id": 304,
+    "games": []
+  },
+  "meta": {
+    "cache_lifetime": 300,
+    "expires": "2026-08-30 19:23:07",
+    "cache_version": "20260830.191807",
+    "expires_timestamp": 1788117787,
+    "app_version": "3.0.6",
+    "generated": "2026-08-30 19:18:07",
+    "generated_timestamp": 1788117487
+  }
+}

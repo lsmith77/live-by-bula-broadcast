@@ -1,8 +1,10 @@
 {
-  "captured_at": 1788115368,
-  "captured_iso": "2026-08-30T18:42:48.000Z",
-  "game": 702,
+  "games": {
+    "702": 1788117521,
+    "703": 1788117522
+  },
+  "captured_at": 1788117522,
+  "captured_iso": "2026-08-30T19:18:42.000Z",
   "season": "HRN2026",
-  "source": "http://localhost:8080",
-  "files": 63
+  "source": "http://localhost:8080"
 }

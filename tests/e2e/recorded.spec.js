@@ -168,6 +168,39 @@ test.describe('the clock, rebased', () => {
     expect(p.game_result.timer_paused_duration).toBe(120);
   });
 
+  test('each game in a capture keeps its own instant', async () => {
+    // One directory can hold several games, recorded minutes apart. Replaying
+    // both from a single timestamp puts one clock out by the gap, and nothing
+    // says so — the overlay just quietly reports the wrong minute.
+    const files = {
+      ...FILES,
+      'manifest.json': {
+        captured_at: CAPTURED_AT,
+        games: { 702: CAPTURED_AT, 703: CAPTURED_AT - 600 },
+      },
+      'games-703.json': { game_result: { timer_start: CAPTURED_AT - 600 - 300 } },
+    };
+    const now = (CAPTURED_AT + 86400) * 1000;
+    const { api } = reader(files, now);
+
+    // 702 was 14 minutes in at ITS instant; 703 was 5 minutes in at its own.
+    const a = await api.game(702);
+    expect(Math.floor(now / 1000) - a.game_result.timer_start).toBe(840);
+    const b = await api.game(703);
+    expect(Math.floor(now / 1000) - b.game_result.timer_start).toBe(300);
+  });
+
+  test('a game not named in the manifest falls back to the capture instant', async () => {
+    const files = {
+      ...FILES,
+      'manifest.json': { captured_at: CAPTURED_AT, games: { 999: CAPTURED_AT - 5000 } },
+    };
+    const now = (CAPTURED_AT + 86400) * 1000;
+    const { api } = reader(files, now);
+    const p = await api.game(702);
+    expect(Math.floor(now / 1000) - p.game_result.timer_start).toBe(840);
+  });
+
   test('a capture with no manifest leaves the clock alone rather than guessing', async () => {
     // An unshifted clock is wrong in a way somebody notices. A clock shifted by
     // a guessed amount is wrong in a way nobody does.

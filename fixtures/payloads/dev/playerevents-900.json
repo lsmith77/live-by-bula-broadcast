@@ -1,0 +1,19 @@
+{
+  "playerevents": {
+    "player_id": 900,
+    "firstname": "Robin",
+    "lastname": "Hart",
+    "num": 1,
+    "team_id": 304,
+    "games": []
+  },
+  "meta": {
+    "cache_lifetime": 300,
+    "expires": "2026-08-30 19:21:39",
+    "cache_version": "20260830.185326",
+    "expires_timestamp": 1788117699,
+    "app_version": "3.0.6",
+    "generated": "2026-08-30 19:16:39",
+    "generated_timestamp": 1788117399
+  }
+}

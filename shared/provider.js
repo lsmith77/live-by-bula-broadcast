@@ -203,9 +203,15 @@
         }
 
         /** Shift the absolute clock fields by the capture's age. */
-        function rebase(payload) {
+        function rebase(payload, gameId) {
             return capturedAt().then(function (m) {
-                var taken = Number(m.captured_at);
+                // Per game first: one directory can hold several, recorded
+                // minutes apart, and replaying both from one instant puts one
+                // of the clocks out by the gap without anything saying so.
+                var perGame = m.games && gameId !== undefined && gameId !== null
+                    ? m.games[String(gameId)]
+                    : undefined;
+                var taken = Number(perGame !== undefined ? perGame : m.captured_at);
                 var result = payload && payload.game_result;
                 if (!isFinite(taken) || !result) { return payload; }
 
@@ -225,7 +231,11 @@
         }
 
         return {
-            game: function (id) { return read(keyFor('games', id)).then(rebase); },
+            game: function (id) {
+                return read(keyFor('games', id)).then(function (p) {
+                    return rebase(p, id);
+                });
+            },
             games: function () { return read(keyFor('games')); },
             team: function (id) { return read(keyFor('teams', id)); },
             teams: function () { return read(keyFor('teams')); },
