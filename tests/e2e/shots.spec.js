@@ -20,6 +20,9 @@ const { test } = require('@playwright/test');
 const { GAME_ID, loginAsAdmin, readShow, writeShow, writePossession, expect } = require('./helpers');
 
 const OUT = path.join(__dirname, '..', '..', 'docs', 'images');
+
+/** The mixed fixture — the only one where matchings and the ratio exist. */
+const MIXED_GAME = 703;
 fs.mkdirSync(OUT, { recursive: true });
 
 /** A scoreboard on a flat backdrop, so a transparent PNG is not invisible on GitHub. */
@@ -100,12 +103,19 @@ test('commentator, player sheet', async ({ page }) => {
  * shows declared pronouns beside the names — plus the roster identity line the
  * CSV round trip fills. The room is a dedicated code, seeded and emptied here,
  * so no real desk's notes are touched.
+ *
+ * Shot on the MIXED fixture rather than the open one, because everything this
+ * screen does that is worth a picture only exists there: the FMP/MMP tags, the
+ * field rows grouped by matching, the gender-ratio line with its per-ratio
+ * split, and a substitution in progress. The open fixture showed the same page
+ * with all of that switched off.
  */
 test('commentator, play by play', async ({ page, request }) => {
   // From the room-code alphabet, which has no O/I/L/U — and distinct from
   // anything a person would be handed.
   const CODE = 'ZSNAP';
   const NOTES = '/index.php?view=live/overlays/notes';
+  const GAME_ID = MIXED_GAME;
   await page.addInitScript(({ game, code }) => {
     localStorage.setItem(`uo-lines-code-${game}`, code);
     localStorage.setItem('uo-commentator-name', 'Desk');
@@ -117,18 +127,36 @@ test('commentator, play by play', async ({ page, request }) => {
   await page.goto(`/c/${GAME_ID}`);
   await expect(page.locator('.roster').first()).toBeVisible();
 
-  // Player ids come from the rendered roster, not from guesses about the fixture.
-  const ids = await page.locator('.roster').first()
+  // Player ids come from the rendered rosters, not from guesses about the
+  // fixture — and from BOTH, because a matching only groups and counts the
+  // team that has one. Seeding the home side alone left the away picker with
+  // no quotas, so nothing was ever set aside and the line filled to fourteen.
+  const rosterIds = (nth) => page.locator('.roster').nth(nth)
     .locator('td.who button[data-player]')
     .evaluateAll((btns) => btns.map((b) => Number(b.getAttribute('data-player'))));
-  const seeded = [
-    {
-      pronouns: 'she/her', nickname: 'Ace', pronunciation: 'OW-er',
-      text: 'Captain. Handball first, then ultimate at university — watch the pulls.',
+  const ids = await rosterIds(0);
+  const awayIds = await rosterIds(1);
+  // Matchings for the whole squad, because the grouping is the point: four
+  // FMP then three MMP fills a legal 4FMP/3MMP line with somebody spare in
+  // each group, so a substitution has a legal replacement to offer.
+  const matchingOf = (i) => (i % 2 === 0 ? 'FMP' : 'MMP');
+  const seeded = ids.map((player, i) => ({
+    player,
+    fields: {
+      matching: matchingOf(i),
+      ...(i === 0
+        ? {
+          pronouns: 'she/her', nickname: 'Ace', pronunciation: 'OW-er',
+          text: 'Captain. Handball first, then ultimate at university — watch the pulls.',
+        }
+        : {}),
+      ...(i === 1 ? { pronouns: 'they/them' } : {}),
+      ...(i === 2 ? { pronouns: 'he/him' } : {}),
     },
-    { pronouns: 'they/them' },
-    { pronouns: 'he/him' },
-  ].map((fields, i) => ({ player: ids[i], fields }));
+  })).concat(awayIds.map((player, i) => ({
+    player,
+    fields: { matching: matchingOf(i) },
+  })));
 
   try {
     for (const s of seeded) {
@@ -140,20 +168,49 @@ test('commentator, play by play', async ({ page, request }) => {
     // rendered once, so entering play mode before this races the poll.
     await expect(page.locator('.roster td.who .say').first()).toBeVisible();
 
-    // Exactly the first seven a side on the field, whatever the room held
-    // before — toggling blindly would invert a line left by an earlier run.
     await page.locator('#tabPlay').click();
-    for (const panel of [0, 1]) {
-      const chips = page.locator('.cols .panel').nth(panel).locator('.nums button');
-      const count = await chips.count();
-      for (let i = 0; i < count; i += 1) {
-        const on = await chips.nth(i).evaluate((b) => b.classList.contains('on'));
-        if ((i < 7) !== on) { await chips.nth(i).click(); }
-      }
-    }
+
+    // Point 1's ratio, declared from the toolbar. This desk is not linked to a
+    // room, so it is kept locally — which is the path a desk without the
+    // operator's code actually takes, and it needs no login here.
+    const rsel = page.locator('#tracking .ratiosel');
+    await expect(rsel).toBeEnabled();
+    await rsel.selectOption({ index: 1 });
+
+    /**
+     * Fill a legal line without counting anything.
+     *
+     * The picker sets aside every chip that would make the line illegal, so
+     * the first visible unpicked chip is always a legal pick and the loop ends
+     * exactly when the line is full. Injured chips stay visible by design, so
+     * they are the one thing to skip — clicking one is a return from injury,
+     * not a new pick.
+     */
+    const fillLine = async (panel) => {
+      const p = page.locator('.cols .panel').nth(panel);
+      const on = p.locator('.nums button.on');
+      while (await on.count()) { await on.first().click(); }
+      const free = p.locator('.nums button:not(.on):not(.out)');
+      while (await free.count()) { await free.first().click(); }
+    };
+    await fillLine(0);
+    await fillLine(1);
+
     await page.locator('#steps .tbtn.primary').click();
     await expect(page.locator('.onfield .p').first()).toBeVisible();
     await expect(page.locator('.onfield .p .pr').first()).toBeVisible();
+
+    // A substitution in progress, which is the state this screen is in more
+    // often than a still frame suggests: shift-click takes a player off
+    // injured and drops back to the picker, which names the matching the
+    // replacement has to be. Then fill the gap and restart the point, so the
+    // shot shows a full line with the injured player kept below it.
+    await page.locator('.onfield .side').first().locator('.p').nth(2)
+      .click({ modifiers: ['Shift'] });
+    await expect(page.locator('.injnote')).toHaveCount(1);
+    await fillLine(0);
+    await page.locator('#steps .tbtn.primary').click();
+    await expect(page.locator('.onfield .line.offline')).toHaveCount(1);
 
     // Both teams wear #1, so typing the number pins both quick cards: the
     // prepared captain and the opposite number.
@@ -170,8 +227,18 @@ test('commentator, play by play', async ({ page, request }) => {
       while (await on.count()) { await on.first().click(); }
     }
   } finally {
+    // Every channel by name. Saves are DELTAS — an absent key keeps the stored
+    // value — so clearing `text` alone left pronouns, nicknames and matchings
+    // behind, and each run then rendered its own seed on top of the last one's.
+    // The shot has to be reproducible: it is committed, and a diff in it should
+    // mean the page changed.
     for (const s of seeded) {
-      await request.post(NOTES, { data: { code: CODE, player: s.player, text: '' } });
+      await request.post(NOTES, {
+        data: {
+          code: CODE, player: s.player,
+          text: '', nickname: '', pronouns: '', pronunciation: '', matching: '',
+        },
+      });
     }
   }
 });

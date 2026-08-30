@@ -31,7 +31,7 @@ Everything reads through Live!'s public JSON API. No overlay touches the databas
 
 ![Play by play](docs/images/commentator-play.png)
 
-*Play by play — the line on the field, with each player's declared pronouns beside the name about to be said, the less common sets emphasised. Typing a shirt number pins that player's quick card below — here #1, worn by both teams, so both appear — carrying the identity line and the prepared note. Nickname, pronouns and name pronunciation arrive through the team's own CSV, where every player writes their own row.*
+*Play by play, on a mixed game — the line on the field, grouped into its FMP and MMP rows with the matching that needs four on top, and each player's declared pronouns beside the name about to be said, the less common sets emphasised. The gender-ratio line runs the coming points and says which ratio each side is winning on. **8 Eli Haas** went off injured — shift-click, on the field or in the picker — so he stays below the line, struck through and tagged **INJ**, cued three ways so no part of it depends on colour. Typing a shirt number pins that player's quick card below — here #1, worn by both teams, so both appear — carrying the identity line and the prepared note. Nickname, pronouns, name pronunciation and matching arrive through the team's own CSV, where every player writes their own row.*
 
 ## Features
 
