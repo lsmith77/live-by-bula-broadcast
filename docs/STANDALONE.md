@@ -38,7 +38,9 @@ That constraint is the whole design, and it is worth being severe about it, beca
 
 Three cuts, in order of how much they buy:
 
-1. **A payload provider.** `shared/overlay-client.js` is the single fetch point for the scoreboard and the stage. `commentator.php` fetches three entities directly (`games&id`, `teams&id`, `playerevents&id`). Those four call sites become one module — `shared/provider.js` — that answers the same four questions from either source. The switch is one setting.
+1. **A payload provider.** `shared/overlay-client.js` polls for the scoreboard; `commentator.php` fetches four entities directly (`games&id`, `teams&id`, `playerevents&id`, and the games list) and `stage.php` three (`teams&id` twice, `config`). **Seven API call sites across two files, plus the client** — they become one module, `shared/provider.js`, answering the same questions from either source, and the switch is one setting.
+
+Worth noting what that count excludes. The pages make fourteen `fetch` calls in total, and **half of them already talk to this project's own stores** — `notesUrl`, `linesUrl`, `showUrl` — which are flat files under `conf/` and need no provider at all. Standalone does not touch them. The coupling is smaller than a raw grep for `fetch` suggests.
 2. **An auth seam.** The three `SeasonAccess::isLiveAdminAuthenticated($config)` calls become one local function that asks the same question. Standalone answers it from a password hash in `conf/`, with the same session semantics; hosted answers it exactly as now. The point is that `show.php` continues to say "is this an admin" and never learns which regime it is under.
 3. **A front controller.** Ten files guard on `UO_ROUTED_VIEW` and 404 otherwise, which is what stops a direct request to a `.php` reaching anything. Standalone needs its own entry point that sets that constant and dispatches `?view=`, so the guard keeps working unchanged rather than being weakened for the standalone case.
 
