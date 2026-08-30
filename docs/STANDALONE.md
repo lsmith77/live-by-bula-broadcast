@@ -164,6 +164,25 @@ A fair challenge, and the honest answer is *less than the staging order implies*
 
 **A snapshot is one frame.** Replaying a game *progressing* needs a series of captures with their timestamps, played back in order. That is worth having eventually — it is the only way to test what an overlay does as a score changes without a live game — but it is a second step, and the first one is worth shipping without it.
 
+## 7b. Where this actually stands
+
+Milestones 1–3 are built and milestone 2's reader is built; §7 lists them. What follows is what a review of the working thing turned up, because "the tests pass" and "somebody could run a tournament on this" are not yet the same sentence.
+
+**Working standalone today**, verified by loading each page and watching the network rather than by reading the code: the Studio, the stage, the scoreboard and the commentary desk all render a recorded game with no UltiOrganizer, no Live!, no database and no network. The short URLs work. The login works, and the endpoints honour it. `conf/` is not served.
+
+**Known gaps, roughly in the order they would bite:**
+
+| Gap | Consequence | Size |
+|---|---|---|
+| **No way to create `conf/local-config.php`** | An installation has no administrator until somebody hand-writes a PHP file containing a bcrypt hash they generated themselves. This is the first thing a new user hits and there is no documented route through it | small |
+| **`.htaccess` still says `RewriteBase /live/overlays/`** | The short URLs work under `php -S` because `app.php` restates them, and would **not** work on a standalone Apache, which is the other deployment §8 recommends | small |
+| **The stage requests a Live!-relative logo path** | `entity=config` carries `TV_SCREEN_LOGO_PATH` pointing into `live/conf/`, which does not exist here — one 404 per load and no tournament logo | small |
+| **`tests/selftest` is in the front controller's allow-list** | A standalone installation would have to ship `tests/` to serve the switcher diagnostic, which is otherwise dev-only. Either move it or accept that it ships | small |
+| **Nothing checks the committed capture against the fixture** | `fixtures/dev-fixture.sql` can change and the recording will not, and the tests that read it will keep passing against a stale shape — which is a small version of exactly the argument for not running the browser suite against a capture | small |
+| **No editor (milestone 4)** | Everything above replays a recording. Nothing yet lets a person *create* an event, and that is the difference between "the overlays run without a host" and "a tournament can use this" | **large** |
+
+The first four are an afternoon between them. The fifth is a checker. The sixth is the project.
+
 ## 8. What a server would have to be
 
 The point of this section is that the answer is small. Everything below was read off the code rather than assumed, and the headline is that **standalone needs no database and no Composer** — the two things that make the hosted deployment heavy.
