@@ -15,11 +15,12 @@
  *
  *   node tests/capture-check.mjs [dir]
  */
-import { readFileSync, existsSync, globSync } from 'node:fs';
+import { readFileSync, existsSync, readdirSync } from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 const dir = process.argv[2]
-  || path.join(import.meta.dirname, '..', 'fixtures', 'payloads', 'dev');
+  || path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'fixtures', 'payloads', 'dev');
 
 if (!existsSync(dir)) {
   console.log(`No capture at ${dir} — nothing to check.`);
@@ -46,7 +47,8 @@ if (games.length === 0) {
 
 // Every game file present should be in the manifest, and vice versa. A game
 // recorded without its timestamp replays with the wrong clock, silently.
-const gameFiles = globSync('games-*.json', { cwd: dir })
+const gameFiles = readdirSync(dir)
+  .filter((f) => /^games-\d+\.json$/.test(f))
   .map((f) => f.replace(/^games-|\.json$/g, ''));
 
 for (const id of gameFiles) {

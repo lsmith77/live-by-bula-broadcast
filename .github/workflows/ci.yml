@@ -95,7 +95,10 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          # 22 is the supported LTS; 20 reached end of life in April 2026. The
+          # checker scripts themselves run on 18 and up, so a contributor on an
+          # older runtime is not shut out — this is about what CI stands on.
+          node-version: '22'
           cache: npm
 
       # `npm ci` needs a lockfile and installs devDependencies, which here is
@@ -128,7 +131,10 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          # 22 is the supported LTS; 20 reached end of life in April 2026. The
+          # checker scripts themselves run on 18 and up, so a contributor on an
+          # older runtime is not shut out — this is about what CI stands on.
+          node-version: '22'
           cache: npm
 
       - run: npm ci

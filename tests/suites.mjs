@@ -20,17 +20,21 @@
  *
  *   node tests/suites.mjs
  */
-import { readFileSync, globSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-const ROOT = path.join(import.meta.dirname, '..');
+const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 const read = (p) => readFileSync(path.join(ROOT, p), 'utf8');
 
 const unitConfig = read('tests/playwright.unit.config.js');
 const standaloneConfig = read('tests/playwright.standalone.config.js');
 const mainConfig = read('tests/playwright.config.js');
 
-const specs = globSync('*.spec.js', { cwd: path.join(ROOT, 'tests', 'e2e') }).sort();
+// readdirSync rather than fs.globSync, which is Node 22 and up — see
+// tests/links.mjs for the version this cost.
+const specs = readdirSync(path.join(ROOT, 'tests', 'e2e'))
+  .filter((f) => f.endsWith('.spec.js')).sort();
 
 if (specs.length === 0) {
   console.error('No specs found — this check would pass vacuously.');

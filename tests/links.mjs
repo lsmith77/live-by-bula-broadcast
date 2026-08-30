@@ -13,11 +13,11 @@
  *   node tests/links.mjs          # report and exit non-zero on a broken link
  *   node tests/links.mjs --list   # every link it checked, for confidence
  */
-import { readFileSync } from 'node:fs';
-import { globSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-const ROOT = path.join(import.meta.dirname, '..');
+const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 
 /**
  * Extensions worth checking. Deliberately a list rather than "anything with a
@@ -26,10 +26,36 @@ const ROOT = path.join(import.meta.dirname, '..');
  */
 const CHECKED = /\.(md|sql|conf|png|gif|jpg|svg|sh|php|js|mjs|json|yml|yaml|css|txt)$/i;
 
-const files = globSync('**/*.md', {
-  cwd: ROOT,
-  exclude: (name) => name === 'node_modules' || name === 'vendor' || name === 'test-results',
-});
+/**
+ * Every markdown file, walked by hand.
+ *
+ * `fs.globSync` would be tidier and lands only in Node 22; this repository's CI
+ * pinned Node 20, where it is `undefined` and this script died at import with a
+ * stack trace naming the module loader rather than the feature. Written this way
+ * — and resolving its own directory the way `tests/modules.mjs` already does,
+ * rather than through `import.meta.dirname`, which is Node 20.11 — it runs on
+ * anything from Node 18 up. That is one fewer thing for a contributor to have
+ * wrong, and this check going red for a reason unrelated to the docs is worse
+ * than useless.
+ */
+const SKIP = new Set(['node_modules', 'vendor', 'test-results', '.git', 'playwright-report']);
+
+function markdownUnder(dir, prefix = '') {
+  const found = [];
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    if (SKIP.has(entry.name)) continue;
+    const rel = prefix ? `${prefix}/${entry.name}` : entry.name;
+    if (entry.isDirectory()) {
+      found.push(...markdownUnder(path.join(dir, entry.name), rel));
+    } else if (entry.name.endsWith('.md')) {
+      found.push(rel);
+    }
+  }
+
+  return found;
+}
+
+const files = markdownUnder(ROOT);
 
 let broken = 0;
 let checked = 0;
