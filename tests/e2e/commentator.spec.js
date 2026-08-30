@@ -71,6 +71,28 @@ test.describe('commentator', () => {
     }
   });
 
+  test('each team header says how many timeouts it has left', async ({ page }) => {
+    // The fixture exercises the half-reset, which is the whole reason this is a
+    // derivation: home took one at 600s, the break is at 1260s, away took one
+    // at 1700s. Per half, so home's is spent and forgiven and away's is not —
+    // 2 of 2 for home, 1 of 2 for away. A count that ignored the reset would
+    // say 1 of 2 for both and look perfectly plausible.
+    const home = page.locator('#headHome .touts');
+    const away = page.locator('#headAway .touts');
+    await expect(home).toBeVisible();
+
+    await expect(home.locator('.tout')).toHaveCount(2);
+    await expect(home.locator('.tout.on')).toHaveCount(2);
+    await expect(away.locator('.tout')).toHaveCount(2);
+    await expect(away.locator('.tout.on')).toHaveCount(1);
+
+    // Never ticks alone: the count is words in the title, and says which
+    // period it counts, because "1 of 2 left" means different things per half
+    // and per game.
+    await expect(away).toHaveAttribute('title', /1 of 2 left this half/);
+    await expect(away).toHaveAttribute('aria-label', /1 of 2 left this half/);
+  });
+
   test('the notes box and its roster marker clear AAA too', async ({ page }) => {
     // The marker was first drawn in --accent, which is a FILL colour: it is the
     // background of a pressed button, with white text on top. Against the panel

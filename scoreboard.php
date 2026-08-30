@@ -251,6 +251,7 @@ $json = static fn ($value): string => json_encode($value, JSON_UNESCAPED_SLASHES
 <script src="<?= htmlspecialchars($assetUrl('shared/possession.js'), ENT_QUOTES) ?>"></script>
 <script src="<?= htmlspecialchars($assetUrl('shared/field.js'), ENT_QUOTES) ?>"></script>
 <script src="<?= htmlspecialchars($assetUrl('shared/stoppage.js'), ENT_QUOTES) ?>"></script>
+<script src="<?= htmlspecialchars($assetUrl('shared/timeouts.js'), ENT_QUOTES) ?>"></script>
 <script src="<?= htmlspecialchars($assetUrl('shared/overlay-client.js'), ENT_QUOTES) ?>"></script>
 <?php if ($demo) : ?>
 <script src="<?= htmlspecialchars($assetUrl('shared/demo.js'), ENT_QUOTES) ?>"></script>
@@ -469,42 +470,23 @@ $json = static fn ($value): string => json_encode($value, JSON_UNESCAPED_SLASHES
     /**
      * Timeouts remaining, as ticks.
      *
-     * The API serves the allowance but not the count: `poolinfo.timeouts` is how
-     * many each side gets, and each one taken is a `gameevents` entry of type
-     * "timeout" carrying `ishome`.
-     *
-     * `timeoutsper: "half"` means the allowance resets at the break, so only
-     * timeouts taken since halftime count in the second half. Halftime is marked
-     * by a `half_cap` event (UO's GameCapEventTypes()). A game with no such
-     * event yet is still in the first half.
+     * The count itself is `shared/timeouts.js` — the commentary desk and the
+     * Studio show the same number, and a derivation used by three surfaces is
+     * one that must not be written three times. A null means this pool gives no
+     * timeouts at all, which hides the row rather than drawing an empty one:
+     * absent is not zero.
      */
     function setTimeouts(node, isHome, pool, gameEvents) {
-        var allowance = Number(pool.timeouts);
-        if (!Number.isFinite(allowance) || allowance <= 0) {
+        var t = window.Timeouts.remaining(pool, gameEvents, isHome);
+        if (!t) {
             node.className = 'timeouts hide';
             return;
         }
-
-        var events = Array.isArray(gameEvents) ? gameEvents : [];
-        var since = 0;
-        if (pool.timeoutsper === 'half') {
-            events.forEach(function (e) {
-                if (e && e.type === 'half_cap' && Number(e.time) > since) since = Number(e.time);
-            });
-        }
-
-        var used = events.filter(function (e) {
-            return e && e.type === 'timeout'
-                && (Number(e.ishome) === 1) === isHome
-                && Number(e.time) >= since;
-        }).length;
-
-        var remaining = Math.max(0, allowance - used);
         node.className = 'timeouts';
         node.textContent = '';
-        for (var i = 0; i < allowance; i += 1) {
+        for (var i = 0; i < t.allowance; i += 1) {
             var dot = document.createElement('span');
-            dot.className = 'timeout-dot' + (i < remaining ? ' available' : '');
+            dot.className = 'timeout-dot' + (i < t.remaining ? ' available' : '');
             node.appendChild(dot);
         }
     }

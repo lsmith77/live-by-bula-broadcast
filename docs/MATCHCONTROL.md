@@ -106,21 +106,21 @@ With one phone surface, the allocation question becomes simply *who is holding t
 
 **The keeper is often not broadcast crew at all.** At three or more the natural candidate is the person already keeping the paper scoresheet. They should be able to hold the score capability without being able to touch what is on air — exactly the shape the room code already has, and the strongest argument for capability grants over a single admin password.
 
-## 7. Timeouts, which only the scoreboard knows about
+## 7. Timeouts — the desk now shows them; the Studio deliberately does not
 
-Raised while writing this, and worth recording because the answer turned out to be "no".
+Raised while writing this. The answer was "shown on air and on neither desk", and **the commentator half is now built**; the Studio half was considered and declined.
 
-**The scoreboard shows timeouts remaining, on air, and neither desk shows anything.** `scoreboard.php` derives them properly — the allowance from `poolinfo.timeouts`, the count from `gameevents` entries of type `timeout` carrying `ishome`, with `timeoutsper: "half"` resetting at the `half_cap` event. Every occurrence of the word in `commentator.php`, `index.php` and `stage.php` is a JavaScript `setTimeout`. The concept is absent from both.
+**What the scoreboard had.** It derives timeouts properly — the allowance from `poolinfo.timeouts`, the count from `gameevents` entries of type `timeout` carrying `ishome`, with `timeoutsper: "half"` resetting at the `half_cap` event. The derivation now lives in `shared/timeouts.js` and the scoreboard calls it, because a derivation used twice is a derivation about to be *written* twice — which is how the gender ratio came to be printed two different ways before `shared/ratio.js` existed.
 
-That is a gap on the surfaces where it matters most:
+**What the commentator page now has.** Ticks beside each team name in the header, filled while unspent, with the count in words in the title and the period it counts: *"Valley Vipers: 1 of 2 left this half."* It is the kind of fact this page exists to hold — known, derivable, and not holdable in your head across two teams and a half, precisely because the allowance resets at the break.
 
-- **The commentator** says "they have one left, and they will want it" as a matter of course. It is exactly the kind of fact this page exists to hold — known, derivable, and impossible to keep in your head across two teams and a half.
-- **The operator** is timing graphics around stoppages. A timeout is the most predictable break in play there is, and the Studio already has a stoppage toggle without knowing anything about the allowance behind it.
-- **A timeout stops the clock**, so it belongs to whoever holds the clock. If match control owns start/pause, it should show what the pause was for and what it costs the team taking it.
+**Why not the Studio.** Two reasons, and the second is the real one.
 
-**The derivation should move to `shared/` before it is used twice.** It is currently inline in `scoreboard.php`, and `AGENTS.md` is explicit: *put a derivation in `shared/` and test it there*. Extracting `timeoutsRemaining(pool, gameEvents, isHome)` is small, makes it testable without a browser, and is a precondition for showing it anywhere else rather than growing a second copy that drifts — which is exactly how the ratio came to be printed two different ways before `shared/ratio.js` existed.
+The Studio holds **no game payload at all** — no `poolinfo`, no `gameevents`, no `game_result` — and the games *list* it does read carries none of them. Adding a count would mean introducing a per-game detail fetch to a page that has never needed one, which is a new poll and a new dependency for one number.
 
-This is independent of standalone mode and worth doing on its own. In standalone the events would have to be authored rather than read, which makes taking a timeout a fourth thing match control records — and an argument for the surface being about *the match* rather than only about score and clock.
+And the operator can already see it. **They are watching the programme output, and the programme output is the scoreboard, which shows the ticks.** Spending operator attention and a network poll to duplicate something already on their screen is the §2 principle failing in both directions at once. If a use emerges that the output does not serve — a warning that a team is about to run out, say — it should be revisited, but not before.
+
+**One thing this makes plain about standalone.** Timeouts are `gameevents`, so in standalone nothing would produce them and both surfaces would correctly show nothing. Taking a timeout is therefore a fourth thing match control would record, alongside score, clock and half — and an argument for the surface being about *the match* rather than only about score and clock.
 
 ## 8. Hosted mode has the same problem, and one real gap
 

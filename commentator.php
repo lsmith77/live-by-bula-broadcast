@@ -209,6 +209,13 @@ try {
     .teamhead .nm { font-size: 1.25rem; font-weight: 800; line-height: 1.15;
                     overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .teamhead .seed { color: var(--ink-mute); font-size: .75rem; font-weight: 600; white-space: nowrap; }
+    /* Timeouts left: one tick per allowance, filled while it is unspent. Never
+       colour alone — the count is in the title and the label spells it out. */
+    .touts { display: inline-flex; gap: .18rem; align-items: center; flex: 0 0 auto;
+        cursor: help; }
+    .tout { width: .42rem; height: .42rem; border-radius: 50%;
+        border: 1px solid var(--ink-mute); }
+    .tout.on { background: var(--ink-mute); }
     .teamhead a { font-size: .72rem; white-space: nowrap; }
     .teamhead.away { flex-direction: row-reverse; justify-content: flex-start; text-align: right; }
     .mid { text-align: center; }
@@ -695,6 +702,7 @@ try {
 <script src="<?= $base ?>/live/overlays/shared/ratio.js"></script>
 <script src="<?= $base ?>/live/overlays/shared/lineup.js"></script>
 <script src="<?= $base ?>/live/overlays/shared/declared.js"></script>
+<script src="<?= $base ?>/live/overlays/shared/timeouts.js"></script>
 <script src="<?= $base ?>/live/overlays/shared/tracking.js"></script>
 <script src="<?= $base ?>/live/overlays/shared/secret.js"></script>
 <script src="<?= $base ?>/live/overlays/shared/csv.js"></script>
@@ -995,6 +1003,25 @@ try {
             var side = pair[1];
             var parts = [el('span', 'nm', side.team.name || '—')];
             if (side.team.seed) { parts.push(el('span', 'seed', 'seed ' + side.team.seed)); }
+            // Timeouts left, beside the team they belong to. "They have one
+            // left and they will want it" is a thing a commentator says as a
+            // matter of course, and it is not holdable in your head across two
+            // teams and a half — the allowance resets at the break. Ticks
+            // rather than a number so it is read at a glance, with the words
+            // in the title for anyone the ticks do not reach.
+            var t = window.Timeouts.remaining(p.poolinfo, p.gameevents, side.isHome);
+            if (t) {
+                var box = el('span', 'touts');
+                box.title = (side.team.name || 'This team') + ': '
+                    + window.Timeouts.label(p.poolinfo, p.gameevents, side.isHome)
+                    + (String(((p.poolinfo || {}).timeoutsper)) === 'half'
+                        ? ' this half' : ' this game');
+                box.setAttribute('aria-label', box.title);
+                for (var ti = 0; ti < t.allowance; ti += 1) {
+                    box.append(el('span', 'tout' + (ti < t.remaining ? ' on' : '')));
+                }
+                parts.push(box);
+            }
             if (side.team.team_id) {
                 parts.push(link(CONFIG.base + '/index.php?view=teamcard&team=' + side.team.team_id,
                     'team ↗'));

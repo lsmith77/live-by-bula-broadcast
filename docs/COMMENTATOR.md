@@ -474,6 +474,16 @@ Line data makes several genuinely new things possible: who is on for a key point
 
 It also answers the "who is on this point" graphic that `STUDIO.md` §10.2 lists as impossible. **But promoting it to air is a separate decision, not a free consequence.** Commentator-entered lines are a personal reference: a missed substitution costs the commentator a moment's confusion. The same error on a lower-third states something false about a named player to the audience. If it is ever put on air, it needs the same all-or-nothing test applied to break chance (`STUDIO.md` §3.4) — and probably an explicit "confirmed" action rather than automatically mirroring whatever the commentators happen to have typed.
 
+### 6a0. Timeouts left, beside each team — **built**
+
+Ticks in each team's header, one per allowance, filled while unspent, with the words in the title: *"Valley Vipers: 1 of 2 left this half."*
+
+**It is a derivation, and the half-reset is why it is not a count.** `poolinfo.timeouts` is the allowance; each one taken is a `gameevents` entry of type `timeout` carrying `ishome`. When `timeoutsper` is `half` the allowance **resets at the break**, marked by a `half_cap` event — so a team that spent both before halftime has two again after it. That is exactly the sort of thing a commentator cannot hold across two teams and forty minutes, and exactly the sort of thing a second implementation gets wrong: it is invisible for the whole first half of every game, so a defect in it would ship, look right all morning, and start lying after the break. It lives in `shared/timeouts.js`, tested directly, and the scoreboard calls the same function.
+
+**Null, not zero, when the pool gives no timeouts.** Absent is not zero (`AGENTS.md`): a pool with no allowance recorded is not a pool where both sides have spent everything, so the ticks are absent rather than empty.
+
+**Not on the Studio, deliberately.** The operator is watching the programme output, and the programme output already shows these ticks on the scoreboard. Adding them to the Studio would mean giving that page its first game-detail payload — it holds none today — to duplicate something already on the operator's screen.
+
 ## 6a. Name and code, in the header
 
 Both are setup, so both sit in the header beside each other rather than inside a mode.
