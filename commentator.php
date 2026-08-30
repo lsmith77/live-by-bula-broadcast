@@ -316,10 +316,24 @@ try {
 
     .abbaline { display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; }
     .abbaline .abbahead { margin: 0; }
-    .abbainline { margin-left: auto; display: flex; gap: 1.1rem; align-items: baseline; }
-    .abbainline .item { color: var(--ink-mute); font-variant-numeric: tabular-nums;
+    .abbainline { margin-left: auto; display: flex; gap: 1.5rem; align-items: baseline;
+        min-width: 0; }
+    .abbainline .lead { font-size: .72rem; text-transform: uppercase;
+        letter-spacing: .06em; color: var(--ink-mute); font-weight: 600;
         white-space: nowrap; }
-    .abbainline .item b { color: var(--ink); font-weight: 700; margin-right: .25rem; }
+    .abbainline .item { color: var(--ink-mute); font-variant-numeric: tabular-nums;
+        white-space: nowrap; display: inline-flex; align-items: baseline; gap: .3rem;
+        min-width: 0; }
+    .abbainline .item b { color: var(--ink); font-weight: 700; }
+    .abbainline .item .r { font-weight: 800; margin-right: .35rem; }
+    /* Who the two numbers belong to, said once for both ratios. The names are
+       the width that can run away, so they ellipsise; each item's title still
+       carries the full sentence. */
+    .abbainline .teams { color: var(--ink-mute); display: inline-flex;
+        align-items: baseline; gap: .3rem; min-width: 0; }
+    .abbainline .teams .tm { overflow: hidden; text-overflow: ellipsis;
+        white-space: nowrap; max-width: 10rem; }
+    .abbainline .dash { padding: 0 .1rem; }
 
     /* ---- possession ---- */
     .possbox { margin-top: 1rem; padding: .85rem 1rem; border-radius: 6px;
@@ -3670,11 +3684,23 @@ try {
         if ((split.A.home + split.A.away + split.B.home + split.B.away) >= 4) {
             var s = sides();
             var inline = el('div', 'abbainline');
+            // Said, not just numbered. "4MMP 3\u20132" on its own makes the reader
+            // work out which 3 is whose, and this is glanced at between points.
+            // So the row spends its spare width on a label and on naming the
+            // order ONCE \u2014 naming both teams against both ratios reads better
+            // in isolation but runs to two rows on a 1280 desk, and the panel
+            // is one line by design.
+            inline.append(el('span', 'lead', 'Points won'));
+            var teams = el('span', 'teams');
+            teams.append(el('span', 'tm', s[0].team.name || 'Home'));
+            teams.append(el('span', 'dash', '\u2013'));
+            teams.append(el('span', 'tm', s[1].team.name || 'Away'));
+            inline.append(teams);
             [['A', firstRatio], ['B', other]].forEach(function (pairv) {
                 var slot = split[pairv[0]];
                 var item = el('span', 'item');
-                item.append(el('b', null, shortRatio(pairv[1])));
-                item.append(document.createTextNode(' ' + slot.home + '\u2013' + slot.away));
+                item.append(el('b', 'r', shortRatio(pairv[1])));
+                item.append(el('b', null, slot.home + '\u2013' + slot.away));
                 item.title = (s[0].team.name || 'Home') + ' ' + slot.home + ' \u2013 '
                     + (s[1].team.name || 'Away') + ' ' + slot.away
                     + ' on ' + shortRatio(pairv[1]) + ' points';
