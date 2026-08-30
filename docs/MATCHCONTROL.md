@@ -118,7 +118,13 @@ Raised while writing this. The answer was "shown on air and on neither desk", an
 
 The Studio holds **no game payload at all** — no `poolinfo`, no `gameevents`, no `game_result` — and the games *list* it does read carries none of them. Adding a count would mean introducing a per-game detail fetch to a page that has never needed one, which is a new poll and a new dependency for one number.
 
-And the operator can already see it. **They are watching the programme output, and the programme output is the scoreboard, which shows the ticks.** Spending operator attention and a network poll to duplicate something already on their screen is the §2 principle failing in both directions at once. If a use emerges that the output does not serve — a warning that a team is about to run out, say — it should be revisited, but not before.
+And the operator can already see it. **They are watching the programme output, and the programme output is the scoreboard, which shows the ticks.** Spending operator attention and a network poll to duplicate something already on their screen is the §2 principle failing in both directions at once.
+
+That is not an assumption made for this decision. The Studio already states it twice and has built on it both times: possession is `O` and `D` on the keyboard because *"an operator is watching the programme output, not this page"*, and the off-air flash is `aria-live` because *"an operator watching the program monitor is not looking at this bar"*. Two existing features exist in the shape they do precisely because the operator's eyes are on the output rather than on the Studio.
+
+**What it does rest on is a fact about the room:** that the operator has a programme monitor or a switcher multiview. The Studio has no preview of its own — no iframe, no thumbnail — so an operator working from the Studio page alone would see nothing. That is a fair assumption for a switcher setup and a poor one for somebody running a laptop and a webcam, which is the deployment standalone mode is aimed at (`STANDALONE.md` §8). If the Studio ever grows a preview, the timeouts arrive with it for free and this section is moot.
+
+If a use emerges that the output does not serve — a warning that a team is about to run out, say — revisit it, but not before.
 
 **One thing this makes plain about standalone.** Timeouts are `gameevents`, so in standalone nothing would produce them and both surfaces would correctly show nothing. Taking a timeout is therefore a fourth thing match control would record, alongside score, clock and half — and an argument for the surface being about *the match* rather than only about score and clock.
 
