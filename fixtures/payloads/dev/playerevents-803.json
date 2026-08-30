@@ -1,0 +1,56 @@
+{
+  "playerevents": {
+    "player_id": 803,
+    "firstname": "Nia",
+    "lastname": "North",
+    "num": 14,
+    "team_id": 301,
+    "games": [
+      {
+        "game_id": 700,
+        "time": "2026-06-01 10:00:00",
+        "hometeam": 300,
+        "visitorteam": 301,
+        "hometeamname": "Mosquitos Klosterneuburg",
+        "visitorteamname": "Leamington Lemmings",
+        "homescore": 15,
+        "visitorscore": 11,
+        "events": [
+          {
+            "time": 300,
+            "homescore": 1,
+            "visitorscore": 1,
+            "iscallahan": 0,
+            "assist_id": 803,
+            "assist_name": "Nia North",
+            "assist_num": 14,
+            "scorer_id": 802,
+            "scorer_name": "Timo Twist",
+            "scorer_num": 7
+          },
+          {
+            "time": 660,
+            "homescore": 2,
+            "visitorscore": 2,
+            "iscallahan": 0,
+            "assist_id": 802,
+            "assist_name": "Timo Twist",
+            "assist_num": 7,
+            "scorer_id": 803,
+            "scorer_name": "Nia North",
+            "scorer_num": 14
+          }
+        ]
+      }
+    ]
+  },
+  "meta": {
+    "cache_lifetime": 300,
+    "expires": "2026-08-30 18:47:49",
+    "cache_version": "20260830.184249",
+    "expires_timestamp": 1788115669,
+    "app_version": "3.0.6",
+    "generated": "2026-08-30 18:42:49",
+    "generated_timestamp": 1788115369
+  }
+}

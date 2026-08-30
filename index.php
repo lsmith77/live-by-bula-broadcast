@@ -29,6 +29,8 @@ if (!defined('UO_ROUTED_VIEW')) {
 // Live!'s config, which defines UO_URL_PREFIX. Optional: standalone has no
 // Live! to configure, and every reader below already falls back when the
 // constant is undefined — see docs/STANDALONE.md.
+require_once __DIR__ . '/shared/mode.php';
+
 if (is_file(__DIR__ . '/../conf/LocalConfig.php')) {
     require_once __DIR__ . '/../conf/LocalConfig.php';
 }
@@ -47,7 +49,7 @@ $assetUrl = static function (string $relative) use ($base): string {
     $relative = ltrim($relative, '/');
     $path = __DIR__ . '/' . $relative;
     $version = is_file($path) ? (string) filemtime($path) : '0';
-    return $base . '/live/overlays/' . $relative . '?v=' . $version;
+    return \Overlays\Mode::assetBase($base) . '/' . $relative . '?v=' . $version;
 };
 $json = static fn ($v): string => json_encode($v, JSON_UNESCAPED_SLASHES | JSON_HEX_TAG | JSON_HEX_AMP);
 ?>
@@ -329,7 +331,8 @@ $json = static fn ($v): string => json_encode($v, JSON_UNESCAPED_SLASHES | JSON_
 
     var BASE = <?= $json($base) ?>;
     var API = BASE + '/index.php?view=live/api';
-    var POSSESSION_URL = BASE + '/index.php?view=live/overlays/possession';
+    var CAPTURE = <?= json_encode(\Overlays\Mode::captureBase($base), JSON_UNESCAPED_SLASHES) ?>;
+    var POSSESSION_URL = <?= json_encode(\Overlays\Mode::viewUrl('possession', $base), JSON_UNESCAPED_SLASHES) ?>;
     var container = document.getElementById('games');
 
     function el(tag, className, text) {
@@ -467,7 +470,7 @@ $json = static fn ($v): string => json_encode($v, JSON_UNESCAPED_SLASHES | JSON_
     // not reach. readJson stays reachable here because the colour and show
     // stores are this project's own endpoints rather than API reads, and they
     // answer with the same shape.
-    var api = window.Provider.live({ apiBase: API });
+    var api = window.Provider.fromConfig({ apiBase: API, captureBase: CAPTURE });
     var readJson = window.Provider.readJson;
 
     api.games()
@@ -481,7 +484,7 @@ $json = static fn ($v): string => json_encode($v, JSON_UNESCAPED_SLASHES | JSON_
     // Entered per game, on the game's own row, by an operator looking at the
     // jerseys minutes before the pull.
 
-    var COLORS_URL = BASE + '/index.php?view=live/overlays/colors';
+    var COLORS_URL = <?= json_encode(\Overlays\Mode::viewUrl('colors', $base), JSON_UNESCAPED_SLASHES) ?>;
 
     var state = { games: {}, admin: false, writable: false };
     var teamIndex = {};
@@ -498,7 +501,7 @@ $json = static fn ($v): string => json_encode($v, JSON_UNESCAPED_SLASHES | JSON_
 
     // -- stage / show state ---------------------------------------------------
 
-    var SHOW_URL = BASE + '/index.php?view=live/overlays/show';
+    var SHOW_URL = <?= json_encode(\Overlays\Mode::viewUrl('show', $base), JSON_UNESCAPED_SLASHES) ?>;
     var stagePanel = document.getElementById('stagePanel');
     var show = { rev: 0, game: null, cards: [], admin: false, writable: false,
                  slots: [], knownCards: [] };

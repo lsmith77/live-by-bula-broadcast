@@ -1,0 +1,56 @@
+{
+  "playerevents": {
+    "player_id": 800,
+    "firstname": "Ari",
+    "lastname": "Ace",
+    "num": 8,
+    "team_id": 300,
+    "games": [
+      {
+        "game_id": 700,
+        "time": "2026-06-01 10:00:00",
+        "hometeam": 300,
+        "visitorteam": 301,
+        "hometeamname": "Mosquitos Klosterneuburg",
+        "visitorteamname": "Leamington Lemmings",
+        "homescore": 15,
+        "visitorscore": 11,
+        "events": [
+          {
+            "time": 120,
+            "homescore": 1,
+            "visitorscore": 0,
+            "iscallahan": 0,
+            "assist_id": 801,
+            "assist_name": "Bea Blade",
+            "assist_num": 12,
+            "scorer_id": 800,
+            "scorer_name": "Ari Ace",
+            "scorer_num": 8
+          },
+          {
+            "time": 480,
+            "homescore": 2,
+            "visitorscore": 1,
+            "iscallahan": 1,
+            "assist_id": 800,
+            "assist_name": "Ari Ace",
+            "assist_num": 8,
+            "scorer_id": 801,
+            "scorer_name": "Bea Blade",
+            "scorer_num": 12
+          }
+        ]
+      }
+    ]
+  },
+  "meta": {
+    "cache_lifetime": 300,
+    "expires": "2026-08-30 18:47:48",
+    "cache_version": "20260830.184248",
+    "expires_timestamp": 1788115668,
+    "app_version": "3.0.6",
+    "generated": "2026-08-30 18:42:48",
+    "generated_timestamp": 1788115368
+  }
+}

@@ -83,7 +83,20 @@ if (PHP_SAPI === 'cli-server') {
 
         return false;
     }
+
+    // Anything else that is not this script is not here. Without this, a
+    // request for a missing asset fell through to the dispatcher, which
+    // defaults to the picker — so a mistyped script URL answered 200 with a
+    // page of HTML, and the browser reported it as "Unexpected token '<'".
+    if ($path !== '/' && $path !== '/app.php') {
+        http_response_code(404);
+        exit;
+    }
 }
+
+// Says which URL layout the pages are being served under — they sit at the
+// document root here rather than under /live/overlays/. See Overlays\Mode.
+define('OVERLAYS_STANDALONE', true);
 
 // The pages this installation serves. Key is the view, value is the file.
 //

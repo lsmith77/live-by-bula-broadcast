@@ -25,6 +25,7 @@ if (!defined('UO_ROUTED_VIEW')) {
 if (is_file(__DIR__ . '/../conf/LocalConfig.php')) {
     require_once __DIR__ . '/../conf/LocalConfig.php';
 }
+require_once __DIR__ . '/shared/mode.php';
 require_once __DIR__ . '/shared/colors.php';
 require_once __DIR__ . '/shared/logos.php';
 
@@ -155,7 +156,7 @@ $background = $backgrounds[$bgParam] ?? ($colourParam('bg') !== null ? '#' . $co
 
 $prefix = defined('UO_URL_PREFIX') ? UO_URL_PREFIX : '/';
 $apiBase = rtrim($prefix, '/') . '/index.php?view=live/api';
-$assetBase = rtrim($prefix, '/') . '/live/overlays';
+$assetBase = \Overlays\Mode::assetBase(rtrim($prefix, '/'));
 
 $colorStore = new \Overlays\Colors();
 

@@ -17,7 +17,7 @@
  * copying notes about real people into a temp directory to prove they are
  * private. A fixture says the same thing and says it deterministically.
  */
-const { mkdtempSync, cpSync, mkdirSync, writeFileSync, rmSync } = require('node:fs');
+const { mkdtempSync, cpSync, mkdirSync, writeFileSync, rmSync, existsSync } = require('node:fs');
 const { tmpdir } = require('node:os');
 const path = require('node:path');
 
@@ -29,6 +29,17 @@ const RUNTIME = [
   'commentator.php', 'show.php', 'possession.php', 'lines.php', 'notes.php',
   'colors.php', 'shared', 'images', '.htaccess',
 ];
+
+/**
+ * A capture, recorded from the dev instance by `tests/capture.mjs`.
+ *
+ * Copied in when one exists so the suite can prove the thing milestone 2 is
+ * for: a page rendering real payloads with no UltiOrganizer, no Live!, no
+ * database and no network. Without one those tests skip rather than fail —
+ * a capture is a recording of somebody's instance, not something the repo
+ * carries by default.
+ */
+const CAPTURE = path.join(SOURCE, 'fixtures', 'payloads', 'dev');
 
 function build() {
   const root = mkdtempSync(path.join(tmpdir(), 'overlays-standalone-'));
@@ -57,7 +68,24 @@ function build() {
   w(path.join('notes', 'show.json'), JSON.stringify({ decoy: true }));
   w(path.join('lines', 'DDDDD.json'), JSON.stringify({ rev: 1 }));
 
+  // The capture, plus the config that makes the pages read it. Both or
+  // neither: a config naming a capture that is not there would make every
+  // page fail in a way that looks like a routing bug.
+  if (existsSync(CAPTURE)) {
+    mkdirSync(path.join(root, 'fixtures', 'payloads'), { recursive: true });
+    cpSync(CAPTURE, path.join(root, 'fixtures', 'payloads', 'dev'), { recursive: true });
+    writeFileSync(
+      path.join(root, 'conf', 'local-config.php'),
+      "<?php\n\nreturn ['capture' => 'fixtures/payloads/dev'];\n",
+    );
+  }
+
   return root;
 }
 
-module.exports = { build, RUNTIME, cleanup: (root) => rmSync(root, { recursive: true, force: true }) };
+/** Whether this run can exercise the capture-backed pages at all. */
+function hasCapture() {
+  return existsSync(CAPTURE);
+}
+
+module.exports = { build, hasCapture, RUNTIME, cleanup: (root) => rmSync(root, { recursive: true, force: true }) };

@@ -28,7 +28,7 @@ module.exports = defineConfig({
   // Named individually rather than matched by a pattern: a spec that quietly
   // starts using a page would otherwise be silently dropped from the run here
   // and nobody would notice it had stopped being covered.
-  testMatch: ['lineup.spec.js', 'declared.spec.js', 'bios.spec.js', 'timeouts.spec.js', 'provider.spec.js'],
+  testMatch: ['lineup.spec.js', 'declared.spec.js', 'bios.spec.js', 'timeouts.spec.js', 'provider.spec.js', 'recorded.spec.js'],
 
   // No globalSetup, no baseURL, no browser. A test in here that reaches for a
   // page or an instance should fail loudly rather than be quietly accommodated.

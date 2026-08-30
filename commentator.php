@@ -36,6 +36,7 @@ if (!defined('UO_ROUTED_VIEW')) {
 if (is_file(__DIR__ . '/../conf/LocalConfig.php')) {
     require_once __DIR__ . '/../conf/LocalConfig.php';
 }
+require_once __DIR__ . '/shared/mode.php';
 require_once __DIR__ . '/shared/lines.php';
 require_once __DIR__ . '/shared/notes.php';
 
@@ -57,6 +58,22 @@ $suggestedCode = (new Lines())->generate();
 $mode = filter_input(INPUT_GET, 'mode') === 'play' ? 'play' : 'prep';
 
 $base = rtrim(defined('UO_URL_PREFIX') ? UO_URL_PREFIX : '/', '/');
+
+/**
+ * Asset URL stamped with the file's modification time, asking Overlays\Mode
+ * where this directory is served from rather than assuming /live/overlays/.
+ *
+ * This page wrote that path inline for every script it loads, which made it the
+ * one page that could not be served from anywhere else — and the one page with
+ * no cache-busting, so an operator could be running last week's logic.
+ */
+$assetUrl = static function (string $relative) use ($base): string {
+    $relative = ltrim($relative, '/');
+    $path = __DIR__ . '/' . $relative;
+    $version = is_file($path) ? (string) filemtime($path) : '0';
+
+    return \Overlays\Mode::assetBase($base) . '/' . $relative . '?v=' . $version;
+};
 $json = static fn ($v): string => json_encode($v, JSON_UNESCAPED_SLASHES | JSON_HEX_TAG | JSON_HEX_AMP);
 ?>
 <!DOCTYPE html>
@@ -703,16 +720,16 @@ try {
     <div class="card" id="sheetCard"></div>
 </div>
 
-<script src="<?= $base ?>/live/overlays/shared/possession.js"></script>
-<script src="<?= $base ?>/live/overlays/shared/ratio.js"></script>
-<script src="<?= $base ?>/live/overlays/shared/lineup.js"></script>
-<script src="<?= $base ?>/live/overlays/shared/declared.js"></script>
-<script src="<?= $base ?>/live/overlays/shared/timeouts.js"></script>
-<script src="<?= $base ?>/live/overlays/shared/provider.js"></script>
-<script src="<?= $base ?>/live/overlays/shared/tracking.js"></script>
-<script src="<?= $base ?>/live/overlays/shared/secret.js"></script>
-<script src="<?= $base ?>/live/overlays/shared/csv.js"></script>
-<script src="<?= $base ?>/live/overlays/shared/bios.js"></script>
+<script src="<?= htmlspecialchars($assetUrl('shared/possession.js'), ENT_QUOTES) ?>"></script>
+<script src="<?= htmlspecialchars($assetUrl('shared/ratio.js'), ENT_QUOTES) ?>"></script>
+<script src="<?= htmlspecialchars($assetUrl('shared/lineup.js'), ENT_QUOTES) ?>"></script>
+<script src="<?= htmlspecialchars($assetUrl('shared/declared.js'), ENT_QUOTES) ?>"></script>
+<script src="<?= htmlspecialchars($assetUrl('shared/timeouts.js'), ENT_QUOTES) ?>"></script>
+<script src="<?= htmlspecialchars($assetUrl('shared/provider.js'), ENT_QUOTES) ?>"></script>
+<script src="<?= htmlspecialchars($assetUrl('shared/tracking.js'), ENT_QUOTES) ?>"></script>
+<script src="<?= htmlspecialchars($assetUrl('shared/secret.js'), ENT_QUOTES) ?>"></script>
+<script src="<?= htmlspecialchars($assetUrl('shared/csv.js'), ENT_QUOTES) ?>"></script>
+<script src="<?= htmlspecialchars($assetUrl('shared/bios.js'), ENT_QUOTES) ?>"></script>
 <script>
 (function () {
     'use strict';
@@ -720,11 +737,14 @@ try {
     var CONFIG = {
         base: <?= $json($base) ?>,
         api: <?= $json($base . '/index.php?view=live/api') ?>,
+        // Null unless this installation is configured to read a capture — see
+        // shared/mode.php. Same shape either way; the page cannot tell.
+        captureBase: <?= $json(\Overlays\Mode::captureBase($base)) ?>,
         gameId: <?= $json($gameId ?: null) ?>,
         mode: <?= $json($mode) ?>,
-        linesUrl: <?= $json($base . '/index.php?view=live/overlays/lines') ?>,
-        notesUrl: <?= $json($base . '/index.php?view=live/overlays/notes') ?>,
-        possessionUrl: <?= $json($base . '/index.php?view=live/overlays/possession') ?>,
+        linesUrl: <?= $json(\Overlays\Mode::viewUrl('lines', $base)) ?>,
+        notesUrl: <?= $json(\Overlays\Mode::viewUrl('notes', $base)) ?>,
+        possessionUrl: <?= $json(\Overlays\Mode::viewUrl('possession', $base)) ?>,
         suggestedCode: <?= $json($suggestedCode) ?>,
         codeLength: <?= (int) Lines::CODE_LENGTH ?>,
         noteMax: <?= (int) Notes::MAX_TEXT ?>,
@@ -735,7 +755,9 @@ try {
     // Every read of Live! goes through here — see shared/provider.js. The
     // stores this page also talks to (lines, notes, possession) are its own
     // endpoints and keep using Tracking, which is their protocol.
-    var api = window.Provider.live({ apiBase: CONFIG.api });
+    var api = window.Provider.fromConfig({
+        apiBase: CONFIG.api, captureBase: CONFIG.captureBase
+    });
 
     var el = function (tag, cls, text) {
         var n = document.createElement(tag);

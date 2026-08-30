@@ -30,6 +30,7 @@ if (!defined('UO_ROUTED_VIEW')) {
 if (is_file(__DIR__ . '/../conf/LocalConfig.php')) {
     require_once __DIR__ . '/../conf/LocalConfig.php';
 }
+require_once __DIR__ . '/shared/mode.php';
 require_once __DIR__ . '/shared/show.php';
 require_once __DIR__ . '/shared/logos.php';
 
@@ -38,7 +39,7 @@ use Overlays\Show;
 $prefix = defined('UO_URL_PREFIX') ? UO_URL_PREFIX : '/';
 $base = rtrim($prefix, '/');
 $apiBase = $base . '/index.php?view=live/api';
-$assetBase = $base . '/live/overlays';
+$assetBase = \Overlays\Mode::assetBase($base);
 
 /** Whitelisted so a URL parameter can never reach a class attribute verbatim. */
 $backgrounds = ['green' => '#00B140', 'blue' => '#0047BB', 'magenta' => '#FF00FF', 'black' => '#000000'];
@@ -113,6 +114,7 @@ $json = static fn ($v): string => json_encode($v, JSON_UNESCAPED_SLASHES | JSON_
 
     var CONFIG = {
         apiBase: <?= $json($apiBase) ?>,
+        captureBase: <?= $json(\Overlays\Mode::captureBase($base)) ?>,
         possessionBase: <?= $json($assetBase) ?>,
         assetBase: <?= $json($assetBase) ?>,
         showUrl: <?= $json($store->publicUrl($assetBase)) ?>,
@@ -130,7 +132,9 @@ $json = static fn ($v): string => json_encode($v, JSON_UNESCAPED_SLASHES | JSON_
     // Every read of Live! goes through here — see shared/provider.js. On this
     // page each call adds its own .catch(): a broadcast canvas degrades
     // quietly rather than letting one failed roster take the overlay down.
-    var api = window.Provider.live({ apiBase: CONFIG.apiBase });
+    var api = window.Provider.fromConfig({
+        apiBase: CONFIG.apiBase, captureBase: CONFIG.captureBase
+    });
 
     /**
      * Resolve a team's logo and wait for it to DECODE.

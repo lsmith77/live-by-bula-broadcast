@@ -123,5 +123,140 @@
         };
     }
 
-    return { live: live, readJson: readJson, fail: fail };
+    /**
+     * The file a capture stores each answer in.
+     *
+     * Flat, named after the request rather than hashed, so a capture directory
+     * can be read by a person — which matters because the next thing anyone
+     * does with a bug report is look inside it.
+     */
+    function keyFor(entity, id) {
+        return id === undefined || id === null || id === ''
+            ? entity + '.json'
+            : entity + '-' + String(id).replace(/[^0-9A-Za-z_-]/g, '') + '.json';
+    }
+
+    /**
+     * A reader answering from a capture on disk instead of from Live!.
+     *
+     * Same interface, same shape, same field names — `docs/STANDALONE.md` §3:
+     * one renderer, one payload shape, two providers. A caller cannot tell.
+     *
+     * THE CLOCK, WHICH IS THE WHOLE SUBTLETY
+     *
+     * A capture is a snapshot and the clock is not. `timer_start` is absolute
+     * unix seconds and the scoreboard computes `now - timer_start`, so a
+     * payload recorded on Saturday and replayed on Tuesday shows a game that
+     * has been running for three days.
+     *
+     * So the recorded game is rebased by the age of the capture. Doing that on
+     * EVERY read holds the clock exactly where it was when the capture was
+     * taken, which is the behaviour a recording should have: a recording of a
+     * 14th minute is a recording of the 14th minute whenever you play it, and a
+     * test asserting on it cannot go stale overnight. Pass `rebase: 'run'` for
+     * a clock that starts from the captured moment and then advances, which is
+     * what a demo wants and a test does not.
+     *
+     * This is the third time this project has manufactured a `timer_start` —
+     * `shared/demo.js` does it because fixture 702 has none, and the
+     * post-production frame does it to draw one deterministic frame. Third time
+     * is where it stops being a coincidence.
+     */
+    function recorded(opts) {
+        var base = String((opts || {}).base || '').replace(/\/$/, '');
+        var fetchImpl = (opts || {}).fetch
+            || (typeof fetch === 'function' ? fetch : null);
+        var nowFn = (opts || {}).now || function () { return Date.now(); };
+        var mode = (opts || {}).rebase === 'run' ? 'run' : 'freeze';
+        var manifest = null;
+        var startedAt = null;
+
+        function read(name) {
+            return fetchImpl(base + '/' + name, { credentials: 'same-origin' })
+                .then(function (response) {
+                    if (!response.ok) {
+                        // Absent is absent, and says which file. A capture with a
+                        // missing roster should name it rather than fail as if
+                        // the whole recording were bad.
+                        throw fail('Not in this capture: ' + name, response.status, true);
+                    }
+
+                    return response.json();
+                });
+        }
+
+        function capturedAt() {
+            if (manifest) { return Promise.resolve(manifest); }
+
+            return read('manifest.json').then(function (m) {
+                manifest = m || {};
+
+                return manifest;
+            }, function () {
+                // A capture without a manifest still serves every payload; only
+                // the clock cannot be rebased, and a clock left alone is more
+                // honest than one shifted by a guessed amount.
+                manifest = {};
+
+                return manifest;
+            });
+        }
+
+        /** Shift the absolute clock fields by the capture's age. */
+        function rebase(payload) {
+            return capturedAt().then(function (m) {
+                var taken = Number(m.captured_at);
+                var result = payload && payload.game_result;
+                if (!isFinite(taken) || !result) { return payload; }
+
+                if (startedAt === null) { startedAt = Math.floor(nowFn() / 1000); }
+                var anchor = mode === 'run' ? startedAt : Math.floor(nowFn() / 1000);
+                var shift = anchor - taken;
+
+                ['timer_start', 'timer_pause_start'].forEach(function (field) {
+                    var v = Number(result[field]);
+                    // Only a real timestamp moves. null means "never started",
+                    // which is a fact about the game and not a clock to shift.
+                    if (isFinite(v) && v > 0) { result[field] = v + shift; }
+                });
+
+                return payload;
+            });
+        }
+
+        return {
+            game: function (id) { return read(keyFor('games', id)).then(rebase); },
+            games: function () { return read(keyFor('games')); },
+            team: function (id) { return read(keyFor('teams', id)); },
+            teams: function () { return read(keyFor('teams')); },
+            playerEvents: function (id) { return read(keyFor('playerevents', id)); },
+            reference: function () { return read(keyFor('reference')); },
+            config: function () { return read(keyFor('config')); },
+            manifest: capturedAt
+        };
+    }
+
+    /**
+     * The provider a page should use, from what the page was told.
+     *
+     * One place decides, so four pages do not each grow their own `if`. A
+     * capture base wins when one is configured — that is what "this
+     * installation has no Live!" looks like from in here.
+     */
+    function fromConfig(cfg) {
+        cfg = cfg || {};
+
+        return cfg.captureBase
+            ? recorded({ base: cfg.captureBase, rebase: cfg.rebase })
+            : live({ apiBase: cfg.apiBase });
+    }
+
+    return {
+        live: live,
+        recorded: recorded,
+        fromConfig: fromConfig,
+        keyFor: keyFor,
+        readJson: readJson,
+        fail: fail
+    };
 }));

@@ -1,0 +1,19 @@
+{
+  "playerevents": {
+    "player_id": 860,
+    "firstname": "Jesse",
+    "lastname": "Vance",
+    "num": 30,
+    "team_id": 301,
+    "games": []
+  },
+  "meta": {
+    "cache_lifetime": 300,
+    "expires": "2026-08-30 18:47:49",
+    "cache_version": "20260830.184249",
+    "expires_timestamp": 1788115669,
+    "app_version": "3.0.6",
+    "generated": "2026-08-30 18:42:49",
+    "generated_timestamp": 1788115369
+  }
+}

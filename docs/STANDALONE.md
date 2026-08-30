@@ -92,7 +92,7 @@ That has a pleasant side effect. Today the browser suite cannot run in CI at all
 ## 7. A staging that produces something useful early
 
 1. **The provider seam, hosted only.** Introduce `shared/provider.js`, route the four call sites through it, change nothing else. Behaviour identical, and it is independently verifiable: the whole suite must stay green with no other change. This is the commit that makes everything after it cheap.
-2. **A recorded-payload provider.** The same interface reading captured JSON from disk. No editing UI. See §7a for what does the capturing, what a capture holds, and — since it is a fair question — what this actually buys on its own.
+2. **A recorded-payload provider — built.** `Provider.recorded()` answers the same questions from a capture on disk, `tests/capture.mjs` writes one by driving `Provider.live()` against an instance, and a page picks between them through `Provider.fromConfig()` on one setting. The commentary desk now renders a real game with no UltiOrganizer, no Live!, no database and no network — asserted end to end in the standalone suite. See §7a.
 3. **Auth and routing seams — built.** `app.php` is a front controller with an explicit allow-list of the eleven views this directory serves, `shared/auth.php` is the one place anything asks "is this an admin", and `login.php` is the standalone door. `Api\ConfigManager` and `Api\SeasonAccess` are no longer named anywhere outside `Auth`, so the PHP coupling to the host is now a single `class_exists()` check. See §3a.
 4. **The editor.** Teams, a game, the clock, and goal entry — the operator surface. This is the biggest single piece and the one worth prototyping against a real broadcast before committing to a shape.
 5. **Rosters via the existing CSV**, promoted to source of truth.
@@ -110,11 +110,27 @@ Milestone 3 is the first point at which somebody who does not run UltiOrganizer 
 
 **And the first version of the tests proved nothing.** They ran against the working copy, where `live/vendor/autoload.php` sits two directories above `shared/auth.php` — so `Auth::isHosted()` was answering *true* and every assertion labelled "without Live!" was exercising the hosted path. The suite now builds a throwaway tree with no host above it, and asserts that it really is one before asserting anything else.
 
+### 2a. What milestone 2 turned up
+
+**The hosted URL layout was written into every page.** Each one built its asset URLs as `<prefix>/live/overlays/...` in its own helper, and four wrote `?view=live/overlays/<endpoint>` for the line, note, possession, colour and show stores. All of it correct, and all of it an assumption that dissolves when this directory *is* the document root. It is now asked once, of `Overlays\Mode`.
+
+`commentator.php` was the worst of them: it wrote the path inline for all ten of its script tags rather than using a helper, which made it both the one page that could not be served from anywhere else and the one page with no cache-busting — so an operator could be running last week's logic.
+
+**The front controller served the picker for any unknown path.** A request for a missing asset fell through to the dispatcher, which defaults to `index`, so a mistyped script URL answered **200 with a page of HTML**. The browser reported it as `Unexpected token '<'`, which is a long way from "that file is not there". Unknown paths now 404.
+
+**And the clock needed the manifest more than expected.** Rebasing on every read holds a recording at the minute it was taken, which is what makes it usable in a test that must still pass next year. Rebasing once at start makes the clock run on from there, which is what a demo wants. Both are one option apart, and getting it wrong is invisible until the recording is a day old.
+
 ### 7a. What "captured JSON" means
 
 **Not the `conf/` stores.** Worth separating first, because the two bodies of JSON are easy to conflate. `conf/show.json`, `team-colors.json`, `possession-<game>.json`, `lines/` and `notes/` are *this project's own* operator-authored state — already local, already the authority for what they hold, and they need no provider because standalone does not change them at all (§2). What milestone 2 records is the other half: what **Live!** answers, which today exists only in flight. Every poll fetches it and throws it away.
 
-**Captured by what:** a script driving `shared/provider.js` itself against a live instance, writing down what comes back. Using the provider to record is not a convenience — it means the recording is *by construction* in the shape the provider returns, so there is no third format to keep in step with the other two.
+**Captured by what:** `tests/capture.mjs`, which drives `shared/provider.js` itself against a live instance and writes down what comes back:
+
+```
+node tests/capture.mjs --game 702 --out fixtures/payloads/dev
+```
+
+Recording through the provider means the capture is *by construction* in the shape the provider returns. Using the provider to record is not a convenience — it means the recording is *by construction* in the shape the provider returns, so there is no third format to keep in step with the other two.
 
 **Containing what:** one directory per capture, one file per request. For a single game that is the game list, the game's detail, the team list, both teams' rosters, `reference`, `config`, and one `playerevents` per player on both squads — bounded and small, around sixty files for two 28-player rosters.
 

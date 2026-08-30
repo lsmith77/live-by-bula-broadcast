@@ -195,7 +195,8 @@ npm install
 npm test                      # the suite, against a running instance
 ADMIN_PASS=... npm test       # including the tests that change what is on air
 npm run test:unit             # the pure logic alone: no browser, no instance
-npm run test:standalone       # routing and guards on php -S, no host at all
+npm run test:standalone       # routing, guards and a capture-backed page on php -S
+node tests/capture.mjs --game 702 --out fixtures/payloads/dev   # re-record the capture
 node tests/modules.mjs        # every shared module loads under CommonJS
 npm run shots                 # regenerate the images in docs/images/
 ```

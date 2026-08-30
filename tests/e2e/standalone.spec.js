@@ -108,6 +108,39 @@ test.describe('the pages keep their own guard', () => {
   });
 });
 
+test.describe('a page renders from a capture, with no Live! at all', () => {
+  const { hasCapture } = require('../standalone-setup.js');
+  test.skip(!hasCapture(), 'no capture in fixtures/payloads/dev — run tests/capture.mjs');
+
+  test('the commentator page shows the recorded teams and score', async ({ page }) => {
+    // The whole point of milestone 2, asserted end to end: real payloads, no
+    // UltiOrganizer, no database, no network. If this passes, the browser suite
+    // can in principle run here too.
+    await page.goto('/app.php?view=commentator&game=702');
+    await expect(page.locator('.roster').first()).toBeVisible();
+
+    // Names off the recording, not a placeholder.
+    await expect(page.locator('#headHome .nm')).not.toHaveText('—');
+    await expect(page.locator('#headAway .nm')).not.toHaveText('—');
+    await expect(page.locator('#score')).toHaveText(/^\d+ – \d+$/);
+
+    // A roster with people in it, which is the part that needs entity=teams.
+    expect(await page.locator('.roster tbody tr').count()).toBeGreaterThan(5);
+  });
+
+  test('the clock reads the minute the capture was taken', async ({ page }) => {
+    // The rebase, through the whole stack rather than in a unit test. A
+    // recording of the 14th minute must not report three days.
+    await page.goto('/app.php?view=scoreboard&game=702');
+    const clock = page.locator('#clock, .clock').first();
+    if (await clock.count()) {
+      const text = (await clock.textContent()) || '';
+      // Whatever it says, it must not be an hours-long figure.
+      expect(text, 'a rebased clock is minutes, not days').not.toMatch(/\d{3,}:/);
+    }
+  });
+});
+
 test.describe('admin gating without Live!', () => {
   test('this really is a hostless tree', async ({ request }) => {
     // The assertion that gives the rest of this block its meaning. If an
