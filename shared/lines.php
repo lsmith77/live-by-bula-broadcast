@@ -18,7 +18,7 @@
  * Writes are therefore UNAUTHENTICATED, which is the only place in this project
  * that is true. Everything below is the cost of that: a fixed alphabet and
  * length for codes, a small payload cap, a cap on rooms per game with the oldest
- * pruned, and a minimum interval between writes to one room.
+ * pruned, and a write that stores nothing when it would change nothing.
  *
  * See docs/COMMENTATOR.md section 6.
  */
@@ -63,9 +63,6 @@ final class Lines
 
     /** A room untouched for this long is fair game for pruning. */
     private const STALE_SECONDS = 43200;   // 12 hours: longer than any game day
-
-    /** Minimum gap between accepted writes to one room. */
-    private const MIN_WRITE_INTERVAL = 0.2;
 
     private string $dir;
 
@@ -135,14 +132,39 @@ final class Lines
             return ['ok' => false, 'error' => 'Bad room.', 'state' => $this->load($gameId, $code)];
         }
 
-        if (is_file($path) && (microtime(true) - filemtime($path)) < self::MIN_WRITE_INTERVAL) {
-            // Not an error worth showing: the next poll carries the same state.
-            return ['ok' => true, 'error' => null, 'state' => $this->load($gameId, $code)];
-        }
-
         $state = $this->load($gameId, $code);
         $teams = (array) $state['teams'];
-        $teams[(string) $teamId] = self::cleanPlayers($players);
+        $clean = self::cleanPlayers($players);
+
+        /**
+         * Skip a write that would change nothing, rather than one that arrives
+         * too soon.
+         *
+         * This was a time-based throttle: refuse anything landing within 0.2s
+         * of the last write and report success, on the reasoning that the next
+         * poll carries the same state. It does not -- the state was never
+         * stored, so the next poll REVERTS the change and the caller was told
+         * it saved. `filemtime()` has one-second granularity, so the real
+         * window was unpredictable up to a second rather than the 0.2s it
+         * looked like.
+         *
+         * It cost a real edit: picking a player and immediately taking somebody
+         * off injured is two writes in well under a second, and the second one
+         * -- the substitution -- vanished from the room while the desk that
+         * made it went on showing it. The identical bug was found and fixed in
+         * the notes store (`shared/notes.php`); this is the same fix, and the
+         * reason to state it twice is that one copy having it and the other not
+         * is exactly how it survived.
+         *
+         * Comparing content drops exactly the writes worth dropping -- a poll
+         * echoing a line back unchanged -- and never loses one that would have
+         * changed anything.
+         */
+        if (isset($teams[(string) $teamId]) && $teams[(string) $teamId] === $clean) {
+            return ['ok' => true, 'error' => null, 'state' => $state];
+        }
+
+        $teams[(string) $teamId] = $clean;
 
         $next = ['teams' => self::cleanTeams($teams), 'touched' => time()];
 

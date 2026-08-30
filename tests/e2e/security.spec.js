@@ -211,9 +211,46 @@ test.describe('unauthenticated boundaries', () => {
         data: { game: 900500, code: 'CCCCC', team, players: [1, 2, 3] },
       });
       if (r.ok()) body = await r.json();
-      await new Promise((res) => setTimeout(res, 250)); // MIN_WRITE_INTERVAL
     }
     expect(body).not.toBeNull();
     expect(Object.keys(body.teams).length).toBeLessThanOrEqual(8);
   });
+
+  test('two quick writes both land, rather than the second being swallowed',
+    async ({ request }) => {
+      // The store used to refuse any write arriving within 0.2s of the last and
+      // report success, on the reasoning that the next poll carried the same
+      // state. It did not: the state was never stored, so the next poll
+      // REVERTED the change while the desk that made it went on showing it.
+      //
+      // Picking a player and immediately taking somebody off injured is two
+      // writes in well under a second, so this is not a synthetic race. The
+      // sleep this test used to need to work around the throttle was the
+      // clearest evidence it was wrong.
+      // Aligned to a second boundary, because the throttle's window was never
+      // a fixed 0.2s: `filemtime()` has one-second granularity, so whether a
+      // pair fell inside it depended on where in the second the first write
+      // landed. Starting each pair just after a boundary puts the second write
+      // squarely inside the old window every time, which is what makes this a
+      // regression test rather than a coin toss.
+      const room = { game: 900501, code: 'DDDDD', team: 7 };
+      const post = (players) => request.post('/index.php?view=live/overlays/lines',
+        { data: { ...room, players } });
+      const atSecondStart = () => new Promise(
+        (r) => setTimeout(r, (1000 - (Date.now() % 1000)) + 20));
+
+      for (let i = 0; i < 3; i += 1) {
+        await atSecondStart();
+        await post([1, 2, 3, 4, 5, 6, 7]);
+        const line = [1, 2, 3, 4, 5, 6].concat(i + 10);  // one swapped each pass
+        const second = await post(line);
+        expect(second.ok()).toBe(true);
+        expect((await second.json()).teams['7'], `pair ${i}: reply`).toEqual(line);
+
+        // And it is in the store, not just in the reply.
+        const read = await request.get(
+          `/index.php?view=live/overlays/lines&game=${room.game}&code=${room.code}`);
+        expect((await read.json()).teams['7'], `pair ${i}: stored`).toEqual(line);
+      }
+    });
 });
