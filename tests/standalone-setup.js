@@ -68,6 +68,17 @@ function build() {
   w(path.join('notes', 'show.json'), JSON.stringify({ decoy: true }));
   w(path.join('lines', 'DDDDD.json'), JSON.stringify({ rev: 1 }));
 
+  // An administrator password, so the login path can actually be exercised.
+  // Hosted, those tests skip without ADMIN_PASS and mostly do not run; here the
+  // password is ours to set, which makes this the only place `Auth::attempt()`
+  // — the one piece of security code this project owns rather than borrows —
+  // is tested at all.
+  //
+  // A real bcrypt hash rather than a stub: the point is that password_verify
+  // is being called correctly, and a fake hash would prove the opposite.
+  const ADMIN_PASSWORD = 'standalone-test-password';
+  const ADMIN_HASH = '$2y$12$qVhSYwhOqZUrw9jEmZK4Cut4.NQmLoh5aCPfTcRqpUGWUC18RX7Ym';
+
   // The capture, plus the config that makes the pages read it. Both or
   // neither: a config naming a capture that is not there would make every
   // page fail in a way that looks like a routing bug.
@@ -76,7 +87,13 @@ function build() {
     cpSync(CAPTURE, path.join(root, 'fixtures', 'payloads', 'dev'), { recursive: true });
     writeFileSync(
       path.join(root, 'conf', 'local-config.php'),
-      "<?php\n\nreturn ['capture' => 'fixtures/payloads/dev'];\n",
+      `<?php\n\nreturn [\n  'capture' => 'fixtures/payloads/dev',\n`
+      + `  'admin_hash' => '${ADMIN_HASH}',\n];\n`,
+    );
+  } else {
+    writeFileSync(
+      path.join(root, 'conf', 'local-config.php'),
+      `<?php\n\nreturn ['admin_hash' => '${ADMIN_HASH}'];\n`,
     );
   }
 
@@ -88,4 +105,4 @@ function hasCapture() {
   return existsSync(CAPTURE);
 }
 
-module.exports = { build, hasCapture, RUNTIME, cleanup: (root) => rmSync(root, { recursive: true, force: true }) };
+module.exports = { build, hasCapture, ADMIN_PASSWORD: 'standalone-test-password', RUNTIME, cleanup: (root) => rmSync(root, { recursive: true, force: true }) };

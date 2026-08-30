@@ -171,6 +171,63 @@ test.describe('a page renders from a capture, with no Live! at all', () => {
   });
 });
 
+test.describe('the standalone login', () => {
+  const { ADMIN_PASSWORD } = require('../standalone-setup.js');
+
+  /** Sign in through the page a person would use, and keep the cookies. */
+  async function signIn(page, password) {
+    await page.goto('/app.php?view=login');
+    await page.locator('#password').fill(password);
+    await page.locator('button[type=submit]').click();
+    await page.waitForLoadState('networkidle');
+  }
+
+  test('the right password opens the door, and the wrong one does not', async ({ page }) => {
+    // Auth::attempt() is the one piece of security code this project owns
+    // rather than borrows from Live!, and hosted it can never be exercised —
+    // those tests skip without ADMIN_PASS. Here the password is ours.
+    await signIn(page, 'not the password');
+    await expect(page.locator('.msg.bad')).toContainText('was not accepted');
+
+    await signIn(page, ADMIN_PASSWORD);
+    await expect(page.locator('.msg.good')).toContainText('Logged in');
+  });
+
+  test('a session earned at the login is honoured by the endpoints', async ({ page }) => {
+    // The whole point: signing in must actually let this browser change what is
+    // on air. A session key that varied between requests would pass the test
+    // above and fail this one.
+    await signIn(page, ADMIN_PASSWORD);
+
+    const before = await page.request.get('/app.php?view=show');
+    expect((await before.json()).admin).toBe(true);
+
+    const res = await page.request.post('/app.php?view=show', {
+      data: { rev: 0, cards: [] },
+    });
+    expect(res.status(), 'an admin may write').not.toBe(403);
+  });
+
+  test('the session survives arriving by a different URL', async ({ page }) => {
+    // The key is derived from where this installation lives, not from
+    // SCRIPT_NAME — which the built-in server reports differently for `/` and
+    // for `/app.php`, and which would therefore drop the login on one of them.
+    await signIn(page, ADMIN_PASSWORD);
+    for (const url of ['/app.php?view=show', '/?view=show']) {
+      const res = await page.request.get(url);
+      expect((await res.json()).admin, url).toBe(true);
+    }
+  });
+
+  test('signing out closes it again', async ({ page }) => {
+    await signIn(page, ADMIN_PASSWORD);
+    await page.locator('button[name=logout]').click();
+    await page.waitForLoadState('networkidle');
+    const res = await page.request.get('/app.php?view=show');
+    expect((await res.json()).admin).toBe(false);
+  });
+});
+
 test.describe('admin gating without Live!', () => {
   test('this really is a hostless tree', async ({ request }) => {
     // The assertion that gives the rest of this block its meaning. If an

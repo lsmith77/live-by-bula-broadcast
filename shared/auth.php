@@ -140,7 +140,15 @@ final class Auth
     {
         $config = is_file(self::LOCAL_CONFIG) ? require self::LOCAL_CONFIG : [];
         $event = is_array($config) ? (string) ($config['event'] ?? 'standalone') : 'standalone';
-        $prefix = str_replace('/', 'x', (string) ($_SERVER['SCRIPT_NAME'] ?? ''));
+
+        // OVERLAYS_BASE_URL, not SCRIPT_NAME. The key has to be identical for
+        // every request to one installation or a login stops being recognised
+        // half the time — and SCRIPT_NAME is not that: PHP's built-in server
+        // reports `/index.php` for a request to `/` and `/app.php` for a direct
+        // hit, which would be two different keys for the same installation.
+        $prefix = str_replace('/', 'x', defined('OVERLAYS_BASE_URL')
+            ? (string) OVERLAYS_BASE_URL
+            : '');
 
         return 'overlays_admin_' . $event . '_' . $prefix;
     }
