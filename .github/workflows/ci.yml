@@ -61,6 +61,9 @@ jobs:
   php-syntax:
     name: PHP syntax
     runs-on: ubuntu-latest
+    # None of these should take a minute. The runner default is six HOURS, so a
+    # hung step would sit there rather than telling anyone.
+    timeout-minutes: 5
     strategy:
       fail-fast: false
       matrix:
@@ -86,6 +89,7 @@ jobs:
   units:
     name: Shared logic
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
 
@@ -100,8 +104,12 @@ jobs:
       # absent so that a spec which starts needing one fails here loudly.
       - run: npm ci
 
-      - name: Shared modules load under CommonJS
-        run: node tests/modules.mjs
+      # The repository's own checks, all runnable locally with `npm run check`.
+      # They used to be shell inside this file, which meant nobody could run
+      # them without copying them out of YAML — and a check nobody can run is a
+      # check nobody trusts.
+      - name: Repository checks
+        run: npm run check
 
       - name: Pure logic
         run: npm run test:unit
@@ -109,6 +117,7 @@ jobs:
   standalone:
     name: Standalone front controller
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
 
@@ -128,8 +137,29 @@ jobs:
       # but the tests that prove a page RENDERS from a capture need a real
       # browser. Unlike the main config this one does not ask for system
       # Chrome, so the bundled build is what it wants.
+      #
+      # Keyed on the resolved Playwright version rather than on the lockfile
+      # hash, because the browser build is what the cache holds and that is
+      # what the version determines.
+      - name: Playwright version
+        id: pw
+        run: echo "v=$(node -p "require('@playwright/test/package.json').version")" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/cache@v4
+        id: browser-cache
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-chromium-${{ runner.os }}-${{ steps.pw.outputs.v }}
+
       - name: Install Chromium
+        if: steps.browser-cache.outputs.cache-hit != 'true'
         run: npx playwright install --with-deps chromium
+
+      # The cache holds the browser but not the system libraries it links
+      # against, so those are installed either way. Cheap when already present.
+      - name: Browser system dependencies
+        if: steps.browser-cache.outputs.cache-hit == 'true'
+        run: npx playwright install-deps chromium
 
       # The reason this can run at all: standalone mode needs no UltiOrganizer,
       # no Live!, no database and no Apache — just PHP's built-in server and a
@@ -141,34 +171,3 @@ jobs:
       # second time in app.php's router, and only a request can prove it.
       - name: Routing, guards, and a page rendered from a capture
         run: npm run test:standalone
-
-  docs:
-    name: Docs and links
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Every relative doc link resolves
-        # The docs are load-bearing here — most of what they record is *why*
-        # something is the way it is — and they cross-reference each other
-        # heavily. A rename that breaks a link is silent until somebody follows
-        # it and finds nothing.
-        run: |
-          status=0
-          while IFS= read -r -d '' file; do
-            dir=$(dirname "$file")
-            # Markdown links to relative paths only: skip http(s), anchors and
-            # mailto, and strip any #fragment before testing the path.
-            grep -oE '\]\([^)#]+\.(md|sql|conf|png|gif|sh|php|js|yml)(#[^)]*)?\)' "$file" \
-              | sed -E 's/^\]\(//; s/\)$//; s/#.*$//' \
-              | while read -r link; do
-                  case "$link" in
-                    http*|mailto:*) continue ;;
-                  esac
-                  if [ ! -e "$dir/$link" ]; then
-                    echo "$file: broken link -> $link"
-                    exit 1
-                  fi
-                done || status=1
-          done < <(find . -name '*.md' -not -path './node_modules/*' -print0)
-          exit $status

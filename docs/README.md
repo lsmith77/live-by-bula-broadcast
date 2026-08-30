@@ -196,6 +196,7 @@ npm test                      # the suite, against a running instance
 ADMIN_PASS=... npm test       # including the tests that change what is on air
 npm run test:unit             # the pure logic alone: no browser, no instance
 npm run test:standalone       # routing, guards and a capture-backed page on php -S
+npm run check                 # the repository's own checks, exactly as CI runs them
 node tests/capture.mjs --game 702 --out fixtures/payloads/dev   # re-record the capture
 node tests/modules.mjs        # every shared module loads under CommonJS
 npm run shots                 # regenerate the images in docs/images/
@@ -209,7 +210,18 @@ Tests needing the Live! admin session skip themselves without `ADMIN_PASS`, and 
 
 ### What continuous integration can and cannot prove
 
-[`.github/workflows/ci.yml`](../.github/workflows/ci.yml) runs on every push and pull request: PHP syntax on 8.3 and 8.4, the shared modules' CommonJS load, `npm run test:unit`, `npm run test:standalone`, and a check that every relative link in these docs resolves.
+[`.github/workflows/ci.yml`](../.github/workflows/ci.yml) runs on every push and pull request: PHP syntax on 8.3 and 8.4, `npm run check`, `npm run test:unit` and `npm run test:standalone`.
+
+**`npm run check` is the repository's own checks, and CI runs exactly that command** rather than a copy of it. That matters more than it sounds: these started as shell inside the workflow file, which meant the only way to run them was to copy them out of YAML — and a check nobody can run locally is a check nobody trusts or maintains. Four of them:
+
+| Check | What it catches |
+|---|---|
+| [`tests/modules.mjs`](../tests/modules.mjs) | a `shared/` module that stops loading under CommonJS, which takes the whole suite down with an error naming the loader rather than the bug |
+| [`tests/suites.mjs`](../tests/suites.mjs) | a spec run by no config, and — the real one — a **pure spec missing from the unit config**, which still passes locally under the hosted suite while never running in CI at all |
+| [`tests/links.mjs`](../tests/links.mjs) | a relative link in these documents that no longer resolves |
+| [`tests/capture-check.mjs`](../tests/capture-check.mjs) | a committed capture missing a roster or a player history — which fails as "Loading…" forever rather than as an error — or a game absent from the manifest, whose clock then cannot be rebased |
+
+Each one was checked by breaking something and watching it fail, which is the only evidence that a check does anything.
 
 The standalone job is the first one here that makes real HTTP requests, and it can only exist because standalone mode needs no UltiOrganizer, no Live!, no database and no Apache. What it guards is worth the job on its own: that `conf/` — which holds the commentary desk's notes about named people — is not served over HTTP. `php -S` does not read `.htaccess`, so those rules exist a second time inside `app.php`, and only a request can prove they work.
 

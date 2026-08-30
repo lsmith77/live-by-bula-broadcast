@@ -355,11 +355,11 @@
   },
   "meta": {
     "cache_lifetime": 30,
-    "expires": "2026-08-30 19:19:12",
-    "cache_version": "20260830.191841",
-    "expires_timestamp": 1788117552,
+    "expires": "2026-08-30 19:40:16",
+    "cache_version": "20260830.193408",
+    "expires_timestamp": 1788118816,
     "app_version": "3.0.6",
-    "generated": "2026-08-30 19:18:42",
-    "generated_timestamp": 1788117522
+    "generated": "2026-08-30 19:39:46",
+    "generated_timestamp": 1788118786
   }
 }

@@ -6,6 +6,7 @@
     "test": "playwright test --config tests/playwright.config.js --project=overlays",
     "test:unit": "playwright test --config tests/playwright.unit.config.js",
     "test:standalone": "playwright test --config tests/playwright.standalone.config.js",
+    "check": "node tests/modules.mjs && node tests/suites.mjs && node tests/links.mjs && node tests/capture-check.mjs",
     "test:ui": "playwright test --config tests/playwright.config.js --project=overlays --ui",
     "shots": "playwright test --config tests/playwright.config.js --project=shots"
   },
