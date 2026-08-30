@@ -5,8 +5,10 @@
  * missing" seven times under time pressure. Given each player's matching and
  * the point's ratio, the picker can answer it structurally instead:
  *
- *   - the MINORITY matching lists first — it is the shorter list and the
- *     tighter constraint, so it is clicked first and confirmed at a glance;
+ *   - the MAJORITY matching lists first — it is the group the point needs four
+ *     of rather than three, so it is the longer row and the bulk of the
+ *     clicking, and putting it on top keeps the picker's first row the busy
+ *     one on every point instead of alternating with the ratio;
  *   - a group whose quota is exactly filled HIDES its unpicked players: every
  *     one of them could only make the line illegal, and unpicking somebody
  *     from the group brings them all back (the picked stay visible for that);
@@ -38,7 +40,7 @@
      * @param picked  ids on the line
      * @return null when there is nothing to group by, else
      *         { groups: [{matching, quota, picked, full, players}], unknown: [] }
-     *         — groups ordered minority first (FMP first on a tie).
+     *         — groups ordered majority first (FMP first on a tie).
      */
     function groups(players, quotas, picked) {
         if (!quotas || !isFinite(quotas.MMP) || !isFinite(quotas.FMP)) { return null; }
@@ -53,7 +55,7 @@
             if (m === 'MMP' || m === 'FMP') { by[m].push(p); } else { unknown.push(p); }
         });
 
-        var order = quotas.FMP <= quotas.MMP ? ['FMP', 'MMP'] : ['MMP', 'FMP'];
+        var order = quotas.FMP >= quotas.MMP ? ['FMP', 'MMP'] : ['MMP', 'FMP'];
         return {
             groups: order.map(function (m) {
                 var count = by[m].filter(function (p) { return onLine[String(p.id)]; }).length;

@@ -381,7 +381,8 @@ try {
     .pickhead .count { font-weight: 700; font-variant-numeric: tabular-nums; }
     .pickhead .count.ok { color: var(--ok); }
     .pickhead .count.over { color: var(--bad); }
-    .nums { display: flex; flex-wrap: wrap; gap: .35rem; }
+    .nums { display: flex; flex-direction: column; gap: .45rem; }
+    .numrow { display: flex; flex-wrap: wrap; gap: .35rem; }
     .nums button { min-width: 3.1rem; padding: .5rem .4rem; border-radius: 5px;
                    border: 1px solid var(--line); background: var(--bg); color: var(--ink-2);
                    font: inherit; font-weight: 700; font-variant-numeric: tabular-nums;
@@ -2893,6 +2894,33 @@ try {
         box.append(peek);
     }
 
+    /** Whether anybody in this list has a matching recorded at all. */
+    function anyMatching(list) {
+        return list.some(function (p) {
+            var n = noteFor(p.id);
+            return !!(n && n.matching);
+        });
+    }
+
+    /**
+     * The matching grouping for a set of players, or null when it cannot apply.
+     *
+     * Shared by the picker and the on-field panel so the two cannot disagree
+     * about which group leads — the panel is the picker's result, and a line
+     * that reordered itself the moment the point started would undo the point
+     * of grouping it.
+     */
+    function groupsFor(side, list, picked) {
+        if (!isMixedSide(side) || !anyMatching(list) || !window.Lineup) { return null; }
+        return window.Lineup.groups(
+            list.map(function (p) {
+                var n = noteFor(p.id);
+                return { id: p.id, matching: n && n.matching };
+            }),
+            window.Ratio.counts(currentRatioFull()),
+            picked);
+    }
+
     function pickPanel(side) {
         var panel = el('div', 'panel');
         var list = rosterByNumber(side);
@@ -2900,25 +2928,14 @@ try {
         var mixed = isMixedSide(side);
 
         // With matchings and this point's ratio in hand, the header counts
-        // each matching against its quota, tighter quota first — "MMP 2 of 3"
-        // is the question a mixed line answers seven times.
+        // each matching against its quota, in the order the rows below use —
+        // "MMP 2 of 4" is the question a mixed line answers seven times.
         //
         // With NO matchings at all, the counts and grouping stand down rather
         // than showing "0 of 3" against a full line — a room without the
         // metadata must look like missing metadata, not like a broken picker.
-        var hasMatchings = list.some(function (p) {
-            var n = noteFor(p.id);
-            return !!(n && n.matching);
-        });
-        var assist = mixed && hasMatchings && window.Lineup
-            ? window.Lineup.groups(
-                list.map(function (p) {
-                    var n = noteFor(p.id);
-                    return { id: p.id, matching: n && n.matching };
-                }),
-                window.Ratio.counts(currentRatioFull()),
-                line)
-            : null;
+        var hasMatchings = anyMatching(list);
+        var assist = groupsFor(side, list, line);
 
         var head = el('div', 'pickhead');
         head.append(el('strong', null, side.team.name || '—'));
@@ -2988,19 +3005,25 @@ try {
         // nothing unpicked can join a full line, so showing it only invites
         // the eighth pick.
         var lineFull = line.length >= size;
-        assist.groups.forEach(function (g) {
-            g.players.forEach(function (gp) {
+        // A row that ends up empty is left out entirely: an empty band reads as
+        // a group with nobody in it, which is not what a filled quota means.
+        var addRow = function (players, keep) {
+            var row = el('div', 'numrow');
+            players.forEach(function (gp) {
                 var p = byId[String(gp.id)];
                 if (!p) { return; }
-                if ((g.full || lineFull) && line.indexOf(p.id) === -1) { return; }
-                nums.append(chip(p));
+                if (!keep(p)) { return; }
+                row.append(chip(p));
+            });
+            if (row.childNodes.length) { nums.append(row); }
+        };
+        assist.groups.forEach(function (g) {
+            addRow(g.players, function (p) {
+                return !((g.full || lineFull) && line.indexOf(p.id) === -1);
             });
         });
-        assist.unknown.forEach(function (gp) {
-            var p = byId[String(gp.id)];
-            if (!p) { return; }
-            if (lineFull && line.indexOf(p.id) === -1) { return; }
-            nums.append(chip(p));
+        addRow(assist.unknown, function (p) {
+            return !(lineFull && line.indexOf(p.id) === -1);
         });
         return panel;
     }

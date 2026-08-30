@@ -33,20 +33,20 @@ test.describe('ratio quotas', () => {
 });
 
 test.describe('lineup grouping', () => {
-  test('the minority matching lists first — the short list is clicked first', () => {
+  test('the majority matching lists first — the four are the top row', () => {
     const out = Lineup.groups(SQUAD, Ratio.counts('4MMP/3FMP'), []);
-    expect(out.groups.map((g) => g.matching)).toEqual(['FMP', 'MMP']);
+    expect(out.groups.map((g) => g.matching)).toEqual(['MMP', 'FMP']);
     const flipped = Lineup.groups(SQUAD, Ratio.counts('3MMP/4FMP'), []);
-    expect(flipped.groups.map((g) => g.matching)).toEqual(['MMP', 'FMP']);
+    expect(flipped.groups.map((g) => g.matching)).toEqual(['FMP', 'MMP']);
   });
 
   test('a filled quota marks its group done', () => {
     const out = Lineup.groups(SQUAD, Ratio.counts('4MMP/3FMP'), [2, 4, 6]);
-    const fmp = out.groups[0];
+    const fmp = out.groups[1];
     expect(fmp.matching).toBe('FMP');
     expect(fmp.picked).toBe(3);
     expect(fmp.full).toBe(true);
-    expect(out.groups[1].full).toBe(false);
+    expect(out.groups[0].full).toBe(false);
   });
 
   test('players without a matching are their own group, never hidden by a quota', () => {
@@ -66,7 +66,7 @@ test.describe('lineup grouping', () => {
     // before the ratio was declared can exceed the quota — the group must say
     // so rather than clamp.
     const out = Lineup.groups(SQUAD, Ratio.counts('4MMP/3FMP'), [2, 4, 6, 8]);
-    expect(out.groups[0].picked).toBe(4);
-    expect(out.groups[0].full).toBe(true);
+    expect(out.groups[1].picked).toBe(4);
+    expect(out.groups[1].full).toBe(true);
   });
 });

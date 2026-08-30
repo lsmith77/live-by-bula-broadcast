@@ -782,16 +782,18 @@ test.describe('prepared notes', () => {
     await expect(sel).toBeEnabled();
     await sel.selectOption({ index: 1 });
 
-    // The panel runs, the caveat is explicit, and the picker leads with the
-    // tighter quota's players — for THIS point, not point 1: at 5-4 the next
-    // point is 10, a B slot, so declaring 4MMP for point 1 makes this point
-    // 3MMP and the MMP chips the short list.
+    // The panel runs, the caveat is explicit, and the picker's top ROW is the
+    // majority matching's — for THIS point, not point 1: at 5-4 the next point
+    // is 10, a B slot, so declaring 4MMP for point 1 makes this point 3MMP,
+    // which puts the four FMP on top.
     await expect(page.locator('.abbarun .abbapt.now')).toBeVisible();
     await expect(page.locator('.abba')).toContainText('this screen only');
-    await expect(page.locator('.cols .panel').first().locator('.nums button').first())
-      .toHaveClass(/mmp/);
-    // The quota counts sit in the header beside the team name.
-    await expect(page.locator('.pickhead .gcount').first()).toContainText('MMP 0 of 3');
+    const firstRow = page.locator('.cols .panel').first().locator('.nums .numrow').first();
+    await expect(firstRow.locator('button').first()).toHaveClass(/fmp/);
+    // Every chip in a row shares its matching — the row IS the group.
+    await expect(firstRow.locator('button:not(.fmp)')).toHaveCount(0);
+    // The quota counts sit in the header beside the team name, in the row order.
+    await expect(page.locator('.pickhead .gcount').first()).toContainText('FMP 0 of 4');
 
     // It survives a reload — which stays in play mode, the mode being in the
     // URL — and is still local.
