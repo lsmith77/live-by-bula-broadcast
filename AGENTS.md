@@ -155,5 +155,6 @@ Fixtures: `fixtures/dev-fixture.sql` (idempotent — two 28-player squads, one f
 - `docs/COMMENTATOR.md` — the second screen, line sharing, prepared talking points (§5a), the naming/pronunciation questions, and the federation idea (§8a).
 - `docs/POSTPRODUCTION.md` — adding an overlay to a game that was recorded without a switcher: alignment, anchors, and what is not solved.
 - `docs/UPSTREAM.md` — the digest of asks against UltiOrganizer and Live!, one entry per ask linking to its full case in `STUDIO.md` or `COMMENTATOR.md`.
+- `docs/STANDALONE.md` — a concept, nothing built: running the overlays without UltiOrganizer, and where the seam would go. Read it before adding anything that reaches for the host, because the coupling is currently two PHP classes and four API entities and it is worth keeping that small.
 
 Keep them in sync with the code. When a doc and the code disagree, the doc is a bug — this project's docs are load-bearing, because most of what they record is *why* something is the way it is, which the code cannot say.

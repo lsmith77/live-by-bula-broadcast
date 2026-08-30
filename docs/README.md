@@ -116,6 +116,14 @@ The digest of asks against UltiOrganizer and Live! by BULA — one entry per ask
 
 **Go here for:** the upstream wishlist in one place.
 
+### [`STANDALONE.md`](STANDALONE.md) — the overlays without UltiOrganizer
+
+A concept, with nothing built. Everything here assumes an UltiOrganizer installation with Live! underneath, and that assumption is load-bearing in the deployment sense and almost nowhere else: the coupling is **two PHP classes in three files, four read endpoints, and a clock that is three integers**. A tournament scored on paper, a club friendly, a showcase game outside the event that owns the software — the overlays would work in all of them, and the only thing missing is something to answer "what is game 702".
+
+The document is mostly about where the seam goes, what a person would have to type, and what is honestly lost — which is every number Live! accumulates across an event, and which the existing "absent is not zero" rule already handles correctly by omission.
+
+**Go here for:** whether this could run without the host, and what it would cost.
+
 ---
 
 ## Development
