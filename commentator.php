@@ -3108,14 +3108,7 @@ try {
             syncCode = v;
             rememberCode(v);
             input.value = v;
-            state.line = {};       // a different room is a different selection
-            notes = {};            // ... and a different set of prepared notes
-            teamNotes = {};
-            // ... and a different game's injuries. Leaving these behind would
-            // mark somebody INJ on a roster they were never taken off.
-            state.injury = {};
-            state.injured = {};
-            rememberInjured();
+            resetFor('room');
             pullLines();
             pullNotes();
             render();
@@ -4005,7 +3998,7 @@ try {
             var clear = el('button', 'tbtn', 'Clear');
             clear.type = 'button';
             clear.title = 'Clear both lines';
-            clear.addEventListener('click', function () { state.line = {}; render(); });
+            clear.addEventListener('click', function () { resetFor('lines'); render(); });
             box.append(clear);
             box.append(keysButton());
         } else {
@@ -4269,17 +4262,56 @@ try {
      * the automatic reset safe — nothing a commentator typed is destroyed, only
      * the mode changes.
      */
+    /**
+     * What survives which boundary — in one place, because it kept being
+     * answered in several.
+     *
+     * This page holds state with three different lifetimes, and three separate
+     * handlers used to decide independently what each of them cleared. Two bugs
+     * came straight out of that: a substitution prompt outliving the point it
+     * belonged to, and a sync-code change leaving the previous room's injuries
+     * marked on a roster nobody was taken off. Both were "this handler did not
+     * think about that field", which is a question a list answers and scattered
+     * assignments do not.
+     *
+     *   point  a goal ended the point. The PROMPT goes — "pick another FMP" is
+     *          about a line nobody is choosing any more — while the record of
+     *          the injury stays, because it happened.
+     *   lines  the desk cleared both lines by hand. Only the selection: an
+     *          injury is a fact about the game, not about the current line.
+     *   room   a different sync code is a different room, so everything the
+     *          room supplied goes, injuries included.
+     *
+     * The declared ratio and line size are deliberately in none of them: they
+     * are keyed per GAME, not per room, and remain true across all three.
+     */
+    function resetFor(scope) {
+        if (scope === 'point') {
+            state.injury = {};
+            return;
+        }
+        if (scope === 'lines') {
+            state.line = {};
+            return;
+        }
+        if (scope === 'room') {
+            state.line = {};
+            notes = {};
+            teamNotes = {};
+            state.injury = {};
+            state.injured = {};
+            rememberInjured();
+            return;
+        }
+        throw new Error('unknown reset scope: ' + scope);
+    }
+
     function watchScore() {
         var r = state.payload.game_result || {};
         var key = (r.homescore || 0) + ':' + (r.visitorscore || 0);
         if (state.lastScore !== null && key !== state.lastScore && state.mode === 'play') {
             state.step = 1;
-            // The substitution prompt belongs to the point it happened in. The
-            // point is over, so "pick another FMP" is now about a line nobody
-            // is choosing — and a banner naming somebody who went off two
-            // points ago reads as a line that is still short. The RECORD of the
-            // injury stays; only the question goes.
-            state.injury = {};
+            resetFor('point');
         }
         state.lastScore = key;
     }
