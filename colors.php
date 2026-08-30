@@ -19,11 +19,10 @@ if (!defined('UO_ROUTED_VIEW')) {
     exit;
 }
 
-require_once __DIR__ . '/../vendor/autoload.php';
+require_once __DIR__ . '/shared/auth.php';
 require_once __DIR__ . '/shared/colors.php';
 
-use Api\ConfigManager;
-use Api\SeasonAccess;
+use Overlays\Auth;
 use Overlays\Colors;
 
 header('Content-Type: application/json; charset=UTF-8');
@@ -33,8 +32,7 @@ header('Content-Type: application/json; charset=UTF-8');
 header('Cache-Control: no-store, must-revalidate');
 
 $store = new Colors();
-$config = (new ConfigManager())->getConfig()['config'] ?? [];
-$isAdmin = SeasonAccess::isLiveAdminAuthenticated($config);
+$isAdmin = Auth::isAdmin();
 
 /** @return never */
 function respond(Colors $store, bool $isAdmin): void

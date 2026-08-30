@@ -37,7 +37,12 @@
     </FilesMatch>
 </IfModule>
 
-RedirectMatch 404 ^/live/overlays/conf/(?!(show\.json|possession-[0-9]+\.json)$).*$
+# Anchored on "conf/" rather than on /live/overlays/conf/ so the rule still
+# bites when this directory is not at that URL — a standalone installation
+# serves it at the document root, and a prefix-bound pattern would silently
+# match nothing there while looking correct. Scoped to this directory either
+# way, so it cannot touch an unrelated conf/ elsewhere on the host.
+RedirectMatch 404 (^|/)conf/(?!(show\.json|possession-[0-9]+\.json)$).*$
 
 <IfModule mod_rewrite.c>
     RewriteEngine On

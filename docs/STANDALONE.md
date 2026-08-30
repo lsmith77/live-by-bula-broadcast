@@ -93,12 +93,22 @@ That has a pleasant side effect. Today the browser suite cannot run in CI at all
 
 1. **The provider seam, hosted only.** Introduce `shared/provider.js`, route the four call sites through it, change nothing else. Behaviour identical, and it is independently verifiable: the whole suite must stay green with no other change. This is the commit that makes everything after it cheap.
 2. **A recorded-payload provider.** The same interface reading captured JSON from disk. No editing UI. See §7a for what does the capturing, what a capture holds, and — since it is a fair question — what this actually buys on its own.
-3. **Auth and routing seams.** A standalone front controller and a local admin password. At this point the overlays run on a bare PHP host against recorded payloads.
+3. **Auth and routing seams — built.** `app.php` is a front controller with an explicit allow-list of the eleven views this directory serves, `shared/auth.php` is the one place anything asks "is this an admin", and `login.php` is the standalone door. `Api\ConfigManager` and `Api\SeasonAccess` are no longer named anywhere outside `Auth`, so the PHP coupling to the host is now a single `class_exists()` check. See §3a.
 4. **The editor.** Teams, a game, the clock, and goal entry — the operator surface. This is the biggest single piece and the one worth prototyping against a real broadcast before committing to a shape.
 5. **Rosters via the existing CSV**, promoted to source of truth.
 6. *(Later, maybe never)* accumulation across games within a standalone event.
 
 Milestone 3 is the first point at which somebody who does not run UltiOrganizer can use this project. Milestone 1 is worth doing regardless of whether the rest ever happens.
+
+### 3a. What milestone 3 turned up
+
+**An allow-list rather than a resolver.** UltiOrganizer resolves `?view=` against the filesystem because it serves hundreds of pages and cannot enumerate them — it rejects `..`, restricts the characters, then confirms the realpath is still inside the base directory. Correct for that problem, and a design whose safety rests on three checks being right. This directory serves eleven pages and can name all of them, so `app.php` does: **no part of the request ever becomes part of a path**, and there is no traversal to defend against rather than a filter that must hold.
+
+**`php -S` does not read `.htaccess`, and §8 recommends `php -S`.** That combination was a live hole, found by making the request rather than by reading the code: a standalone deployment served `conf/notes/<room>.json` — the desk's prepared notes, about named people — to anyone who asked. `app.php` now carries the same default-closed rule in a router block, and thirteen tests drive it over HTTP.
+
+**The shipped `.htaccess` had the same bug in a quieter form.** Its denial was anchored on `^/live/overlays/conf/`, a path that only exists in a hosted installation. Standalone serves this directory at the document root, where that pattern matches nothing while looking entirely correct. Now anchored on `conf/` itself.
+
+**And the first version of the tests proved nothing.** They ran against the working copy, where `live/vendor/autoload.php` sits two directories above `shared/auth.php` — so `Auth::isHosted()` was answering *true* and every assertion labelled "without Live!" was exercising the hosted path. The suite now builds a throwaway tree with no host above it, and asserts that it really is one before asserting anything else.
 
 ### 7a. What "captured JSON" means
 

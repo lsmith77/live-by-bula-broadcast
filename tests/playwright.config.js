@@ -73,7 +73,11 @@ module.exports = defineConfig({
       // 1920x1080 is not a preference here, it is the canvas. A stage bug that
       // only appears at other sizes is a different test (see stage.spec.js).
       use: { ...devices['Desktop Chrome'], viewport: { width: 1920, height: 1080 } },
-      testIgnore: /shots\.spec\.js/,
+      // standalone.spec.js drives its own `php -S` on a hostless tree and has a
+      // config of its own (`npm run test:standalone`). Left in, it would fail
+      // here for the right reason — there is no server on that port — and the
+      // failure would say nothing about the overlays.
+      testIgnore: /(shots|standalone)\.spec\.js/,
     },
     {
       // Not a test: generates the images in docs/images/ for the README.

@@ -24,7 +24,12 @@ if (!defined('UO_ROUTED_VIEW')) {
     exit;
 }
 
-require_once __DIR__ . '/../conf/LocalConfig.php';
+// Live!'s config, which defines UO_URL_PREFIX. Optional: standalone has no
+// Live! to configure, and every reader below already falls back when the
+// constant is undefined — see docs/STANDALONE.md.
+if (is_file(__DIR__ . '/../conf/LocalConfig.php')) {
+    require_once __DIR__ . '/../conf/LocalConfig.php';
+}
 require_once __DIR__ . '/shared/show.php';
 require_once __DIR__ . '/shared/logos.php';
 

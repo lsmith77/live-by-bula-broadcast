@@ -5,6 +5,7 @@
   "scripts": {
     "test": "playwright test --config tests/playwright.config.js --project=overlays",
     "test:unit": "playwright test --config tests/playwright.unit.config.js",
+    "test:standalone": "playwright test --config tests/playwright.standalone.config.js",
     "test:ui": "playwright test --config tests/playwright.config.js --project=overlays --ui",
     "shots": "playwright test --config tests/playwright.config.js --project=shots"
   },

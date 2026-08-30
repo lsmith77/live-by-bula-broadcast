@@ -9,17 +9,19 @@
 # distributed under a signed Terms of Use, so a public workflow cannot check it
 # out, and `live/` is gitignored in UltiOrganizer for the same reason.
 #
-# So `npm test` (the browser suite, 138 tests) stays a local gate against a real
-# instance. What runs here is everything that needs no instance — which is the
-# part carrying the rules a defect would be quietest in: an off-by-one in a
-# gender-ratio quota, a ratio shortened wrongly, an import overwriting a note
-# somebody typed at the desk.
+# So `npm test` (the browser suite) stays a local gate against a real instance.
+# What runs here is everything that needs no instance — the pure logic carrying
+# the rules a defect would be quietest in, and, since standalone mode's front
+# controller landed, a real HTTP suite against `php -S` that proves the routing
+# and the operator-state guards.
 #
-# To add the browser suite later you need Live! reachable from the runner:
-# mirror it privately, add a deploy key or token as a secret, and stand up PHP,
-# MySQL and `fixtures/dev-fixture.sql` in a job with `ADMIN_PASS` set. Note that
-# secrets are not exposed to workflows from forked pull requests, so that job
-# would only ever run on pushes and same-repository branches.
+# To add the BROWSER suite you need Live! reachable from the runner: mirror it
+# privately, add a deploy key or token as a secret, and stand up PHP, MySQL and
+# `fixtures/dev-fixture.sql` in a job with `ADMIN_PASS` set. Note that secrets
+# are not exposed to workflows from forked pull requests, so that job would only
+# ever run on pushes and same-repository branches. The other route is standalone
+# milestone 2 (docs/STANDALONE.md): a provider reading recorded payloads would
+# let the browser suite run here with no host at all.
 
 name: CI
 
@@ -84,6 +86,37 @@ jobs:
 
       - name: Pure logic
         run: npm run test:unit
+
+  standalone:
+    name: Standalone front controller
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          coverage: none
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - run: npm ci
+
+      # The first browser-free HTTP suite here, and the reason it can run at
+      # all: standalone mode needs no UltiOrganizer, no Live!, no database and
+      # no Apache — just PHP's built-in server. It builds its own hostless tree
+      # and drives it with Playwright's request fixture, so no browser is
+      # downloaded either.
+      #
+      # What it guards is the thing most worth guarding: that conf/ — which
+      # holds the commentary desk's notes about named people — is not served
+      # over HTTP. `php -S` does not read .htaccess, so those rules exist a
+      # second time in app.php's router, and only a request can prove it.
+      - name: Routing, guards and operator-state exposure
+        run: npm run test:standalone
 
   docs:
     name: Docs and links

@@ -24,11 +24,10 @@ if (!defined('UO_ROUTED_VIEW')) {
     exit;
 }
 
-require_once __DIR__ . '/../vendor/autoload.php';
+require_once __DIR__ . '/shared/auth.php';
 require_once __DIR__ . '/shared/show.php';
 
-use Api\ConfigManager;
-use Api\SeasonAccess;
+use Overlays\Auth;
 use Overlays\Show;
 
 header('Content-Type: application/json; charset=UTF-8');
@@ -36,8 +35,7 @@ header('Content-Type: application/json; charset=UTF-8');
 header('Cache-Control: no-store, must-revalidate');
 
 $store = new Show();
-$config = (new ConfigManager())->getConfig()['config'] ?? [];
-$isAdmin = SeasonAccess::isLiveAdminAuthenticated($config);
+$isAdmin = Auth::isAdmin();
 
 /** @return never */
 function respond(Show $store, bool $isAdmin, ?string $warning = null): void

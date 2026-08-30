@@ -195,6 +195,7 @@ npm install
 npm test                      # the suite, against a running instance
 ADMIN_PASS=... npm test       # including the tests that change what is on air
 npm run test:unit             # the pure logic alone: no browser, no instance
+npm run test:standalone       # routing and guards on php -S, no host at all
 node tests/modules.mjs        # every shared module loads under CommonJS
 npm run shots                 # regenerate the images in docs/images/
 ```
@@ -207,7 +208,9 @@ Tests needing the Live! admin session skip themselves without `ADMIN_PASS`, and 
 
 ### What continuous integration can and cannot prove
 
-[`.github/workflows/ci.yml`](../.github/workflows/ci.yml) runs on every push and pull request: PHP syntax on 8.3 and 8.4, the shared modules' CommonJS load, `npm run test:unit`, and a check that every relative link in these docs resolves.
+[`.github/workflows/ci.yml`](../.github/workflows/ci.yml) runs on every push and pull request: PHP syntax on 8.3 and 8.4, the shared modules' CommonJS load, `npm run test:unit`, `npm run test:standalone`, and a check that every relative link in these docs resolves.
+
+The standalone job is the first one here that makes real HTTP requests, and it can only exist because standalone mode needs no UltiOrganizer, no Live!, no database and no Apache. What it guards is worth the job on its own: that `conf/` — which holds the commentary desk's notes about named people — is not served over HTTP. `php -S` does not read `.htaccess`, so those rules exist a second time inside `app.php`, and only a request can prove they work.
 
 **It cannot run the browser suite, and that is a consequence of a deliberate choice rather than a gap.** The suite drives a real Live! instance because the payload shape is exactly the thing that has been wrong before; Live! by BULA is third-party software distributed under a signed Terms of Use, so a public workflow cannot check it out — which is also why `live/` is gitignored in UltiOrganizer. A green tick therefore means the pure logic and the syntax are sound, not that the overlays work. `npm test` against a real instance remains the gate, and it is yours rather than the robot's.
 
