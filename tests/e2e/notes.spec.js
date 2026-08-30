@@ -803,6 +803,265 @@ test.describe('prepared notes', () => {
     await expect(page.locator('.abba')).toContainText('this screen only');
   });
 
+  /**
+   * Put a chip into a known state.
+   *
+   * The line lives in the room, not in the page, so it survives between tests
+   * the way it survives between two commentators — resetRoom() clears notes,
+   * not lines. Every test that cares therefore states its own starting point
+   * rather than assuming an empty line.
+   */
+  async function setChip(chip, on) {
+    const classes = (await chip.getAttribute('class')) || '';
+    if (classes.split(/\s+/).includes('on') === on) { return; }
+    await chip.click();
+    await (on ? expect(chip).toHaveClass(/on/) : expect(chip).not.toHaveClass(/on/));
+  }
+
+  /** Mixed fixture, two declared matchings and a ratio — enough for the picker. */
+  async function openMixedPicker(page, request) {
+    await openPage(page, 703);
+    const buttons = page.locator('.roster').first().locator('td.who button[data-player]');
+    const ids = [
+      await buttons.nth(0).getAttribute('data-player'),
+      await buttons.nth(1).getAttribute('data-player'),
+    ];
+    await request.post(NOTES, {
+      data: { code: CODE, player: Number(ids[0]), text: '', matching: 'FMP', by: 'T' },
+    });
+    await request.post(NOTES, {
+      data: { code: CODE, player: Number(ids[1]), text: '', matching: 'MMP', by: 'T' },
+    });
+    await page.reload();
+    await expect(page.locator('.roster').first()).toBeVisible();
+    await page.locator('#tabPlay').click();
+    const sel = page.locator('#tracking select.ratiosel');
+    await expect(sel).toBeEnabled();
+    await sel.selectOption({ index: 1 });
+    return ids;
+  }
+
+  test('shift-click takes a player off injured and names the replacement needed',
+    async ({ page, request }) => {
+      // An injury substitution is like for like, so the prompt has to say which
+      // matching — and the line being one short has to read as a substitution
+      // in progress rather than as a mis-click.
+      await openMixedPicker(page, request);
+
+      const chip = page.locator('.cols .panel').first().locator('.nums button.fmp').first();
+      const surname = await chip.locator('small').innerText();
+      await setChip(chip, true);
+
+      await chip.click({ modifiers: ['Shift'] });
+      const note = page.locator('.cols .panel').first().locator('.injnote');
+      await expect(note).toContainText(surname);
+      await expect(note).toContainText('left injured');
+      await expect(note.locator('.mt')).toHaveText('FMP');
+      // They are off the line, which is the half the other desk sees.
+      await expect(page.locator('.cols .panel').first()
+        .locator('.nums button.fmp').first()).not.toHaveClass(/on/);
+
+      // A slip leaves no trace: back on the line, prompt gone.
+      await note.locator('button', { hasText: 'Back on' }).click();
+      await expect(page.locator('.cols .panel').first().locator('.injnote')).toHaveCount(0);
+      await expect(page.locator('.cols .panel').first()
+        .locator('.nums button.fmp').first()).toHaveClass(/on/);
+    });
+
+  test('shift-click on somebody not on the line is an ordinary pick',
+    async ({ page, request }) => {
+      // The modifier means one thing in one place. Anywhere else it must not
+      // do something surprising under time pressure.
+      await openMixedPicker(page, request);
+      const chip = page.locator('.cols .panel').first().locator('.nums button.fmp').first();
+      await setChip(chip, false);
+      await chip.click({ modifiers: ['Shift'] });
+      await expect(chip).toHaveClass(/on/);
+      await expect(page.locator('.cols .panel').first().locator('.injnote')).toHaveCount(0);
+    });
+
+  test('an injured player keeps their number, and their card says what happened',
+    async ({ page, request }) => {
+      // The number of the player who just limped off is the one most likely to
+      // be typed next. Dropping them from the field the instant they leave
+      // would make that number evaporate for the rest of the game.
+      await openMixedPicker(page, request);
+      const chip = page.locator('.cols .panel').first().locator('.nums button.fmp').first();
+      const num = (await chip.innerText()).trim().split('\n')[0].trim();
+      expect(num, 'the fixture squads wear numbers').toMatch(/^\d+$/);
+      // The panel rebuilds on every toggle, and a shift-click racing that
+      // rebuild lands on the pre-pick chip — so settle the pick first.
+      await setChip(chip, true);
+      await chip.click({ modifiers: ['Shift'] });
+      await expect(page.locator('.injnote')).toHaveCount(1);
+
+      // The digit keys belong to the play step, which is where a card is read.
+      await page.locator('#steps .tbtn', { hasText: 'Start point' }).click();
+      for (const d of num.split('')) { await page.keyboard.press(`Digit${d}`); }
+      const card = page.locator('.qcard').first();
+      await expect(card).toBeVisible();
+      await expect(card.locator('.injflag')).toContainText('Left injured');
+      await expect(card.locator('.injflag')).toContainText('point');
+    });
+
+  test('shift-click on the field takes a player off mid-point and asks for the replacement',
+    async ({ page, request }) => {
+      // Where an injury actually happens: during the point, on the field
+      // panel — not on the line screen. The line is a player short, so it
+      // drops back to the picker, which is where the replacement is chosen.
+      await openMixedPicker(page, request);
+      const chip = page.locator('.cols .panel').first().locator('.nums button.fmp').first();
+      const surname = await chip.locator('small').innerText();
+      await setChip(chip, true);
+
+      await page.locator('#steps .tbtn', { hasText: 'Start point' }).click();
+      const onField = page.locator('.onfield .p', { hasText: surname }).first();
+      await expect(onField).toBeVisible();
+      await onField.click({ modifiers: ['Shift'] });
+
+      // Back on the line screen, with the prompt, and that player still shown
+      // in the picker — marked, not vanished.
+      await expect(page.locator('#steps .tbtn', { hasText: 'Start point' })).toBeVisible();
+      await expect(page.locator('.injnote')).toContainText(surname);
+      const picked = page.locator('.nums button', { hasText: surname }).first();
+      await expect(picked).toHaveClass(/out/);
+      await expect(picked).not.toHaveClass(/on/);
+      await expect(picked.locator('.outtag')).toHaveText('INJ');
+    });
+
+  test('an injured player stays visible in both views, cued without colour',
+    async ({ page, request }) => {
+      // "Is anyone off?" is asked on air, and a player who simply vanished
+      // could not answer it. The cue has to survive colour blindness, so it is
+      // the word INJ plus a rule and a dashed edge — never a colour alone.
+      await openMixedPicker(page, request);
+      const panel = page.locator('.cols .panel').first();
+      const chip = panel.locator('.nums button.fmp').first();
+      const surname = await chip.locator('small').innerText();
+      // Somebody else stays on, so the line is not empty — an empty line is
+      // the "pick a line first" screen, which has no field panel at all.
+      await setChip(panel.locator('.nums button.mmp').first(), true);
+      await setChip(chip, true);
+      await chip.click({ modifiers: ['Shift'] });
+      await expect(page.locator('.injnote')).toHaveCount(1);
+
+      await page.locator('#steps .tbtn', { hasText: 'Start point' }).click();
+      // Under the line, not in it: the line rows mean "these are playing".
+      const offRow = page.locator('.onfield .line.offline').first();
+      await expect(offRow).toContainText('Off injured');
+      const offChip = offRow.locator('.p', { hasText: surname }).first();
+      await expect(offChip).toHaveClass(/out/);
+      await expect(offChip.locator('.outtag')).toHaveText('INJ');
+
+      // The cue is not carried by colour: the tag is real text, and the chip
+      // is struck through and dashed whatever the palette does.
+      // Measured on the chip itself: text-decoration propagates visually to
+      // children but is not an inherited computed value, so asking a child
+      // returns "none" however struck through it looks.
+      const cues = await offChip.evaluate((e) => {
+        const s = getComputedStyle(e);
+        const tag = e.querySelector('.outtag');
+        return {
+          border: s.borderStyle,
+          struck: s.textDecorationLine,
+          tagStruck: tag ? getComputedStyle(tag).textDecorationLine : null,
+        };
+      });
+      expect(cues.border).toContain('dashed');
+      expect(cues.struck).toContain('line-through');
+      // The label itself stays readable — a struck-through "INJ" is the one
+      // place the cue would fight the word carrying it.
+      expect(cues.tagStruck).toBe('none');
+    });
+
+  test('the injury record survives a reload, because the line does',
+    async ({ page, request }) => {
+      // The line lives in the room, so a refresh leaves the injured player off
+      // it. Without the record surviving too, the reload would leave them off
+      // with nothing to say why — and a reload is what somebody does when a
+      // page looks stale mid-game.
+      await openMixedPicker(page, request);
+      const panel = page.locator('.cols .panel').first();
+      const chip = panel.locator('.nums button.fmp').first();
+      const surname = await chip.locator('small').innerText();
+      await setChip(chip, true);
+      await chip.click({ modifiers: ['Shift'] });
+      await expect(page.locator('.injnote')).toHaveCount(1);
+
+      // The reload stays in play mode — the mode is in the URL — so the picker
+      // is what comes back, not the prep roster.
+      await page.reload();
+      await expect(page.locator('.nums').first()).toBeVisible();
+      const after = page.locator('.nums button', { hasText: surname }).first();
+      await expect(after).toHaveClass(/out/);
+      await expect(after.locator('.outtag')).toHaveText('INJ');
+    });
+
+  test('the prompt belongs to its point, and the record to the game',
+    async ({ page, request }) => {
+      // "Pick another FMP" is about the line being chosen now. Once the point
+      // is over that question is answered or moot, and a banner naming
+      // somebody who went off two points ago reads as a line still short.
+      await openMixedPicker(page, request);
+      const panel = page.locator('.cols .panel').first();
+      const chip = panel.locator('.nums button.fmp').first();
+      const surname = await chip.locator('small').innerText();
+      await setChip(chip, true);
+      await chip.click({ modifiers: ['Shift'] });
+      await expect(page.locator('.injnote')).toHaveCount(1);
+
+      // A goal ends the point, and this page learns that from the payload —
+      // so move the score in the payload, which is what a real goal does. The
+      // page re-reads it on its own 10s tick; the route makes every read after
+      // this one report the next score.
+      await page.route((u) => u.href.includes('entity=games&id=703'), async (route) => {
+        const res = await route.fetch();
+        const body = await res.json();
+        body.game_result.homescore = Number(body.game_result.homescore) + 1;
+        return route.fulfill({ response: res, json: body });
+      });
+
+      // The prompt goes with the point; the INJ marker does not.
+      await expect(page.locator('.injnote')).toHaveCount(0, { timeout: 15000 });
+      const after = page.locator('.nums button', { hasText: surname }).first();
+      await expect(after).toHaveClass(/out/);
+    });
+
+  test('a player brought back on stops being marked off', async ({ page, request }) => {
+    // The cue means "currently off", not "this happened". A returning player is
+    // playing, and a struck-through chip sitting in a line row says otherwise.
+    await openMixedPicker(page, request);
+    const panel = page.locator('.cols .panel').first();
+    const chip = panel.locator('.nums button.fmp').first();
+    await setChip(chip, true);
+    await chip.click({ modifiers: ['Shift'] });
+    await expect(panel.locator('.nums button.out')).toHaveCount(1);
+
+    // Clicking them in the picker is a return from injury, not a fresh pick.
+    await panel.locator('.nums button.out').first().click();
+    await expect(panel.locator('.nums button.out')).toHaveCount(0);
+    await expect(chip).toHaveClass(/on/);
+  });
+
+  test('changing the sync code leaves no injuries behind', async ({ page, request }) => {
+    // A different room is a different game. Carrying these over would mark
+    // somebody INJ on a roster they were never taken off.
+    await openMixedPicker(page, request);
+    const panel = page.locator('.cols .panel').first();
+    const chip = panel.locator('.nums button.fmp').first();
+    await setChip(chip, true);
+    await chip.click({ modifiers: ['Shift'] });
+    await expect(page.locator('.injnote')).toHaveCount(1);
+
+    // The code input lives in the toolbar, in both modes.
+    const code = page.locator('input.code');
+    await expect(code).toBeVisible();
+    await code.fill('ZOTHR');
+    await code.blur();
+    await expect(page.locator('.injnote')).toHaveCount(0);
+    await expect(page.locator('.nums button.out')).toHaveCount(0);
+  });
+
   test('the room is the code alone, so notes outlive one fixture', async ({ request }) => {
     // The structural guarantee behind "a note is worth the same in the final as
     // in the quarter". If this endpoint ever grew a game parameter that scoped

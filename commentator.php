@@ -405,6 +405,39 @@ try {
                          color: var(--ink-mute); letter-spacing: .02em; }
     .pickhead .gcount { font-size: .8rem; color: var(--ink-mute); white-space: nowrap; }
     .panel .mtwarn { margin: .1rem 0 .5rem; font-size: .85rem; }
+    /* A substitution in progress: the line is one short on purpose. */
+    .panel .injnote { margin: .1rem 0 .5rem; font-size: .85rem; display: flex;
+        align-items: baseline; gap: .35rem; flex-wrap: wrap;
+        padding: .35rem .55rem; border-radius: 5px;
+        background: var(--panel-alt); border-left: 3px solid var(--accent); }
+    .panel .injnote .chip { margin-left: auto; }
+    /* The same fact on a card: stated, not decorated — it is read once and it
+       has to be unmissable when it is. */
+    .injflag { font-size: .8rem; font-weight: 700; color: var(--bad);
+        margin: .15rem 0 .35rem; }
+
+    /* Off injured, on a chip in either view. Three cues, none of them colour:
+       the word INJ, a rule through the number, and a dashed edge — so this
+       survives any colour vision, and survives a monochrome capture too. */
+    /* Struck through in BOTH views, and struck on the button rather than on a
+       chosen child — a player with no jersey number has no number span, and
+       `:first-child` then put the rule through their pronouns. The tags opt
+       back out below so the label stays legible. */
+    .nums button.out, .onfield .p.out { border-style: dashed; opacity: .72;
+        text-decoration: line-through; }
+    .nums button.out .mt, .onfield .p.out .mt,
+    .onfield .p.out .pr { text-decoration: none; }
+    .outtag { display: inline-block; font-size: .58rem; font-weight: 800;
+        letter-spacing: .08em; text-decoration: none; border-radius: 3px;
+        padding: 0 .25rem; border: 1px solid currentcolor; }
+    .nums button.out .outtag { display: block; margin: .15rem auto 0;
+        width: max-content; }
+    .onfield .p.out .outtag { margin-left: .4rem; vertical-align: .2em; }
+    .onfield .line.offline { margin-top: .45rem; padding-top: .4rem;
+        border-top: 1px dashed var(--line); align-items: baseline; }
+    .onfield .offlabel { font-size: .66rem; text-transform: uppercase;
+        letter-spacing: .08em; color: var(--ink-mute); font-weight: 700;
+        margin-right: .2rem; }
     .nums button.fmp { background: var(--fmp-bg); color: var(--fmp-ink); }
     .nums button.fmp small { color: var(--fmp-ink); }
     .nums button.mmp { background: var(--mmp-bg); color: var(--mmp-ink); }
@@ -746,10 +779,23 @@ try {
         payload: null,
         teams: {},          // team_id -> full team payload (roster, stats)
         mode: CONFIG.mode,
-        // Which players are on the field, per team. Local to this browser for
-        // now; docs/COMMENTATOR.md 6 describes sharing it between two commentators,
-        // which needs a store and is deliberately not in this first version.
+        // Which players are on the field, per team. SHARED: this is the room's
+        // copy, pushed on every toggle and pulled every 2s, so two commentators
+        // splitting the job see one line (docs/COMMENTATOR.md §6). It is the
+        // only thing on this page that is shared rather than declared — which
+        // is why the injury state below, which annotates it, is the odd one out.
         line: {},
+        // A pending injury substitution, per team: {out, name, matching}. Local
+        // to this screen and deliberately not shared — it is a ten-second
+        // prompt about who to click next, not a fact about the game. The other
+        // desk sees the line itself change, which is the part that matters.
+        injury: {},
+        // Who has gone off injured this game, player id -> {point, score}. The
+        // prompt above is answered and gone within seconds; this is the part
+        // worth keeping — "off injured at 8–6" is a thing a commentator comes
+        // back to a quarter of an hour later. Local to this screen, like
+        // `line`: sharing it needs a store, and the prompt does not.
+        injured: loadInjured(),
         step: 1,
         lastScore: null
     };
@@ -2118,6 +2164,8 @@ try {
         card.append(name);
         card.append(el('div', 'sub',
             [side.team.name, p.division].filter(Boolean).join(' · ')));
+        var injSheet = injuryLine(p.id);
+        if (injSheet) { card.append(el('div', 'injflag', injSheet)); }
         // Nickname, pronouns, pronunciation — and, in mixed, the matching —
         // under the name, where somebody about to say it looks. Rendered only
         // when something is declared.
@@ -2300,8 +2348,122 @@ try {
         var line = lineFor(side);
         var at = line.indexOf(playerId);
         if (at === -1) { line.push(playerId); } else { line.splice(at, 1); }
+        // Any ordinary click answers the pending prompt — the replacement
+        // coming on, or the desk changing its mind about somebody else. Either
+        // way the question "who replaces the injured player" is now stale.
+        clearInjury(side);
         pushLine(side.team.team_id, line);
         renderPlay();
+    }
+
+    function injuryFor(side) { return state.injury[String(side.team.team_id)] || null; }
+
+    function clearInjury(side) { delete state.injury[String(side.team.team_id)]; }
+
+    /**
+     * Shift-click: this player left injured, and is replaced like for like.
+     *
+     * Taking them off is an ordinary unpick — the store only ever holds ids —
+     * so what this adds is the PROMPT: who went off, and that the replacement
+     * has to match them. In mixed that constraint mostly enforces itself, since
+     * the other matching is already at quota and its chips are hidden; the
+     * banner is what makes it legible, and what stops the desk reading a
+     * one-short line as a mis-click.
+     */
+    function injureNum(side, p) {
+        var line = lineFor(side);
+        var at = line.indexOf(p.id);
+        if (at === -1) { return; }              // only somebody actually on
+        line.splice(at, 1);
+        var n = noteFor(p.id);
+        state.injury[String(side.team.team_id)] = {
+            out: p.id,
+            name: p.name,
+            matching: (isMixedSide(side) && n && n.matching) || ''
+        };
+        // Stamped with when, because that is what makes it worth saying later.
+        var sc = liveScore();
+        state.injured[String(p.id)] = {
+            point: currentPointNumber(),
+            score: sc ? sc.home + '–' + sc.visitor : null
+        };
+        rememberInjured();
+        pushLine(side.team.team_id, line);
+        renderPlay();
+    }
+
+    /** What a player's card says about them going off, or null. */
+    function injuredAt(playerId) { return state.injured[String(playerId)] || null; }
+
+    /**
+     * Injuries survive a reload, because the line they annotate does.
+     *
+     * The line lives in the room, so refreshing the page leaves the injured
+     * player off it — and without this, with nothing left to say why: no INJ
+     * chip, no Off injured strip, no card flag, and their shirt number stops
+     * resolving again. The record would be gone at exactly the moment somebody
+     * reloaded to fix a stale page mid-game. Per game, like the local ratio and
+     * size; still this screen's own, which is the sharing question and separate.
+     */
+    // A function, not a var: `state` is built at the top of this module and
+    // initialises `injured` from here, and a `var` assigned this far down the
+    // file would still be undefined at that point — leaving every reload with
+    // an empty record and no error to show for it.
+    function injuredKey() { return 'uo-injured-' + CONFIG.gameId; }
+
+    function loadInjured() {
+        try {
+            var raw = JSON.parse(window.localStorage.getItem(injuredKey()) || '{}');
+            if (!raw || typeof raw !== 'object') { return {}; }
+            var out = {};
+            Object.keys(raw).forEach(function (k) {
+                var v = raw[k];
+                // Rebuilt field by field: this is parsed from storage a browser
+                // extension or an older build could have written.
+                if (v && typeof v === 'object' && isFinite(Number(v.point))) {
+                    out[k] = {
+                        point: Number(v.point),
+                        score: typeof v.score === 'string' ? v.score : null
+                    };
+                }
+            });
+            return out;
+        } catch (e) { return {}; }
+    }
+
+    function rememberInjured() {
+        try {
+            if (Object.keys(state.injured).length) {
+                window.localStorage.setItem(injuredKey(), JSON.stringify(state.injured));
+            } else {
+                window.localStorage.removeItem(injuredKey());
+            }
+        } catch (e) { /* private mode */ }
+    }
+
+    /** Put an injured player straight back on — the shift-click was a slip. */
+    function undoInjury(side) {
+        var inj = injuryFor(side);
+        clearInjury(side);
+        if (inj) {
+            var line = lineFor(side);
+            if (line.indexOf(inj.out) === -1) { line.push(inj.out); }
+            // A slip leaves no trace: "Back on" undoes the record as well as
+            // the removal, or every mis-click becomes a permanent injury.
+            delete state.injured[String(inj.out)];
+            rememberInjured();
+            pushLine(side.team.team_id, line);
+        }
+        renderPlay();
+    }
+
+    /** "Left injured — point 15, 8–6", for the cards that show it. */
+    function injuryLine(playerId) {
+        var rec = injuredAt(playerId);
+        if (!rec) { return null; }
+        var when = ['point ' + rec.point];
+        if (rec.score) { when.push(rec.score); }
+        return 'Left injured — ' + when.join(', ');
     }
 
     /* ---------------------------------------------------------------
@@ -2960,6 +3122,11 @@ try {
             state.line = {};       // a different room is a different selection
             notes = {};            // ... and a different set of prepared notes
             teamNotes = {};
+            // ... and a different game's injuries. Leaving these behind would
+            // mark somebody INJ on a roster they were never taken off.
+            state.injury = {};
+            state.injured = {};
+            rememberInjured();
             pullLines();
             pullNotes();
             render();
@@ -3047,14 +3214,43 @@ try {
                 + 'the sync code — matchings live in the room the code names.'));
         }
 
+        // Who went off, and what the replacement has to be. The line is one
+        // short while this stands, which without a word for it reads as a
+        // mis-click rather than as a substitution in progress.
+        var inj = injuryFor(side);
+        if (inj) {
+            var note = el('p', 'injnote');
+            var msg = el('span', 'msg');
+            msg.append(el('strong', null, inj.name));
+            msg.append(document.createTextNode(inj.matching
+                ? ' left injured — pick another '
+                : ' left injured — pick a replacement.'));
+            if (inj.matching) {
+                msg.append(el('span', 'mt ' + inj.matching.toLowerCase(), inj.matching));
+                msg.append(document.createTextNode('.'));
+            }
+            note.append(msg);
+            var undo = el('button', 'chip', 'Back on');
+            undo.type = 'button';
+            undo.title = 'Put ' + inj.name + ' back on the line — the shift-click was a slip.';
+            undo.addEventListener('click', function () { undoInjury(side); });
+            note.append(undo);
+            panel.append(note);
+        }
+
         function chip(p) {
             var n = noteFor(p.id);
             var matching = mixed && n && n.matching ? n.matching : '';
             // The matching is the chip's own tint rather than a label — the
             // picker is clicked, not read, and the grouping order plus the
             // title carry the meaning for anyone the tint does not reach.
+            // Off injured is a state, not a history: somebody picked back onto
+            // the line is playing again, so the chip drops the cue even though
+            // their card keeps the event. See fieldChip for the same rule.
+            var hurt = injuredAt(p.id) && line.indexOf(p.id) === -1;
             var cls = (line.indexOf(p.id) !== -1 ? 'on' : '')
-                + (matching ? ' ' + matching.toLowerCase() : '');
+                + (matching ? ' ' + matching.toLowerCase() : '')
+                + (hurt ? ' out' : '');
             var b = el('button', cls.trim());
             b.type = 'button';
             b.append(document.createTextNode(
@@ -3062,22 +3258,46 @@ try {
             // Surname under the number: the number is what is on the shirt, the
             // name is what gets said.
             b.append(el('small', null, p.name.split(' ').slice(-1)[0]));
-            b.title = p.name + (matching ? ' — ' + matching : '');
-            b.addEventListener('click', function () { toggleNum(side, p.id); });
+            // Never colour alone: the word, the rule through the number and the
+            // dashed edge each carry it on their own.
+            if (hurt) { b.append(el('span', 'outtag', 'INJ')); }
+            var on = line.indexOf(p.id) !== -1;
+            b.title = p.name + (matching ? ' — ' + matching : '')
+                + (hurt ? ' · ' + injuryLine(p.id) + ' · click to bring back on' : '')
+                + (on ? ' · shift-click: left injured' : '');
+            b.addEventListener('click', function (e) {
+                // Shift on somebody already on the line is the injury path;
+                // everywhere else the modifier means nothing and the click is
+                // an ordinary pick, rather than doing something surprising.
+                if (e.shiftKey && line.indexOf(p.id) !== -1) {
+                    injureNum(side, p);
+                    return;
+                }
+                toggleNum(side, p.id);
+            });
             return b;
         }
 
         var nums = el('div', 'nums');
         panel.append(nums);
 
-        // The chips order by matching — the tighter quota's players first, so
-        // the short list is clicked first — and a group whose quota is exactly
-        // filled hides its unpicked players: they could only make the line
-        // illegal, and unpicking from the group brings them back. Players
-        // without matching data always list last and are never hidden. The
-        // decisions live in shared/lineup.js.
+        // Each matching gets a ROW of its own rather than a share of one wrapped
+        // run, so the grouping is something the eye lands on instead of
+        // something it has to infer from the tints. The majority matching's row
+        // is on top — the point needs four of them, so that is the longer row
+        // and most of the clicking; see shared/lineup.js for the order.
+        //
+        // A group whose quota is exactly filled hides its unpicked players:
+        // they could only make the line illegal, and unpicking from the group
+        // brings them back. Players without matching data always get the last
+        // row and are never hidden — and neither is anybody who went off
+        // injured: they stay in their own group, marked, because "who is off"
+        // is a thing the desk is asked about and a hidden chip cannot answer
+        // it. Clicking one brings them back on, which is a return from injury.
         if (!assist) {
-            list.forEach(function (p) { nums.append(chip(p)); });
+            var flat = el('div', 'numrow');
+            list.forEach(function (p) { flat.append(chip(p)); });
+            nums.append(flat);
             return panel;
         }
 
@@ -3101,10 +3321,12 @@ try {
         };
         assist.groups.forEach(function (g) {
             addRow(g.players, function (p) {
+                if (injuredAt(p.id)) { return true; }
                 return !((g.full || lineFull) && line.indexOf(p.id) === -1);
             });
         });
         addRow(assist.unknown, function (p) {
+            if (injuredAt(p.id)) { return true; }
             return !(lineFull && line.indexOf(p.id) === -1);
         });
         return panel;
@@ -3131,10 +3353,33 @@ try {
         function fieldChip(p) {
             // A button, because a click pins the same quick card that typing
             // the shirt number does. The number on the chip is the key hint.
-            var d = el('button', 'p');
+            // Marked as off only while they ARE off. A player who returns is
+            // playing, and a struck-through chip sitting in a line row would
+            // say the opposite. The card keeps the fact that it happened —
+            // that is history, and stays true.
+            var hurt = injuredAt(p.id) && lineFor(side).indexOf(p.id) === -1;
+            var d = el('button', 'p' + (hurt ? ' out' : ''));
             d.type = 'button';
-            d.addEventListener('click', function () { toggleQuickPlayer(rowIdx, p); });
-            if (p.num !== null && p.num !== undefined) { d.append(el('span', null, p.num)); }
+            d.addEventListener('click', function (e) {
+                // Shift is the injury gesture here as well as in the picker,
+                // and this is where it is actually needed: an injury happens
+                // mid-point, on this panel, not on the line screen. Taking
+                // somebody off leaves the line one short, so it drops straight
+                // back to the picker — which is where the replacement is
+                // chosen and where the prompt naming them lives.
+                // Only somebody actually on the line can go off it. Without
+                // this, shift-clicking a chip in the Off injured strip did
+                // nothing except jump to the picker, because a prompt left
+                // over from an earlier substitution still read as true.
+                if (e.shiftKey && lineFor(side).indexOf(p.id) !== -1) {
+                    injureNum(side, p);
+                    state.step = 1;
+                    render();
+                    return;
+                }
+                toggleQuickPlayer(rowIdx, p);
+            });
+            if (p.num !== null && p.num !== undefined) { d.append(el('span', 'n', p.num)); }
             d.append(document.createTextNode(p.name));
             // Pronouns ride along here because this panel is exactly where a
             // name is about to be said — with the less common sets
@@ -3153,25 +3398,68 @@ try {
             if (mixed && n && n.matching) {
                 d.append(el('span', 'mt ' + n.matching.toLowerCase(), n.matching));
             }
+            if (hurt) { d.append(el('span', 'outtag', 'INJ')); }
             var full = sayLine(n);
             if (mixed && n && n.matching) {
                 full = n.matching + (full ? ' · ' + full : '');
             }
-            if (full) { d.title = full; }
+            full = (full ? full + ' · ' : '')
+                + (hurt ? injuryLine(p.id) : 'shift-click: left injured');
+            d.title = full;
             return d;
         }
 
-        // Two deliberate rows — 4 then 3 at sevens, 3 then 2 at fives — rather
-        // than one flex line deciding for itself: the split is stable, so a
-        // name keeps its place on the screen for the whole point.
+        // Two deliberate rows rather than one flex line deciding for itself:
+        // the split is stable, so a name keeps its place for the whole point.
+        //
+        // In mixed those rows ARE the matchings, majority first — the same
+        // grouping and the same order as the picker that produced this line.
+        // Splitting a number-sorted list down the middle produced rows that
+        // looked like 4 and 3 and mixed the matchings inside them, which is
+        // the one thing the rows are there to show. Without matchings there is
+        // nothing to group by and the even halves are the honest fallback.
         var all = fieldOrder(side);
-        var half = Math.ceil(all.length / 2);
-        [all.slice(0, half), all.slice(half)].forEach(function (rowPlayers) {
+        var rows;
+        var grouped = groupsFor(side, all, lineFor(side));
+        if (grouped) {
+            var byId = {};
+            all.forEach(function (p) { byId[String(p.id)] = p; });
+            var pick = function (players) {
+                return players.map(function (gp) { return byId[String(gp.id)]; })
+                    .filter(Boolean);
+            };
+            // Players with no matching get their own row rather than padding
+            // out somebody else's: the row means a matching, and putting an
+            // unknown in one would be the panel asserting something it does
+            // not know.
+            rows = grouped.groups.map(function (g) { return pick(g.players); })
+                .concat([pick(grouped.unknown)]);
+        } else {
+            var half = Math.ceil(all.length / 2);
+            rows = [all.slice(0, half), all.slice(half)];
+        }
+        rows.forEach(function (rowPlayers) {
             if (!rowPlayers.length) { return; }
             var row = el('div', 'line');
             rowPlayers.forEach(function (p) { row.append(fieldChip(p)); });
             wrap.append(row);
         });
+
+        // Who is off injured, kept on screen under the line rather than in it.
+        // "Is anyone off?" is asked on air, and a player who simply vanished
+        // could not answer it — but they are not on the field either, so they
+        // do not get to sit in a row that means "these seven are playing".
+        var offIds = {};
+        lineFor(side).forEach(function (id) { offIds[String(id)] = true; });
+        var off = rosterByNumber(side).filter(function (p) {
+            return injuredAt(p.id) && !offIds[String(p.id)];
+        });
+        if (off.length) {
+            var offRow = el('div', 'line offline');
+            offRow.append(el('span', 'offlabel', 'Off injured'));
+            off.forEach(function (p) { offRow.append(fieldChip(p)); });
+            wrap.append(offRow);
+        }
         return wrap;
     }
 
@@ -3243,7 +3531,7 @@ try {
         if (!buffer) { return; }
         var matches = [];
         sides().forEach(function (side, si) {
-            fieldOrder(side).forEach(function (p) {
+            quickCandidates(side).forEach(function (p) {
                 if (String(p.num) === buffer) { matches.push({ sideIndex: si, player: p }); }
             });
         });
@@ -3260,13 +3548,32 @@ try {
         }
     }
 
+    /**
+     * Whose number the digit keys answer to: everyone on the field, plus
+     * anyone who has gone off injured.
+     *
+     * The number of the player who just limped off is the one most likely to
+     * be typed next — the card is how the desk says what happened to them —
+     * and dropping them from the field the instant they leave would make that
+     * number evaporate for the rest of the game.
+     */
+    function quickCandidates(side) {
+        var out = fieldOrder(side);
+        var seen = {};
+        out.forEach(function (p) { seen[String(p.id)] = true; });
+        rosterByNumber(side).forEach(function (p) {
+            if (!seen[String(p.id)] && injuredAt(p.id)) { out = out.concat([p]); }
+        });
+        return out;
+    }
+
     function pressQuickDigit(digit) {
         if (quickTimer) { window.clearTimeout(quickTimer); quickTimer = null; }
         quickBuffer += digit;
         var exact = false;
         var extendable = false;
         sides().forEach(function (side) {
-            fieldOrder(side).forEach(function (p) {
+            quickCandidates(side).forEach(function (p) {
                 var num = String(p.num === null || p.num === undefined ? '' : p.num);
                 if (num === quickBuffer) { exact = true; }
                 else if (num.indexOf(quickBuffer) === 0) { extendable = true; }
@@ -3308,6 +3615,10 @@ try {
         top.append(more);
         card.append(top);
         card.append(el('div', 'muted', side.team.name || ''));
+        // High on the card, under the name: if this player went off injured,
+        // that outranks their scoring line as the thing to know about them.
+        var inj = injuryLine(p.id);
+        if (inj) { card.append(el('div', 'injflag', inj)); }
         var n = noteFor(p.id);
         var sayOpts = { matching: isMixedSide(side) };
         if (n && hasSayLine(n, sayOpts)) {
@@ -3652,6 +3963,14 @@ try {
                 ]
             },
             {
+                name: 'Substitutions', rows: [
+                    ['Shift + click', 'On a player on the field, or on their chip in the '
+                        + 'line picker: they left injured. The line drops back to the '
+                        + 'picker, which names the matching the replacement has to be'],
+                    ['Back on', 'Undoes it, if the shift-click was a slip']
+                ]
+            },
+            {
                 name: 'Possession tracking, when it is on', rows: [
                     ['O', 'The offence has the disc'],
                     ['D', 'The defence has the disc \u2014 a break chance'],
@@ -3978,6 +4297,12 @@ try {
         var key = (r.homescore || 0) + ':' + (r.visitorscore || 0);
         if (state.lastScore !== null && key !== state.lastScore && state.mode === 'play') {
             state.step = 1;
+            // The substitution prompt belongs to the point it happened in. The
+            // point is over, so "pick another FMP" is now about a line nobody
+            // is choosing — and a banner naming somebody who went off two
+            // points ago reads as a line that is still short. The RECORD of the
+            // injury stays; only the question goes.
+            state.injury = {};
         }
         state.lastScore = key;
     }
