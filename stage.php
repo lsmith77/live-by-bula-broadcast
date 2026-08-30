@@ -1564,7 +1564,9 @@ $json = static fn ($v): string => json_encode($v, JSON_UNESCAPED_SLASHES | JSON_
 
     function startGamePoll(game) {
         if (client) { client.stop(); }
-        client = new OverlayDataClient({ gameId: game, apiBase: CONFIG.apiBase })
+        client = new OverlayDataClient({
+            gameId: game, apiBase: CONFIG.apiBase, captureBase: CONFIG.captureBase
+        })
             .onData(function (body) {
                 payload = body;
                 noteGoals(body);

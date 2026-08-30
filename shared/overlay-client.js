@@ -19,9 +19,14 @@ class OverlayDataClient {
      * @param {number} [options.interval]    Minimum poll interval in ms (default 5000).
      * @param {number} [options.maxInterval] Ceiling for cache-derived backoff (default 60000).
      */
-    constructor({ gameId, apiBase, interval = 5000, maxInterval = 60000 }) {
+    constructor({ gameId, apiBase, captureBase, interval = 5000, maxInterval = 60000 }) {
         this.gameId = gameId;
         this.apiBase = apiBase;
+        // Set when this installation reads a recording instead of Live! — the
+        // scoreboard is the one overlay that polls through this class rather
+        // than calling the provider directly, so without this it was the one
+        // page that still went looking for an API that is not there.
+        this.captureBase = captureBase || null;
         this.minInterval = interval;
         this.maxInterval = maxInterval;
 
@@ -55,7 +60,9 @@ class OverlayDataClient {
         if (!this._provider) {
             const P = (typeof window !== 'undefined' && window.Provider)
                 || (typeof Provider !== 'undefined' ? Provider : null);
-            this._provider = P.live({ apiBase: this.apiBase });
+            this._provider = P.fromConfig({
+                apiBase: this.apiBase, captureBase: this.captureBase,
+            });
         }
         return this._provider;
     }

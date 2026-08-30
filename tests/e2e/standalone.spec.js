@@ -158,6 +158,35 @@ test.describe('a page renders from a capture, with no Live! at all', () => {
     expect(await page.locator('.roster tbody tr').count()).toBeGreaterThan(5);
   });
 
+  test('the scoreboard draws the recorded game', async ({ page }) => {
+    // The scoreboard is the one overlay that polls through OverlayDataClient
+    // rather than calling the provider directly, and it was therefore the one
+    // page still looking for an API that is not there — it drew "Unparseable
+    // response (HTTP 404)" over the canvas while every other page was fine.
+    const errors = [];
+    page.on('response', (r) => { if (r.status() >= 400) errors.push(r.url()); });
+
+    await page.goto('/app.php?view=scoreboard&game=702');
+    await expect(page.locator('#homeName, .team .name').first()).toBeVisible();
+
+    const text = await page.locator('body').innerText();
+    expect(text, 'the recorded teams').toMatch(/MOSQUITOS|LEAMINGTON/i);
+    expect(text, 'no diagnostics on the canvas').not.toMatch(/Unparseable|No game data|Invalid ID/i);
+    expect(errors.filter((u) => u.includes('view=live/api')), 'no API calls').toEqual([]);
+  });
+
+  test('every page loads without reaching for an API that is not there', async ({ page }) => {
+    for (const url of ['/app.php?view=index', '/app.php?view=stage',
+      '/app.php?view=commentator&game=702', '/app.php?view=scoreboard&game=702']) {
+      const api = [];
+      page.removeAllListeners('response');
+      page.on('response', (r) => { if (r.url().includes('view=live/api')) api.push(r.url()); });
+      await page.goto(url);
+      await page.waitForLoadState('networkidle');
+      expect(api, url).toEqual([]);
+    }
+  });
+
   test('the clock reads the minute the capture was taken', async ({ page }) => {
     // The rebase, through the whole stack rather than in a unit test. A
     // recording of the 14th minute must not report three days.

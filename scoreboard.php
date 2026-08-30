@@ -282,6 +282,7 @@ $json = static fn ($value): string => json_encode($value, JSON_UNESCAPED_SLASHES
         demoStep: <?= (int) $demoStep ?>,
         // Declared possession, read as a static file so it can move at the pace
         // a break chance needs rather than the pace the game payload allows.
+        captureBase: <?= $json(\Overlays\Mode::captureBase(rtrim($prefix, '/'))) ?>,
         possessionBase: <?= $json($assetBase) ?>,
         possessionPoll: 1000,
         offline: <?= $json($offline) ?>,
