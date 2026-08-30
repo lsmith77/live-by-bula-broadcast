@@ -124,6 +124,14 @@ The document is mostly about where the seam goes, what a person would have to ty
 
 **Go here for:** whether this could run without the host, and what it would cost.
 
+### [`SETUP.md`](SETUP.md) — setup profiles and pre-game checks
+
+A concept, with nothing built. These docs ask for a pre-game checklist in **five separate places** — including the same clock item written twice in this file — and no checklist exists anywhere.
+
+The design question it answers is narrow: a fixed list is wrong because every rig differs, and a blank one is a text file. What the software can add is that **it can check some of the items itself** — ten of them are already knowable from state this project reads, including the clock nobody started and the commentator who typed the code wrong. The rest are per-rig and configurable, which is where multiple cameras and different switchers live.
+
+**Go here for:** why this is a readiness display rather than a notes app, and the scoping rule that keeps it one.
+
 ### [`MATCHCONTROL.md`](MATCHCONTROL.md) — score and clock, and who keeps them
 
 A concept, with nothing built, and not standalone-specific. A broadcast crew is one, two, three or four people depending on the day, and the wrong way to allocate the score button is to pick a crew size and design for it. `STUDIO.md` §3.5 already settled the axis — *does this compete with the capturer's main job, or is it their main job* — and for score the answer is whoever is already watching the game, which at two people is the commentator rather than the operator.
