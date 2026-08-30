@@ -1,6 +1,8 @@
-# Setup and pre-game checks
+# Setup, checks and teardown
 
 A concept, not a plan of record. Nothing here is built.
+
+It covers a whole broadcast rather than only its start: getting ready (§1–§6), staying honest while live (§7), and packing up (§8) — where the two most expensive mistakes in the whole day are waiting.
 
 ## 1. The docs have asked for this five times
 
@@ -86,7 +88,82 @@ The failure mode is obvious and worth naming before anyone writes code.
 
 **It must not claim a check it did not do.** A tick for "the overlay is reachable from the switcher" cannot be inferred from the Studio being able to reach it — the Studio is a laptop and the switcher is the device in question. That is the whole reason `selftest.php` runs *on the device*. Any item the software cannot honestly determine is an asserted one, and should look different from a verified one so the distinction stays visible.
 
-## 7. Where it would live
+## 7. Reminders during the broadcast
+
+A checklist is a thing you do once. The more interesting version is one that keeps going — *"have you looked at the output lately?"* — and it needs handling carefully, because it runs straight into the principle everything else here defers to.
+
+**The case for it is the strongest case in the project.** `AGENTS.md` names the characteristic failure: *"not a crash but a graphic quietly asserting something untrue — a tab outliving its point, a rate without its denominator, a field-following overlay silently showing the wrong game. Those look completely normal in a screenshot."* Nothing announces those. An operator forty minutes into a close final is watching the play, and a wrong graphic can sit there for a whole half because it looks exactly like a right one.
+
+**The case against is `MATCHCONTROL.md` §2.** The operator's attention is not spare capacity, and it is contended hardest precisely when the broadcast matters most. A timer that fires every ten minutes fires during points, and a prompt that interrupts a point is worse than the thing it is guarding against. Worse still, it trains the reflex that closes it unread — and then the one real alert is invisible.
+
+Three things resolve that, and they are all applications of rules already in this codebase.
+
+### Fire at breaks, not on a timer
+
+**The system already knows when play stops.** The score changing ends a point. `half_cap` is the break. `timeout` events are stoppages, and `shared/stoppage.js` already computes whether one is active. Those are moments when the operator's attention is genuinely free, and they arrive several times a game without a clock being involved.
+
+So a reminder should be scheduled in *game* events rather than in wall-clock minutes: "at the next break after fifteen minutes have passed". That converts an interruption into something that rides along, which is the same §2 axis applied to output instead of input. It also fixes the cadence problem for free — a scrappy game with many stoppages offers more moments than a fast one, which is roughly when a distracted operator needs more of them.
+
+### Prefer a check to a nudge
+
+The verified/asserted line from §3 applies here too, and harder: **do not remind a human to look for something the software can see.**
+
+Several of the "quietly untrue" failures are detectable. A card that has been up longer than any card should be. A field-following overlay pointed at a game that has finished. A payload that has not changed in longer than the poll interval should allow. Possession state left standing across a score change — which already auto-clears, and whose *staleness ceiling* is the precedent here: the break-chance flag already expires by itself as *"belt-and-braces against an operator who sets it and looks away."*
+
+Every one of those should be a specific detection with a specific message, not a generic "check the output". A reminder is what remains **after** the checkable things have been checked — and what remains is genuinely un-checkable from inside the browser: is the picture actually reaching the stream, is audio live, is the camera still framed, has the tripod been knocked.
+
+That is a short list, which is the right size for something that interrupts.
+
+### It has to reach somebody who is not looking at the page
+
+This is the constraint that most reminder designs would get wrong, and this codebase has already discovered it twice. The operator is watching the programme output, not the Studio — which is why possession is a keypress and why the off-air flash is `role="status"` with `aria-live="polite"`, *"announced, not just shown: an operator watching the program monitor is not looking at this bar."*
+
+A reminder rendered quietly into the Studio's toolbar would therefore be seen by nobody, and would look like it worked in every test. It has to be announced, or audible, or — the honest option for a one-person crew running a laptop — accept that it can only reach somebody at the keyboard and say so.
+
+### Rules, so it stays useful past the first hour
+
+- **Off by default, on per profile.** A "remind me" mode is opted into by a crew that wants it, which is also the answer to every rig being different.
+- **Never a gate, never on air.** It informs; it does not block, and it never touches the broadcast canvas — that canvas already has one diagnostics problem (`STUDIO.md` §11) and must not get a second.
+- **Dismissible, and silent once dismissed for that game.** An operator who has decided is not asked again.
+- **Cadence in the profile, not in the code.** A four-camera rig with a spare pair of hands wants more prompts than a solo operator who cannot act on them anyway.
+- **Nothing that fires more than a handful of times a game.** If the answer is "every two minutes", the honest reading is that the thing wants detecting, not reminding.
+
+## 8. After the game: disassembly and post-production
+
+The list does not end at the first pull. Two of the most costly mistakes available all day happen in the ten minutes after the last point, when everybody is tired and the kit is being coiled.
+
+### Disassembly
+
+Three of these the software can check, and the first is the same failure this project keeps naming.
+
+| Item | Checkable | Why it matters |
+|---|---|---|
+| **The overlay is off air** | yes — `conf/show.json` | An overlay left up over a finished game is precisely a graphic *"quietly asserting something untrue"*. It looks completely normal. The stage already announces going off air; nothing announces having forgotten to |
+| **The commentator room code is revoked** | yes — the possession store | That code authorises writes that reach air. Leaving it live means a screen in a packed-down booth, or anybody who read it during the day, can still write. `possession.php` already documents the code as the capability it is |
+| **Prepared notes: export them or lose them** | partly | Notes are deleted seven days after the last edit, by design — they are notes about named people. That is correct, and it means a crew who wants them for the next game against that team has a **window**. The bio CSV export already exists and is the way out |
+| Cards pulled, batteries out, cables, the thing left in the grass | no | Human, per-rig, and exactly what a profile's asserted items are for |
+
+### Post-production: note the anchors before you leave
+
+This is the item worth building the whole feature for, because the information is **unrecoverable later** and almost nobody would think to write it down.
+
+`POSTPRODUCTION.md` aligns the video timeline to the game timeline using **anchors** — *"goal n happens at this position in the video"*. One is required; more are free checks. Without one, footage cannot be scored at all by the deterministic renderer.
+
+**And how many you need depends on data the software can already assess, at exactly the moment somebody could still act on it.** `POSTPRODUCTION.md` §2 sets it out:
+
+| How the game was scored | `timer_start` | Goal times | Anchors needed |
+|---|---|---|---|
+| Live Scorekeeper | set | good | **one**, fully automatic |
+| Sheet typed up later | null | approximate | **one**, plus care across pauses |
+| Times hidden or blank | null | useless, clustered | **one per goal** — there is no data to interpolate from |
+
+So the teardown step is not a generic "note the timecode". It is a computed instruction: *"This game has no `timer_start` and its goal times are clustered. Post-production will need an anchor per goal — note them now, or this footage cannot be aligned."* That is a sentence the software can write and a person cannot, because working out which of the three rows you are in means looking at the payload.
+
+**Halftime is the other one.** The game clock stops at the break and the video does not, so an anchor either side keeps both halves honest — and the break is *"exactly the part of the timeline UltiOrganizer does not describe."* If the crew notes anything at all, the video position of the last goal before the break and the first after it is worth more than everything else on this list.
+
+**Why this lives here and not in `POSTPRODUCTION.md`.** That document describes the tool. This describes the five minutes in which the tool's only required input is still obtainable — and the tool does not exist yet, which makes capturing the input *now* worth more, not less. Footage shot this season is alignable whenever it gets written.
+
+## 9. Where it would live
 
 **Its own view, linked from the Studio**, rather than a panel inside it. The Studio is used during a broadcast and this is used before one; the toolbar is already carrying four controls and §2 of `MATCHCONTROL.md` applies here too — the operator's attention during a game is not the place for a setup surface.
 
@@ -94,9 +171,10 @@ It should be reachable **without the admin session**, read-only, because the per
 
 And it should link to `tests/selftest.php` rather than absorb it. That page has to be opened *by the switcher*, which is a thing no other surface here does, and it already answers its question better than a tick-box could.
 
-## 8. Open questions
+## 10. Open questions
 
 - **Does a profile belong to a field, a rig, or a crew?** Fields are stable across a tournament and already named in the payload (`entity=reference`), which makes them the cheapest key — but the kit moves between fields between rounds, and it is the kit the list describes.
 - **Does the verified half want to run continuously or on demand?** Continuously makes it a readiness display and costs polls; on demand makes it a checklist and can be stale by the time it matters.
 - **Is there a first-broadcast list distinct from a per-game one?** `PLAN.md` §"Before a first broadcast" is clearly the former — run the selftest, decide the diagnostics policy — and those are done once per venue, not once per game. Two lists or one list with a "once" flag.
+- **Do reminders belong to the checklist at all?** They share the profile and the "what can be verified" question, which is why they are here — but a pre-game list and an in-game nudge are used by different people at different moments, and bundling them could produce a surface that serves neither.
 - **Standalone changes the balance.** With no Live!, several verified checks disappear and several asserted ones appear (has the roster CSV come back, has the game been created). Worth designing so the check library can be per-mode rather than assuming hosted.

@@ -124,11 +124,15 @@ The document is mostly about where the seam goes, what a person would have to ty
 
 **Go here for:** whether this could run without the host, and what it would cost.
 
-### [`SETUP.md`](SETUP.md) — setup profiles and pre-game checks
+### [`SETUP.md`](SETUP.md) — setup, checks and teardown
 
 A concept, with nothing built. These docs ask for a pre-game checklist in **five separate places** — including the same clock item written twice in this file — and no checklist exists anywhere.
 
 The design question it answers is narrow: a fixed list is wrong because every rig differs, and a blank one is a text file. What the software can add is that **it can check some of the items itself** — ten of them are already knowable from state this project reads, including the clock nobody started and the commentator who typed the code wrong. The rest are per-rig and configurable, which is where multiple cameras and different switchers live.
+
+It also covers a **"remind me" mode** during the broadcast, which needs more care than it looks: the case for it is the strongest in the project — the characteristic failure is a graphic quietly asserting something untrue, and those look normal — but a timer that fires during a point is worse than what it guards against. The resolution is to fire at breaks the system already knows about (a score, a timeout, halftime) rather than on a clock, to detect rather than nag wherever the thing is detectable, and to announce rather than display, because the operator is not looking at the page.
+
+And it does not stop at the first pull. **Teardown carries the two most expensive mistakes of the day**: an overlay left on air over a finished game — the same "quietly asserting something untrue" failure, and checkable — and the post-production anchors. `POSTPRODUCTION.md` needs at least one *"goal n is at this position in the video"* or footage cannot be aligned at all, and **how many you need depends on how the game was scored** — one for a live Scorekeeper, one per goal for a sheet with clustered times. The software can work out which case you are in; the crew can only act on it before they leave.
 
 **Go here for:** why this is a readiness display rather than a notes app, and the scoping rule that keeps it one.
 
