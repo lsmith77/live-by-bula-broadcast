@@ -88,11 +88,33 @@ if (PHP_SAPI === 'cli-server') {
     // request for a missing asset fell through to the dispatcher, which
     // defaults to the picker — so a mistyped script URL answered 200 with a
     // page of HTML, and the browser reported it as "Unexpected token '<'".
-    if ($path !== '/' && $path !== '/app.php') {
+    if ($path !== '/' && $path !== '/app.php'
+        && preg_match('#^/(s|c)(/|$)#', $path) !== 1) {
         http_response_code(404);
         exit;
     }
 }
+
+/**
+ * Where this front controller lives, as a URL.
+ *
+ * Derived from this file's position under the document root rather than from
+ * `$_SERVER['SCRIPT_NAME']`, which is not trustworthy here: PHP's built-in
+ * server reports `/index.php` for a request handled by a router script, so a
+ * redirect built from it pointed at a file that does not exist.
+ *
+ * `OVERLAYS_BASE_URL` is the directory and `OVERLAYS_SELF` the script.
+ * `Overlays\Mode` reads the first for asset and endpoint URLs, so both answers
+ * come from one derivation.
+ */
+$docRoot = rtrim(str_replace('\\', '/', (string) ($_SERVER['DOCUMENT_ROOT'] ?? '')), '/');
+$selfFile = str_replace('\\', '/', __FILE__);
+$selfUrl = ($docRoot !== '' && str_starts_with($selfFile, $docRoot . '/'))
+    ? substr($selfFile, strlen($docRoot))
+    : '/' . basename(__FILE__);
+
+define('OVERLAYS_SELF', $selfUrl);
+define('OVERLAYS_BASE_URL', rtrim(str_replace('\\', '/', dirname($selfUrl)), '/'));
 
 // Says which URL layout the pages are being served under — they sit at the
 // document root here rather than under /live/overlays/. See Overlays\Mode.
@@ -116,6 +138,75 @@ $views = [
     'login' => 'login.php',
     'tests/selftest' => 'tests/selftest.php',
 ];
+
+/**
+ * The short URLs, which exist for a video switcher's on-screen keyboard.
+ *
+ * Hosted, `.htaccess` rewrites these onto UltiOrganizer's front controller.
+ * The built-in server reads no `.htaccess`, so the same routes are stated here
+ * — and they are not a test convenience: typing
+ * `index.php?view=live/overlays/scoreboard&game=702` on a switcher's on-screen
+ * keyboard is the problem these URLs were introduced to solve, and a
+ * standalone installation has exactly the same problem.
+ *
+ * Order matters the same way it does in the rewrite rules: "stage" and
+ * "overlay" are names, not game ids or colours, so they are matched first.
+ *
+ * WHY A REDIRECT RATHER THAN AN INTERNAL REWRITE
+ *
+ * Apache rewrites these internally, so the browser keeps the short URL. This
+ * cannot: the pages read their parameters with `filter_input(INPUT_GET, ...)`,
+ * which reads the ORIGINAL request and ignores anything written into `$_GET`.
+ * An internal rewrite here would set `$_GET['game']` and the scoreboard would
+ * still answer "Missing or invalid ?game=".
+ *
+ * The alternative was changing thirty `filter_input` call sites — the parameter
+ * validation on every page — to make a cosmetic difference in the address bar.
+ * A redirect costs one round trip on a URL that is typed once and then lives in
+ * a browser source, so it wins easily.
+ */
+$short = [
+    ['#^/s/stage/([0-9A-Fa-f]{6}|green|blue|magenta|black)/?$#', 'stage', ['bg' => 1]],
+    ['#^/s/stage/?$#', 'stage', []],
+    ['#^/s/field/([^/]+)/overlay/?$#', 'stage', ['field' => 1]],
+    ['#^/s/field/([^/]+)/?$#', 'scoreboard', ['field' => 1]],
+    ['#^/s/([0-9]+)/overlay/([0-9A-Fa-f]{6}|green|blue|magenta|black)/?$#', 'stage', ['game' => 1, 'bg' => 2]],
+    ['#^/s/([0-9]+)/overlay/?$#', 'stage', ['game' => 1]],
+    ['#^/s/([0-9]+)/([0-9A-Fa-f]{6}|green|blue|magenta|black)/?$#', 'scoreboard', ['game' => 1, 'bg' => 2]],
+    ['#^/s/([0-9]+)/?$#', 'scoreboard', ['game' => 1]],
+    ['#^/s/?$#', 'index', []],
+    ['#^/c/([0-9]+)/?$#', 'commentator', ['game' => 1]],
+    ['#^/c/?$#', 'commentator', []],
+];
+
+$requestPath = (string) parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH);
+if (preg_match('#^/(s|c)(/|$)#', $requestPath) === 1) {
+    foreach ($short as [$pattern, $view, $params]) {
+        if (preg_match($pattern, $requestPath, $m) !== 1) {
+            continue;
+        }
+
+        $query = ['view' => $view];
+        foreach ($params as $name => $group) {
+            $query[$name] = $m[$group];
+        }
+        // Anything else the caller sent rides along, which is what [QSA] does
+        // in the rewrite rules — `?debug=1` on a short URL must survive.
+        $extra = [];
+        parse_str((string) parse_url($_SERVER['REQUEST_URI'] ?? '', PHP_URL_QUERY), $extra);
+        unset($extra['view']);
+
+        header('Location: ' . OVERLAYS_SELF . '?' . http_build_query($query + $extra), true, 302);
+        exit;
+    }
+
+    // A short URL that matched none of them is not a page. Without this it fell
+    // through to the picker, so /s/999x answered 200 with the wrong thing.
+    http_response_code(404);
+    header('Content-Type: text/plain; charset=UTF-8');
+    echo "No such overlay.\n";
+    exit;
+}
 
 $requested = (string) ($_GET['view'] ?? 'index');
 

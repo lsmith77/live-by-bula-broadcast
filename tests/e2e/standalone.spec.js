@@ -62,6 +62,36 @@ test.describe('the view allow-list', () => {
     expect(await status(request, '/app.php?view=scoreboard')).toBe(400);
   });
 
+  test('the short URLs a switcher would be typing', async ({ request }) => {
+    // Not a test convenience: these exist because typing
+    // index.php?view=live/overlays/scoreboard&game=702 on a switcher's
+    // on-screen keyboard is the problem they were introduced to solve, and a
+    // standalone installation has it too. Apache rewrites them internally;
+    // here they redirect, because filter_input reads the original request.
+    const cases = [
+      ['/c/702', 'commentator'], ['/s/702', 'scoreboard'], ['/s/702/green', 'scoreboard'],
+      ['/s/702/overlay', 'stage'], ['/s/stage', 'stage'], ['/s/', 'index'],
+    ];
+    for (const [url, view] of cases) {
+      const res = await request.get(url, { maxRedirects: 0 });
+      expect(res.status(), url).toBe(302);
+      expect(res.headers().location, url).toContain(`view=${view}`);
+    }
+  });
+
+  test('a short URL that matches nothing is not the picker', async ({ request }) => {
+    // It fell through to the dispatcher, which defaults to index — so /s/999x
+    // answered 200 with a page that had nothing to do with what was asked.
+    for (const url of ['/s/999x', '/s/702/notacolour', '/c/abc']) {
+      expect(await status(request, url), url).toBe(404);
+    }
+  });
+
+  test('extra parameters survive a short URL, as [QSA] does', async ({ request }) => {
+    const res = await request.get('/s/702?debug=1', { maxRedirects: 0 });
+    expect(res.headers().location).toMatch(/debug=1/);
+  });
+
   test('a URL copied from a hosted installation still works', async ({ request }) => {
     expect(await status(request, '/app.php?view=live/overlays/stage')).toBe(200);
   });

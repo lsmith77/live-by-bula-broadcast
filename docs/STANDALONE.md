@@ -118,6 +118,10 @@ Milestone 3 is the first point at which somebody who does not run UltiOrganizer 
 
 **The front controller served the picker for any unknown path.** A request for a missing asset fell through to the dispatcher, which defaults to `index`, so a mistyped script URL answered **200 with a page of HTML**. The browser reported it as `Unexpected token '<'`, which is a long way from "that file is not there". Unknown paths now 404.
 
+**The short URLs had to be restated, and cannot be internal.** `/s/702` and `/c/702` exist because typing `index.php?view=live/overlays/scoreboard&game=702` on a switcher's on-screen keyboard is miserable, and a standalone installation has that problem too. Apache rewrites them internally; `app.php` **redirects** instead, because the pages read their parameters with `filter_input(INPUT_GET, ...)`, which reads the original request and ignores anything written into `$_GET`. An internal rewrite would set `$_GET['game']` and the scoreboard would still answer *"Missing or invalid ?game="*. The alternative was rewriting thirty `filter_input` call sites — the parameter validation on every page — to change what the address bar shows.
+
+**`SCRIPT_NAME` is not usable under the built-in server.** It reports `/index.php` for a request handled by a router script, so the first redirect pointed at a file that does not exist. The front controller now derives its own URL from this file's position under the document root, and `Overlays\Mode` reads the same derivation.
+
 **And the clock needed the manifest more than expected.** Rebasing on every read holds a recording at the minute it was taken, which is what makes it usable in a test that must still pass next year. Rebasing once at start makes the clock run on from there, which is what a demo wants. Both are one option apart, and getting it wrong is invisible until the recording is a day old.
 
 ### 7a. What "captured JSON" means

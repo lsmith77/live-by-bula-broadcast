@@ -41,10 +41,11 @@ final class Mode
      */
     public static function assetBase(string $base = ''): string
     {
-        if (defined('OVERLAYS_STANDALONE')) {
-            $dir = str_replace('\\', '/', dirname((string) ($_SERVER['SCRIPT_NAME'] ?? '/')));
-
-            return $dir === '/' ? '' : rtrim($dir, '/');
+        if (defined('OVERLAYS_BASE_URL')) {
+            // Derived by the front controller from this file's position under
+            // the document root. Not from SCRIPT_NAME, which PHP's built-in
+            // server reports as /index.php for a router-handled request.
+            return (string) OVERLAYS_BASE_URL;
         }
 
         return rtrim($base, '/') . '/live/overlays';
@@ -61,8 +62,8 @@ final class Mode
      */
     public static function viewUrl(string $view, string $base = ''): string
     {
-        if (defined('OVERLAYS_STANDALONE')) {
-            return self::assetBase($base) . '/app.php?view=' . $view;
+        if (defined('OVERLAYS_SELF')) {
+            return OVERLAYS_SELF . '?view=' . $view;
         }
 
         return rtrim($base, '/') . '/index.php?view=live/overlays/' . $view;
