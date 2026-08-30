@@ -252,6 +252,7 @@ $json = static fn ($value): string => json_encode($value, JSON_UNESCAPED_SLASHES
 <script src="<?= htmlspecialchars($assetUrl('shared/field.js'), ENT_QUOTES) ?>"></script>
 <script src="<?= htmlspecialchars($assetUrl('shared/stoppage.js'), ENT_QUOTES) ?>"></script>
 <script src="<?= htmlspecialchars($assetUrl('shared/timeouts.js'), ENT_QUOTES) ?>"></script>
+<script src="<?= htmlspecialchars($assetUrl('shared/provider.js'), ENT_QUOTES) ?>"></script>
 <script src="<?= htmlspecialchars($assetUrl('shared/overlay-client.js'), ENT_QUOTES) ?>"></script>
 <?php if ($demo) : ?>
 <script src="<?= htmlspecialchars($assetUrl('shared/demo.js'), ENT_QUOTES) ?>"></script>

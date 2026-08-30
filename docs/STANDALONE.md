@@ -90,13 +90,29 @@ That has a pleasant side effect. Today the browser suite cannot run in CI at all
 ## 7. A staging that produces something useful early
 
 1. **The provider seam, hosted only.** Introduce `shared/provider.js`, route the four call sites through it, change nothing else. Behaviour identical, and it is independently verifiable: the whole suite must stay green with no other change. This is the commit that makes everything after it cheap.
-2. **A recorded-payload provider.** The same interface reading captured JSON from disk. No editing UI. Immediately useful for development and for post-production, and it is what lets the browser suite run without Live!.
+2. **A recorded-payload provider.** The same interface reading captured JSON from disk. No editing UI. Immediately useful for development, and it is what lets the browser suite run without Live!. See §7a for what does the capturing and what a capture holds.
 3. **Auth and routing seams.** A standalone front controller and a local admin password. At this point the overlays run on a bare PHP host against recorded payloads.
 4. **The editor.** Teams, a game, the clock, and goal entry — the operator surface. This is the biggest single piece and the one worth prototyping against a real broadcast before committing to a shape.
 5. **Rosters via the existing CSV**, promoted to source of truth.
 6. *(Later, maybe never)* accumulation across games within a standalone event.
 
 Milestone 3 is the first point at which somebody who does not run UltiOrganizer can use this project. Milestone 1 is worth doing regardless of whether the rest ever happens.
+
+### 7a. What "captured JSON" means
+
+**Captured by what:** a script driving `shared/provider.js` itself against a live instance, writing down what comes back. Using the provider to record is not a convenience — it means the recording is *by construction* in the shape the provider returns, so there is no third format to keep in step with the other two.
+
+**Containing what:** one directory per capture, one file per request. For a single game that is the game list, the game's detail, the team list, both teams' rosters, `reference`, `config`, and one `playerevents` per player on both squads — bounded and small, around sixty files for two 28-player rosters.
+
+Plus a **manifest** recording the instant of capture and which event and game it came from. That is not bookkeeping, and it is the part that would be easy to leave out:
+
+> **A capture is a snapshot; the clock is not.** `timer_start` is absolute unix seconds and the scoreboard computes `now - timer_start`. A payload recorded on Saturday and replayed on Tuesday shows a game that has been running for three days.
+
+So the replay provider has to rebase the clock by the age of the capture — which is the **synthetic `timer_start`** trick this project already performs twice, in `shared/demo.js` (fixture 702 has `timer_start: null`, so the demo manufactures one to show a running clock at all) and in the post-production frame. Third time; it should probably be shared code by then.
+
+**What a capture is not: a fixture to hand-edit.** The moment somebody adjusts a recorded payload it stops being evidence of what Live! actually sends and becomes a hand-written fake with extra steps — which `demo.js` already warns about: *"a hand-written fake payload drifts from the API shape, and then the demo starts proving things about a scoreboard nobody ships."* Variation belongs in a mutation layer over the recording, which is exactly how `demo.js` works and is the model to copy.
+
+**A snapshot is one frame.** Replaying a game *progressing* needs a series of captures with their timestamps, played back in order. That is worth having eventually — it is the only way to test what an overlay does as a score changes without a live game — but it is a second step, and the first one is worth shipping without it.
 
 ## 8. What a server would have to be
 

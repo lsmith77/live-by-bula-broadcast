@@ -97,6 +97,7 @@ $json = static fn ($v): string => json_encode($v, JSON_UNESCAPED_SLASHES | JSON_
     <div class="tourney-logo" id="tourneyLogo"></div>
 </div>
 
+<script src="<?= htmlspecialchars($assetUrl('shared/provider.js'), ENT_QUOTES) ?>"></script>
 <script src="<?= htmlspecialchars($assetUrl('shared/overlay-client.js'), ENT_QUOTES) ?>"></script>
 <script src="<?= htmlspecialchars($assetUrl('shared/possession.js'), ENT_QUOTES) ?>"></script>
 <script src="<?= htmlspecialchars($assetUrl('shared/ratio.js'), ENT_QUOTES) ?>"></script>
@@ -120,6 +121,11 @@ $json = static fn ($v): string => json_encode($v, JSON_UNESCAPED_SLASHES | JSON_
         // photos are the fallback when a team has no logo here.
         teamLogos: <?= $json((object) (new \Overlays\Logos(null, $assetBase . '/logos'))->all()) ?>
     };
+
+    // Every read of Live! goes through here — see shared/provider.js. On this
+    // page each call adds its own .catch(): a broadcast canvas degrades
+    // quietly rather than letting one failed roster take the overlay down.
+    var api = window.Provider.live({ apiBase: CONFIG.apiBase });
 
     /**
      * Resolve a team's logo and wait for it to DECODE.
@@ -467,10 +473,10 @@ $json = static fn ($v): string => json_encode($v, JSON_UNESCAPED_SLASHES | JSON_
                     .catch(function () { return null; });
 
                 return Promise.all(sides.map(function (s) {
-                    return fetch(CONFIG.apiBase + '&entity=teams&id=' + encodeURIComponent(s.team_id),
-                        { credentials: 'same-origin' })
-                        .then(function (r) { return r.ok ? r.json() : null; })
-                        .catch(function () { return null; });
+                    // null rather than a throw: this is the broadcast canvas,
+                    // and a roster that will not load must degrade quietly
+                    // rather than take the overlay down.
+                    return api.team(s.team_id).catch(function () { return null; });
                 }).concat([possessionRead])).then(function (results) {
                     var full = results.slice(0, sides.length);
                     var declared = results[sides.length];
@@ -669,10 +675,7 @@ $json = static fn ($v): string => json_encode($v, JSON_UNESCAPED_SLASHES | JSON_
                 var perTeam = Math.max(1, Math.min(8, Number(params.count) || 4));
 
                 return Promise.all(ids.map(function (id) {
-                    return fetch(CONFIG.apiBase + '&entity=teams&id=' + encodeURIComponent(id),
-                        { credentials: 'same-origin' })
-                        .then(function (r) { return r.ok ? r.json() : null; })
-                        .catch(function () { return null; });
+                    return api.team(id).catch(function () { return null; });
                 })).then(function (results) {
                     var teams = results.filter(Boolean);
 
@@ -1354,8 +1357,7 @@ $json = static fn ($v): string => json_encode($v, JSON_UNESCAPED_SLASHES | JSON_
     function loadTourneyLogo() {
         if (!logoEl || logoReady) { return; }
         logoReady = true;   // one attempt; a missing logo is not worth retrying
-        fetch(CONFIG.apiBase + '&entity=config', { credentials: 'same-origin' })
-            .then(function (r) { return r.ok ? r.json() : null; })
+        api.config()
             .catch(function () { return null; })
             .then(function (body) {
                 var cfg = (body && (body.config || body)) || {};

@@ -39,47 +39,25 @@ class OverlayDataClient {
      * Fetch one game payload.
      *
      * Resolves to the parsed body. Rejects with an Error carrying `.status`
-     * (HTTP code) and `.fatal` (true when retrying cannot help).
+     * (HTTP code) and `.fatal` (true when retrying cannot help) — this class
+     * uses both to decide whether to back off or stop.
+     *
+     * WHAT it asks for and HOW the answer is read now live in
+     * `shared/provider.js`; what remains here is WHEN to ask, which is this
+     * class's actual job. It was the fourth copy of that contract.
      */
     async fetchGame() {
-        const url = `${this.apiBase}&entity=games&id=${encodeURIComponent(this.gameId)}`;
-        const response = await fetch(url, { credentials: 'same-origin' });
-
-        // 503 is the maintenance splash and is HTML, not JSON. Never parse it.
-        if (response.status === 503) {
-            throw OverlayDataClient.error('Live! is in maintenance mode', 503, false);
-        }
-
-        let body = null;
-        try {
-            body = await response.json();
-        } catch (e) {
-            throw OverlayDataClient.error(
-                `Unparseable response (HTTP ${response.status})`, response.status, false
-            );
-        }
-
-        if (!response.ok) {
-            // v3 error bodies are {"error": "<string>"} — a plain string, not an object.
-            const message = typeof body?.error === 'string' ? body.error : `HTTP ${response.status}`;
-            // 400 means the id is unknown or belongs to a different event, and 403
-            // means the event is not published. Neither is fixed by retrying.
-            const fatal = response.status === 400 || response.status === 403;
-            throw OverlayDataClient.error(message, response.status, fatal);
-        }
-
-        if (typeof body?.error === 'string') {
-            throw OverlayDataClient.error(body.error, response.status, true);
-        }
-
-        return body;
+        return this.provider().game(this.gameId);
     }
 
-    static error(message, status, fatal) {
-        const err = new Error(message);
-        err.status = status;
-        err.fatal = Boolean(fatal);
-        return err;
+    /** Lazily built so a page can load this file before shared/provider.js. */
+    provider() {
+        if (!this._provider) {
+            const P = (typeof window !== 'undefined' && window.Provider)
+                || (typeof Provider !== 'undefined' ? Provider : null);
+            this._provider = P.live({ apiBase: this.apiBase });
+        }
+        return this._provider;
     }
 
     /**

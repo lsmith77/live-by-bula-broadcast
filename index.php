@@ -316,6 +316,7 @@ $json = static fn ($v): string => json_encode($v, JSON_UNESCAPED_SLASHES | JSON_
 <script src="<?= htmlspecialchars($assetUrl('shared/possession.js'), ENT_QUOTES) ?>"></script>
 <script src="<?= htmlspecialchars($assetUrl('shared/ratio.js'), ENT_QUOTES) ?>"></script>
 <script src="<?= htmlspecialchars($assetUrl('shared/tracking.js'), ENT_QUOTES) ?>"></script>
+<script src="<?= htmlspecialchars($assetUrl('shared/provider.js'), ENT_QUOTES) ?>"></script>
 <script src="<?= htmlspecialchars($assetUrl('shared/secret.js'), ENT_QUOTES) ?>"></script>
 <script>
 (function () {
@@ -455,24 +456,16 @@ $json = static fn ($v): string => json_encode($v, JSON_UNESCAPED_SLASHES | JSON_
         container.replaceChildren(table);
     }
 
-    // Shared response handling: the API is JSON for every outcome except the
-    // maintenance splash, which is HTML and must not be parsed.
-    function readJson(response) {
-        if (response.status === 503) {
-            throw new Error('Live! is in maintenance mode.');
-        }
-        return response.json().then(function (body) {
-            if (!response.ok || typeof body.error === 'string') {
-                // An event that is not published externally answers 403 here,
-                // and overlays are gated by that same boundary.
-                throw new Error(body.error || ('HTTP ' + response.status));
-            }
-            return body;
-        });
-    }
+    // The API reads, and the response contract they share. Both live in
+    // shared/provider.js: this file had grown its own copy of the contract,
+    // which is the duplication shared/tracking.js was written to end and did
+    // not reach. readJson stays reachable here because the colour and show
+    // stores are this project's own endpoints rather than API reads, and they
+    // answer with the same shape.
+    var api = window.Provider.live({ apiBase: API });
+    var readJson = window.Provider.readJson;
 
-    fetch(API + '&entity=games', { credentials: 'same-origin' })
-        .then(readJson)
+    api.games()
         .then(function (body) { renderGames(body.games || []); })
         .catch(function (error) {
             fail('The Live! API did not return games.', error.message);
@@ -1833,12 +1826,12 @@ $json = static fn ($v): string => json_encode($v, JSON_UNESCAPED_SLASHES | JSON_
     }
 
     Promise.all([
-        fetch(API + '&entity=games', { credentials: 'same-origin' }).then(readJson),
-        fetch(API + '&entity=teams', { credentials: 'same-origin' }).then(readJson),
+        api.games(),
+        api.teams(),
         fetch(COLORS_URL, { credentials: 'same-origin' }).then(readJson),
         // Fields live here, keyed by the reservation id each game carries. One
         // fetch for the whole event beats one game-detail fetch per row.
-        fetch(API + '&entity=reference', { credentials: 'same-origin' }).then(readJson),
+        api.reference(),
         fetch(SHOW_URL, { credentials: 'same-origin' }).then(readJson),
         // Deferred: the game is not known until show state arrives.
         Promise.resolve(null)

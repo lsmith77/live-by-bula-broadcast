@@ -703,6 +703,7 @@ try {
 <script src="<?= $base ?>/live/overlays/shared/lineup.js"></script>
 <script src="<?= $base ?>/live/overlays/shared/declared.js"></script>
 <script src="<?= $base ?>/live/overlays/shared/timeouts.js"></script>
+<script src="<?= $base ?>/live/overlays/shared/provider.js"></script>
 <script src="<?= $base ?>/live/overlays/shared/tracking.js"></script>
 <script src="<?= $base ?>/live/overlays/shared/secret.js"></script>
 <script src="<?= $base ?>/live/overlays/shared/csv.js"></script>
@@ -725,6 +726,11 @@ try {
         fieldMax: <?= (int) Notes::MAX_FIELD ?>,
         noteDays: <?= (int) round(Notes::STALE_SECONDS / 86400) ?>
     };
+
+    // Every read of Live! goes through here — see shared/provider.js. The
+    // stores this page also talks to (lines, notes, possession) are its own
+    // endpoints and keep using Tracking, which is their protocol.
+    var api = window.Provider.live({ apiBase: CONFIG.api });
 
     var el = function (tag, cls, text) {
         var n = document.createElement(tag);
@@ -815,18 +821,14 @@ try {
 
 
     function load() {
-        return fetch(CONFIG.api + '&entity=games&id=' + encodeURIComponent(CONFIG.gameId),
-            { credentials: 'same-origin' })
-            .then(window.Tracking.readJson)
+        return api.game(CONFIG.gameId)
             .then(function (p) {
                 state.payload = p;
                 var t = p.teams || {};
                 var ids = [t.hometeam, t.visitorteam].filter(Boolean)
                     .map(function (x) { return x.team_id; }).filter(Boolean);
                 return Promise.all(ids.map(function (id) {
-                    return fetch(CONFIG.api + '&entity=teams&id=' + encodeURIComponent(id),
-                        { credentials: 'same-origin' })
-                        .then(window.Tracking.readJson)
+                    return api.team(id)
                         .then(function (team) { state.teams[id] = team; })
                         .catch(function () { /* roster is optional */ });
                 }));
@@ -1978,9 +1980,7 @@ try {
 
     function loadEvents(playerId) {
         if (eventsCache[playerId]) { return Promise.resolve(eventsCache[playerId]); }
-        return fetch(CONFIG.api + '&entity=playerevents&id=' + encodeURIComponent(playerId),
-            { credentials: 'same-origin' })
-            .then(window.Tracking.readJson)
+        return api.playerEvents(playerId)
             .then(function (b) {
                 eventsCache[playerId] = b.playerevents || {};
                 return eventsCache[playerId];
@@ -4364,8 +4364,7 @@ try {
         document.getElementById('title').textContent = 'Commentator';
         document.querySelector('.tabs').style.display = 'none';
 
-        fetch(CONFIG.api + '&entity=games', { credentials: 'same-origin' })
-            .then(window.Tracking.readJson)
+        api.games()
             .then(function (b) {
                 var games = (b.games || []).slice().sort(function (x, y) {
                     var rank = function (g) {
