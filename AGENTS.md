@@ -42,6 +42,10 @@ Runtime code sits at the top level, because a routed view's path *is* its URL �
 - **State that belongs to a game is stored per game.** A tournament runs several fields at once, so a single shared document lets one field silently destroy another's data and put it on the wrong scoreboard — both demonstrated before the possession store was keyed by game. Prefer a shape where the mistake cannot be written over a guard that every future reader has to remember.
 - **`LOCK_EX` on a temp file locks nothing.** The stores write via temp-file-and-rename, which gives *readers* atomicity — never half a document — and no mutual exclusion whatever, because each writer holds the lock on its own private temp file. A read-modify-write needs `flock` on a shared lock file across the whole cycle. `show.php`, `colors.php`, `possession.php` and `notes.php` have one; **`lines.php` does not**, and its `saveTeam()` is a read-modify-write — two commentators saving lines for different teams in the same moment can still lose one of them. Known gap, not a design decision.
 - **Writes use optimistic locking.** Send the `rev` you read; the store rejects a stale one with 409 and returns current state to reapply.
+- **Never drop a write because it arrived too soon. Drop one that would change nothing.** A time-based throttle that returns success is a silent revert: the state was never stored, so the next poll undoes the caller's change while the surface that made it goes on showing it. `filemtime()` has one-second granularity, so any such window is unpredictable up to a second rather than the fraction it looks like. This has now been written twice and found twice — in `notes.php`, then again in `lines.php`, where it swallowed a substitution made moments after a pick. Compare content instead.
+- **One value, one function.** `lineSize()` and `ratioPair()` were two derivations of the same fact and drifted: with no declared size, a shared `3MMP/2FMP` made the cap 5 while the pair stayed seven-a-side, so the panel contradicted the count beside it. If two functions must agree, make one call the other rather than deriving in parallel.
+- **A fact declared at a desk goes through `shared/declared.js`.** Anything UltiOrganizer does not record and somebody watching declares — the first point's ratio, players per side — is shared through the room when the desk is linked, kept on the screen when it is not, and replaced by a shared value with a one-shot note. That was seven functions written twice before it was written once; add a config, not a third copy.
+- **New state declares what clears it.** This page holds state with several lifetimes, and `resetFor()` in `commentator.php` names them: a point ending, a manual line clear, a change of room. Two bugs came from three handlers each deciding independently — a substitution prompt outliving its point, and a room change leaving the previous room's injuries marked on a roster. Adding a field means adding it to that list, or deliberately not.
 - **Never block a click to prevent a consequence — show the consequence first.** Displacing a card is usually intended. Warn on hover, on the card that would lose; do not disable.
 
 ## What the data actually supports
@@ -53,6 +57,7 @@ Checked against real payloads, not assumed. `docs/STUDIO.md` §3 is the full acc
 - **Absent is not zero.** A missing field means "this installation does not track this"; a present `0` means "none yet". Test for presence, not truthiness. A column of zeros pretending to be a ranking is worse than no column.
 - **`TeamScoreBoardWithDefenses()` does not return `totalavg`.** Anything reading it silently becomes zero the moment an admin enables defence stats. Derive from `total` and `games`.
 - **Holds and breaks are the same fact twice** — they sum to total points. Lead with breaks.
+- **`seasoninfo.type` is a SURFACE, not a size.** It says outdoor, indoor or beach. Players per side is recorded nowhere — not on `uo_game`, `uo_pool`, `uo_series` or `uo_season`, and in no payload — so 7 and 5 are conventions inferred from the surface, and a 6v6 or 4v4 game is invisible. It has to be declared by hand (`COMMENTATOR.md` §6b).
 
 ## Code style
 
@@ -88,6 +93,8 @@ The broadcast surfaces (`scoreboard`, `stage`) are rendered to video and have no
 - **Do not use `prefers-color-scheme` for this.** It reports what someone chose for their OS months ago, indoors. It says nothing about whether the sun is on the screen now.
 - Structure carries meaning that position cannot: headings, `aria-labelledby` from panels to the header that names them, `aria-pressed` on toggles, `role="dialog"` with managed focus. The commentator header names each team once *visually*; a screen reader gets the same naming structurally.
 - Never right-align by reversing DOM nodes — the content is then read backwards. Use `flex-direction: row-reverse`.
+- **Colour is never the only carrier of a distinction, and the tints are proof of why.** FMP and violet MMP measure **1.05:1 against each other** in daylight, and red-green colour blindness collapses what hue difference remains to nothing (1.01:1 simulated). That is acceptable *because* the term is always written next to the tint and the picker groups by matching structurally. Anything the tint alone would say is a thing a commentator cannot read. Off-injured follows the same rule: the word INJ, a rule struck through the chip, and a dashed edge, each sufficient alone.
+- **Measure the tints too, not only the body text.** The FMP tag sat at 6.73:1 — under this page's own AAA bar — for as long as it did because the contrast test enumerated text pairs and never covered the matching tints. A new coloured label earns a line in that test.
 
 ## Known open risk
 
@@ -109,15 +116,28 @@ Not a nicety here, for two reasons specific to this project.
 
 Modules in `shared/` publish to `window` **and** `module.exports`, because they are loaded both ways. Do not rely on top-level `this`: it is `module.exports` under plain CommonJS but `undefined` under the loader Playwright uses, and it fails at import rather than at use.
 
+**Prefer a test that cannot pass for the wrong reason.** A regression test for a timing bug is a coin toss unless it controls the timing: the line-store throttle reproduced about one run in three until each attempt was aligned to a second boundary, which is where `filemtime()`'s granularity actually bites. Before trusting a new regression test, put the bug back and watch it fail — twice this session a test that looked right passed against the defect it was written for.
+
 **A test must set the state it asserts on.** The suite writes to the files a broadcast reads, so it begins from whatever the last run left — and `tests/global-setup.js` now deliberately seeds a messy stage so that dependence fails immediately instead of months later. Eight tests here had quietly stopped testing anything this way: measuring whatever cards happened to be placed, counting a possession log without emptying it, using a hard-coded "obviously wrong" code that a seeded run had made the right one. Restore in a `finally`, not after the assertions — a failure otherwise leaves the stage rearranged for everything that follows.
 
 Where a test genuinely cannot be written — it needs hardware, or data no fixture has — say so in the pull request and in the doc, and write the check that *can* run. "Untestable" is a claim to justify, not a default.
+
+## Change one, change its pair
+
+Things this project keeps in two places on purpose. Each pair has been caught out of step at least once, and none of them fails loudly.
+
+- **A keyboard shortcut or a click gesture → the Keys reference.** `openKeysHelp()` in `commentator.php` is the only place a commentator meets all of them at once. A gesture that is not in it does not exist as far as a user is concerned — shift-click for an injury substitution needed a row there as much as it needed a handler.
+- **A user-facing behaviour → its `docs/` section.** The docs are load-bearing here; see below.
+- **A new declared value → the store's validator, both surfaces, and the reset list.** The line size touched `shared/possession.php`, `possession.php`, the commentator toolbar, the Studio bar, and `stage.php`, which read the ratio from the same file and would have silently stopped labelling ratios at a declared 5v5.
+- **A change to the exported CSV's shape → every test that indexes it by position.** Adding a `NOTICE` row above the players broke seven assertions written as `rows[3]` and `lines[1]`. Position was never the contract; address rows by their identifier.
+- **A committed screenshot → the recipe that regenerates it.** `docs/images/` is generated by `npm run shots`, and a shot has to come out byte-identical on a second run or a diff in it means nothing. The recipe seeds a room and must clear **every channel by name** afterwards: saves are deltas, so clearing only `text` left pronouns and matchings accumulating run over run.
 
 ## Verification
 
 **Measure; do not eyeball.** On a 1920×1080 canvas viewed in a window, looking at it proves nothing. Every layout claim in this project has been settled with `getBoundingClientRect()` through headless Chrome, and several confident-looking visual judgements were wrong.
 
 - **The suite:** `npm test` (add `ADMIN_PASS=...` for the tests that change what is on air). Playwright against a running dev instance, asserting on geometry, contrast and state transitions rather than markup. Add a test whenever a defect is found — every spec in there names the regression it exists to catch.
+- **Run the gated third of the suite before handing back work that touches a store.** Without `ADMIN_PASS` the tests that change what is on air skip themselves — 58 of 188 at the time of writing — and this repository has no CI, so nothing else will ever run them. A green `npm test` is not a green suite.
 - Syntax: `php -l <file>`
 - Routes: every page should return 200 — `/s/`, `/s/<game>`, `/s/<game>/overlay`, `/c/<game>`, and `?view=live/overlays/tests/selftest`
 - Behaviour: drive the real page with the Chrome DevTools Protocol and assert on the DOM, rather than reasoning about what the code should do
