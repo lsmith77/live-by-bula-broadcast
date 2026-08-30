@@ -98,7 +98,7 @@ Stored exactly like `conf/team-colors.json` — `live/overlays/conf/show.json`, 
 
 ### 2.5 Control — `live/overlays/index.php` (`/s/`)
 
-Admin-gated by `SeasonAccess::isLiveAdminAuthenticated()`, so anyone who can view an overlay cannot change what is on air. A grid of toggles: card on/off, slot chooser, and card-specific pickers (which player, which team). No preview needed in v1 — the operator is looking at the program monitor anyway.
+Admin-gated by `Overlays\Auth::isAdmin()` — Live!'s admin session hosted, a local one standalone — so anyone who can view an overlay cannot change what is on air. A grid of toggles: card on/off, slot chooser, and card-specific pickers (which player, which team). No preview needed in v1 — the operator is looking at the program monitor anyway.
 
 **Control owns all overlay-local state, not just show state.** There is a category of data here that does not come from UltiOrganizer or Live! at all, is authored by the broadcast operator, lives in `live/overlays/conf/`, and is gated by the same admin session:
 

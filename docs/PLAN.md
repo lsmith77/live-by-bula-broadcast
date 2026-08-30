@@ -194,7 +194,7 @@ A team does not have *one* colour. It brings a set of kits and which one it wear
 | `conf/team-colors.json` | The data. Gitignored: runtime state, per installation, written by the web server |
 | `colors.php` | Routed endpoint. `POST {"palettes": …}` edits prepared kits; `POST {"game": 702, "home": …}` is the coin-toss write, kept deliberately small and separate |
 
-Precedence is **URL parameter → this game's kit → the team's first kit → pool colour**. Saving requires the Live! admin session (`SeasonAccess::isLiveAdminAuthenticated()`), so anyone who can view an overlay cannot rewrite its colours.
+Precedence is **URL parameter → this game's kit → the team's first kit → pool colour**. Saving requires an administrator session, asked for through `Overlays\Auth::isAdmin()`, so anyone who can view an overlay cannot rewrite its colours.
 
 **Both sides or neither.** One real kit beside a placeholder reads as that team's colour, which is worse than showing neither, so the scoreboard uses kit colours only once both are set.
 

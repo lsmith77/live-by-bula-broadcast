@@ -11,6 +11,11 @@
  * This is that protocol, once. Each caller supplies how to answer those two
  * questions and nothing else.
  *
+ * NOT the way to READ Live!. That is `shared/provider.js`, which owns the URL
+ * for each entity and the API's error contract. The two are separate because
+ * they talk to different servers about different things: this one writes to
+ * flat files this project owns, and works unchanged with no Live! at all.
+ *
  * Loaded both by a browser page and by the test runner; see shared/stoppage.js
  * for why it publishes to `window` and `module.exports` alike.
  */
