@@ -52,8 +52,8 @@ None of these is a rewrite. All three are the same code answering the same quest
 | Teams: name, short name, colour | Operator, once per team | same | Short names already exist in the payload (`hometeamshortname`) and the kit palette already exists |
 | A game: two teams, name, field, target score, caps | Operator, per game | `conf/standalone/game-<id>.json` | Mirrors `game_info` + `poolinfo` |
 | Rosters: number, name | **The teams, via the existing CSV** | `conf/notes/` or alongside | See below |
-| Goals: who scored, who assisted, when | Operator or desk, live | `conf/standalone/goals-<id>.json` | The one genuinely new input surface |
-| The clock | Operator, live | the game file | Three integers |
+| Goals: who scored, who assisted, when | Whoever is watching — see [`MATCHCONTROL.md`](MATCHCONTROL.md) | `conf/standalone/goals-<id>.json` | The one genuinely new input surface |
+| The clock | same | the game file | Three integers |
 
 **The roster answer already exists and is better than a form.** The bio round trip (`COMMENTATOR.md` §5a) already sends each team a CSV they fill in themselves, already carries `Number` and `Name` columns, already refuses another team's file by id and by name, and already validates matchings to FMP/MMP. In hosted mode those columns are decoration — the roster comes from Live! and the CSV only adds what Live! lacks. **In standalone they become the source of truth**, which is a promotion rather than a new mechanism, and it puts roster authorship with the people who know it. The `NOTICE` row already tells them what they are writing into.
 
@@ -139,7 +139,7 @@ The offline case deserves care rather than a footnote: if the venue has no uplin
 
 ## 9. Open questions
 
-- **Who keeps the score?** The commentary desk already has a person watching every point, and possession tracking has established they will press a key per event. But score is not a private reference panel — it reaches air, and the admin gate exists precisely because a bad write there changes what a viewer sees. Operator-only is the safe default; desk-with-code is the useful one. This is the same argument §6 of `COMMENTATOR.md` settled for possession, and it should probably be settled the same way.
+- **Who keeps the score?** Answered separately, in [`MATCHCONTROL.md`](MATCHCONTROL.md): a small phone-shaped surface carrying score and clock alone, gated by capability rather than by screen, so a crew of one to four arranges itself. The load-bearing conclusion there is that a goal must be written as *the point it creates* rather than as `+1`, which is what makes it safe for more than one person to hold the button.
 - **One game or an event?** A per-game file is simpler and matches how `conf/possession-<game>.json` is already keyed. An event file is what standings and totals would need. Start per-game; the possession store's history is a warning about shared documents.
 - **Where do game ids come from?** They have to be stable, because every store in this project is keyed by them. Operator-assigned integers are fine and boring.
 - **Does the Timekeeper app help?** UltiOrganizer ships a standalone Timekeeper — public, template-driven, WFDF time-limit signalling — which is prior art for exactly the clock question, in the same house. Worth reading before designing a clock UI rather than after.

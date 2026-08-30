@@ -124,6 +124,18 @@ The document is mostly about where the seam goes, what a person would have to ty
 
 **Go here for:** whether this could run without the host, and what it would cost.
 
+### [`MATCHCONTROL.md`](MATCHCONTROL.md) — score and clock, and who keeps them
+
+A concept, with nothing built, and not standalone-specific. A broadcast crew is one, two, three or four people depending on the day, and the wrong way to allocate the score button is to pick a crew size and design for it. `STUDIO.md` §3.5 already settled the axis — *does this compete with the capturer's main job, or is it their main job* — and for score the answer is whoever is already watching the game, which at two people is the commentator rather than the operator.
+
+The load-bearing conclusion is technical rather than organisational: **a goal must be written as the point it creates, not as `+1`.** A delta entered twice is a real 2–0 from one point; a statement of the result is safe by construction, and that is what lets several surfaces hold the button without anybody having to own it.
+
+The decision for now is the simple one: **a single phone-optimised page, nothing embedded** — with keyboard shortcuts in the commentator page as the likely later step rather than a panel, since that page is already keyboard-driven and its play view cannot afford the rows.
+
+It also records a gap found while writing it: **timeouts are shown on air and on neither desk.** The scoreboard derives them correctly; `commentator.php` and `index.php` do not mention the concept.
+
+**Go here for:** who presses what, on which device, at each crew size — and why hosted mode wants the same surface with the score read-only and the clock as a fallback.
+
 ---
 
 ## Development
