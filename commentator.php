@@ -694,6 +694,7 @@ try {
 <script src="<?= $base ?>/live/overlays/shared/possession.js"></script>
 <script src="<?= $base ?>/live/overlays/shared/ratio.js"></script>
 <script src="<?= $base ?>/live/overlays/shared/lineup.js"></script>
+<script src="<?= $base ?>/live/overlays/shared/declared.js"></script>
 <script src="<?= $base ?>/live/overlays/shared/tracking.js"></script>
 <script src="<?= $base ?>/live/overlays/shared/secret.js"></script>
 <script src="<?= $base ?>/live/overlays/shared/csv.js"></script>
@@ -2537,37 +2538,35 @@ try {
      * own click — an unshared guess must not reach the stage as a side effect
      * of linking.
      */
-    var RATIO_KEY = 'uo-ratio1-' + CONFIG.gameId;
     /** One-shot note after the shared ratio replaced a local one. */
     var ratioNote = null;
 
-    function localRatioValue() {
-        try {
-            var v = window.localStorage.getItem(RATIO_KEY) || '';
+    /**
+     * Point 1's ratio: shared through the room, or kept on this screen.
+     *
+     * The arrangement is shared/declared.js's, which exists because this and
+     * the line size below were the same seven functions written twice.
+     */
+    var firstRatio = window.Declared.value({
+        key: 'uo-ratio1-' + CONFIG.gameId,
+        read: function () { return possession.ratio1 || null; },
+        // Validated against the pair in force, so a ratio stored for a size
+        // nobody is playing any more reads as absent rather than as a fact.
+        parse: function (raw) {
+            var v = String(raw || '');
             return ratioPair().indexOf(v) !== -1 ? v : null;
-        } catch (e) { return null; }
-    }
+        },
+        push: function (v) { return track.setRatio(v); },
+        canShare: function () { return possession.canTrack; }
+    });
 
-    function rememberLocalRatio(v) {
-        try {
-            if (v) { window.localStorage.setItem(RATIO_KEY, v); }
-            else { window.localStorage.removeItem(RATIO_KEY); }
-        } catch (e) { /* private mode */ }
-    }
+    function localRatioValue() { return firstRatio.localValue(); }
 
-    /** Shared wins; local only ever fills a gap. Run before every render. */
-    function reconcileRatio() {
-        var local = localRatioValue();
-        if (!local || !possession.ratio1) { return; }
-        if (possession.ratio1 !== local) {
-            ratioNote = { local: local, shared: possession.ratio1 };
-        }
-        rememberLocalRatio(null);
-    }
+    function reconcileRatio() { ratioNote = firstRatio.reconcile() || ratioNote; }
 
-    function firstRatioValue() { return possession.ratio1 || localRatioValue() || null; }
+    function firstRatioValue() { return firstRatio.get(); }
 
-    function firstRatioIsLocal() { return !possession.ratio1 && !!localRatioValue(); }
+    function firstRatioIsLocal() { return firstRatio.isLocal(); }
 
     /**
      * Players per side, declared — shared if the desk is linked, else local.
@@ -2578,37 +2577,33 @@ try {
      * a 6v6 or 4v4 game can only be declared by hand. The season type's
      * conventional size is the fallback, not the answer.
      */
-    var SIZE_KEY = 'uo-linesize-' + CONFIG.gameId;
     /** One-shot note after a shared size replaced a local one. */
     var sizeNote = null;
 
-    function localSizeValue() {
-        try {
-            var v = parseInt(window.localStorage.getItem(SIZE_KEY) || '', 10);
-            return window.Ratio.isSize(v) ? v : null;
-        } catch (e) { return null; }
-    }
-
-    function rememberLocalSize(v) {
-        try {
-            if (v) { window.localStorage.setItem(SIZE_KEY, String(v)); }
-            else { window.localStorage.removeItem(SIZE_KEY); }
-        } catch (e) { /* private mode */ }
-    }
-
-    /** Shared wins; local only ever fills a gap. Run before every render. */
-    function reconcileSize() {
-        var local = localSizeValue();
-        if (!local || !possession.size) { return; }
-        if (Number(possession.size) !== Number(local)) {
-            sizeNote = { local: local, shared: Number(possession.size) };
+    var lineSizeValue = window.Declared.value({
+        key: 'uo-linesize-' + CONFIG.gameId,
+        read: function () { return Number(possession.size) || null; },
+        parse: function (raw) {
+            var n = parseInt(raw || '', 10);
+            return window.Ratio.isSize(n) ? n : null;
+        },
+        push: function (v) { return track.setSize(v); },
+        canShare: function () { return possession.canTrack; },
+        // A size change has to take a local ratio with it when the two no
+        // longer agree. The STORE does exactly this for the shared pair; this
+        // is the same rule on the local path, and having both expressed here
+        // is why they cannot drift apart again.
+        onLocal: function (v) {
+            var counts = window.Ratio.counts(firstRatio.localValue());
+            if (v && counts && counts.MMP + counts.FMP !== v) { firstRatio.clearLocal(); }
         }
-        rememberLocalSize(null);
-    }
+    });
 
-    function declaredSize() { return Number(possession.size) || localSizeValue() || null; }
+    function reconcileSize() { sizeNote = lineSizeValue.reconcile() || sizeNote; }
 
-    function sizeIsLocal() { return !possession.size && !!localSizeValue(); }
+    function declaredSize() { return lineSizeValue.get(); }
+
+    function sizeIsLocal() { return lineSizeValue.isLocal(); }
 
     /**
      * The line size in force — the ONE answer, used by the cap and the pair
@@ -2669,15 +2664,9 @@ try {
     }
 
     function setFirstRatio(v) {
-        if (!possession.canTrack) {
-            rememberLocalRatio(v);
-            render();
-            return;
-        }
-        track.setRatio(v)
+        firstRatio.set(v)
             .then(function (state) {
-                possession = state;
-                rememberLocalRatio(null);
+                if (state) { possession = state; }
                 render();
             })
             .catch(function () { /* transient */ });
@@ -3869,21 +3858,9 @@ try {
     }
 
     function setLineSize(v) {
-        if (!possession.canTrack) {
-            rememberLocalSize(v);
-            // A local size change has to take the local ratio with it when they
-            // no longer agree — the shared store does exactly this, and the two
-            // paths disagreeing about it is how a desk ends up with a 4MMP/3FMP
-            // declared against a six.
-            var counts = window.Ratio.counts(localRatioValue());
-            if (v && counts && counts.MMP + counts.FMP !== v) { rememberLocalRatio(null); }
-            render();
-            return;
-        }
-        track.setSize(v)
+        lineSizeValue.set(v)
             .then(function (state) {
-                possession = state;
-                rememberLocalSize(null);
+                if (state) { possession = state; }
                 render();
             })
             .catch(function () { /* transient */ });
