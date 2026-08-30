@@ -96,7 +96,48 @@ That has a pleasant side effect. Today the browser suite cannot run in CI at all
 
 Milestone 3 is the first point at which somebody who does not run UltiOrganizer can use this project. Milestone 1 is worth doing regardless of whether the rest ever happens.
 
-## 8. Open questions
+## 8. What a server would have to be
+
+The point of this section is that the answer is small. Everything below was read off the code rather than assumed, and the headline is that **standalone needs no database and no Composer** — the two things that make the hosted deployment heavy.
+
+### The floor
+
+| | Requirement | Why |
+|---|---|---|
+| **PHP** | 8.3 or 8.4 | What CI lints and what the host runs. The code uses no syntax newer than typed properties and arrow functions, so a lower floor is likely and simply untested — do not claim one without testing it. |
+| **Extensions** | `json`, `pcre`, `mbstring`, `filter` | The complete list of extension-dependent calls in the project is `json_encode`/`json_decode`, `preg_match`/`preg_replace`, `mb_substr`, `filter_input`, `flock` and `random_int`. All but `mbstring` are bundled and enabled by default. |
+| **Composer** | **none** | `vendor/autoload.php` is required by exactly three files, solely to reach `Api\ConfigManager` and `Api\SeasonAccess`. The project's own classes are `require_once`d directly. Replace the auth seam (§3) and the autoloader has nothing left to load. |
+| **Database** | **none** | Nothing in this project opens one, in either mode. Hosted mode reaches the database only through Live!'s API over HTTP. |
+| **Web server** | Apache with `mod_rewrite` and `AllowOverride All`, or nginx with the rules translated | The `.htaccess` does two jobs: routing the short URLs, and refusing HTTP access to `conf/` except for the one file the stage polls as a static asset. On nginx both become `location` blocks, and **the `conf/` denial is the one that must not be forgotten** — it is what keeps the desk's notes about named players out of a browser. |
+| **Filesystem** | `conf/` writable by the web server, on a filesystem where `flock` works | `show.php`, `colors.php`, `possession.php` and `notes.php` do their read-modify-write under `flock` on a shared lock file. NFS and some container volume drivers do not implement it faithfully, and the failure is silent interleaving rather than an error. Note that **`lines.php` has no such lock** — a known gap recorded in `AGENTS.md`, not a decision, and one standalone would inherit unchanged. |
+| **TLS** | Needed in practice | A browser source loading an overlay over HTTP from a page served over HTTPS is blocked as mixed content, and some switcher browsers refuse plain HTTP outright. |
+
+### What it has to withstand
+
+Not much, but the shape is unusual: **many small polls, no bursts, and a hard latency requirement on one file.**
+
+| Poller | Interval | What it hits |
+|---|---|---|
+| Stage — what is on air | ~1s | `conf/show.json` as a **static file**, deliberately not through PHP |
+| Possession, and the shared line | 2s | Two routed PHP endpoints |
+| Game data | 10s | The payload provider |
+| Prepared notes | 15s | A routed PHP endpoint |
+
+One field in use is roughly **one scoreboard browser, one stage browser and one or two commentary desks**, so about 4–6 pollers per pitch. Ten pitches is at most a few hundred requests a minute, nearly all of them conditional GETs for small JSON. Any PHP host from the last decade handles this; a Raspberry Pi on the venue LAN handles this. **The requirement is not throughput, it is the ~1s file.** `conf/show.json` is served by the web server rather than by PHP precisely so that an operator's click feels instant, and anything in front of it — a proxy, a CDN, an aggressive `Cache-Control` — that adds a second of staleness is a second of a graphic staying on air after it was taken off.
+
+### What standalone adds to the list
+
+- **A writable store for the authored data** — `conf/standalone/`, same permissions and the same HTTP denial as the rest of `conf/`.
+- **An admin credential of its own.** The host already keeps a bcrypt hash in a PHP config file (`live/conf/LocalConfig.php`), which is exactly the shape to copy: a hash in `conf/`, never a plaintext password, never a value in the repository.
+- **A front controller**, which is a single file that defines `UO_ROUTED_VIEW` and dispatches `?view=`. The ten guards stay as they are.
+
+### Where it could run that hosted mode cannot
+
+Worth stating, because it is most of the practical appeal: with no database and no Composer, the deployable artefact is **a directory of PHP files and a writable `conf/`**. That runs on shared hosting, on a laptop with `php -S` at a venue with no uplink, or in a container built `FROM php:8.3-apache` with one `a2enmod rewrite`. A tournament running standalone on a laptop behind the commentary desk is a realistic deployment, and it is the one that makes the mode worth building.
+
+The offline case deserves care rather than a footnote: if the venue has no uplink, team logos, fonts and any CDN asset have to be local already. Worth auditing before promising it.
+
+## 9. Open questions
 
 - **Who keeps the score?** The commentary desk already has a person watching every point, and possession tracking has established they will press a key per event. But score is not a private reference panel — it reaches air, and the admin gate exists precisely because a bad write there changes what a viewer sees. Operator-only is the safe default; desk-with-code is the useful one. This is the same argument §6 of `COMMENTATOR.md` settled for possession, and it should probably be settled the same way.
 - **One game or an event?** A per-game file is simpler and matches how `conf/possession-<game>.json` is already keyed. An event file is what standings and totals would need. Start per-game; the possession store's history is a warning about shared documents.
