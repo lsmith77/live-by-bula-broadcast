@@ -10,7 +10,7 @@
  * is defined. That guard is what makes a direct request to `commentator.php`
  * a 404 instead of a page, and hosted mode satisfies it through
  * UltiOrganizer's front controller. This is the other way to satisfy it, for a
- * host that has no UltiOrganizer — see `docs/STANDALONE.md` §3.
+ * host that has no UltiOrganizer — see `docs/STANDALONE.md` §2.
  *
  * WHY AN ALLOW-LIST RATHER THAN A RESOLVER
  *
@@ -40,7 +40,7 @@
 /**
  * Built-in server mode.
  *
- * `php -S 0.0.0.0:8080 app.php` is a deployment `docs/STANDALONE.md` §8
+ * `php -S 0.0.0.0:8080 app.php` is a deployment `docs/STANDALONE.md` §6
  * actively suggests — a laptop at a venue with no uplink — and the built-in
  * server **does not read `.htaccess`**. Everything the shipped rules do for
  * Apache therefore has to be done here as well, or the deployment we recommend

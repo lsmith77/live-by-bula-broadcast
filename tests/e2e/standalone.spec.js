@@ -6,7 +6,7 @@
  * commentary desk's prepared notes, which are notes about named people. So it
  * is tested by making the requests rather than by reading the code, and it is
  * tested against `php -S` specifically, because that server **does not read
- * `.htaccess`** and `docs/STANDALONE.md` §8 recommends it as a deployment.
+ * `.htaccess`** and `docs/STANDALONE.md` §6 recommends it as a deployment.
  *
  * That combination was a real hole: before `app.php` grew its router block, a
  * `php -S` deployment served `conf/notes/<room>.json` to anyone who asked. The

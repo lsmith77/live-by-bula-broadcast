@@ -6,7 +6,7 @@
  * Hosted, the answer is always Live!. Standalone, it can be a **capture** — a
  * directory of recorded API responses written by `tests/capture.mjs` — which is
  * what lets these pages run with no UltiOrganizer, no database and no network
- * at all (`docs/STANDALONE.md` §7a).
+ * at all (`docs/STANDALONE.md` §8).
  *
  * WHY THIS IS CONFIGURED AND NOT A QUERY PARAMETER
  *

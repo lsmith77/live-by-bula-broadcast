@@ -8,7 +8,7 @@
  * roster fails as "Loading…" forever rather than as an error.
  *
  * This cannot verify the capture is CURRENT — that needs a live instance, which
- * CI does not have, and is why `docs/STANDALONE.md` §7b lists staleness as an
+ * CI does not have, and is why `docs/STANDALONE.md` §4 lists staleness as an
  * open gap. What it can prove is that the recording is whole: every game the
  * manifest claims is present, every team those games name is recorded, and
  * every player on those rosters has the history a player sheet will ask for.

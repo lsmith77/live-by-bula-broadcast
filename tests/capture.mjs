@@ -19,7 +19,7 @@
  * can read it — which matters, because the first thing anyone does with a bug
  * report is look inside. Plus `manifest.json`, which is not bookkeeping: it
  * carries the instant of capture, and without it the replayed clock is wrong by
- * however long ago the recording was taken. See `docs/STANDALONE.md` §7a.
+ * however long ago the recording was taken. See `docs/STANDALONE.md` §8.
  *
  * WHAT IT DOES NOT DO
  *

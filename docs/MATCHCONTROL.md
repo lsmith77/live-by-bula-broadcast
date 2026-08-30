@@ -122,7 +122,7 @@ And the operator can already see it. **They are watching the programme output, a
 
 That is not an assumption made for this decision. The Studio already states it twice and has built on it both times: possession is `O` and `D` on the keyboard because *"an operator is watching the programme output, not this page"*, and the off-air flash is `aria-live` because *"an operator watching the program monitor is not looking at this bar"*. Two existing features exist in the shape they do precisely because the operator's eyes are on the output rather than on the Studio.
 
-**What it does rest on is a fact about the room:** that the operator has a programme monitor or a switcher multiview. The Studio has no preview of its own — no iframe, no thumbnail — so an operator working from the Studio page alone would see nothing. That is a fair assumption for a switcher setup and a poor one for somebody running a laptop and a webcam, which is the deployment standalone mode is aimed at (`STANDALONE.md` §8). If the Studio ever grows a preview, the timeouts arrive with it for free and this section is moot.
+**What it does rest on is a fact about the room:** that the operator has a programme monitor or a switcher multiview. The Studio has no preview of its own — no iframe, no thumbnail — so an operator working from the Studio page alone would see nothing. That is a fair assumption for a switcher setup and a poor one for somebody running a laptop and a webcam, which is the deployment standalone mode is aimed at (`STANDALONE.md` §6). If the Studio ever grows a preview, the timeouts arrive with it for free and this section is moot.
 
 If a use emerges that the output does not serve — a warning that a team is about to run out, say — revisit it, but not before.
 

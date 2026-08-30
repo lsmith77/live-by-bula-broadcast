@@ -139,7 +139,7 @@
     /**
      * A reader answering from a capture on disk instead of from Live!.
      *
-     * Same interface, same shape, same field names — `docs/STANDALONE.md` §3:
+     * Same interface, same shape, same field names — `docs/STANDALONE.md` §7:
      * one renderer, one payload shape, two providers. A caller cannot tell.
      *
      * THE CLOCK, WHICH IS THE WHOLE SUBTLETY

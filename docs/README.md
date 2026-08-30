@@ -118,11 +118,13 @@ The digest of asks against UltiOrganizer and Live! by BULA — one entry per ask
 
 ### [`STANDALONE.md`](STANDALONE.md) — the overlays without UltiOrganizer
 
-A concept, with nothing built. Everything here assumes an UltiOrganizer installation with Live! underneath, and that assumption is load-bearing in the deployment sense and almost nowhere else: the coupling is **two PHP classes in three files, four read endpoints, and a clock that is three integers**. A tournament scored on paper, a club friendly, a showcase game outside the event that owns the software — the overlays would work in all of them, and the only thing missing is something to answer "what is game 702".
+**Milestones 1–3 are built.** Every surface — Studio, stage, scoreboard, commentary desk — renders a recorded game with no UltiOrganizer, no Live!, no database and no network, and CI proves it on every push. The coupling that made this seem hard turned out to be **two PHP classes, eighteen API reads and a clock that is three integers**; the classes now appear in one file, behind one function.
 
-The document is mostly about where the seam goes, what a person would have to type, and what is honestly lost — which is every number Live! accumulates across an event, and which the existing "absent is not zero" rule already handles correctly by omission.
+What is not built is the part that lets somebody *create* an event rather than replay a recording. §7b lists what stands between here and a tournament using it — four small gaps, a checker, and the editor, which is the project.
 
-**Go here for:** whether this could run without the host, and what it would cost.
+The document states what runs, how to start it, what is missing, and what the next step is. The short version of the last two: four small gaps stand between the current state and somebody being able to install this without holding the document, and after them the editor — the part that lets a person *create* an event rather than replay a recording — which is the actual project.
+
+**Go here for:** how to run the overlays with no host, and what is still needed before a tournament could.
 
 ### [`SETUP.md`](SETUP.md) — setup, checks and teardown
 
