@@ -83,14 +83,16 @@ This is the single most important design consequence in this document, and it co
 
 **It must not become a second test surface that nobody runs.** The suite deliberately drives a real instance, because the payload shape is the thing that has been wrong before. A standalone provider is a *fixture generator* by another name, and the temptation will be to test the overlays against it — which would be exactly the mock the project refused. The rule that keeps this honest: **standalone's provider is tested against Live!'s recorded payloads**, not the other way round. Capture real payloads, assert the local store reproduces their shape field for field, and keep the overlay tests pointed at a real instance.
 
-That has a pleasant side effect. Today the browser suite cannot run in CI at all, because Live! is third-party software under a signed Terms of Use that a public workflow cannot check out (`.github/workflows/ci.yml`). A standalone provider is, incidentally, **the thing that would make the browser suite runnable in CI** — no database, no Live!, no licence. That is not a reason to build it, but it is a real second payoff and it argues for building the provider seam first and cleanly.
+That has a pleasant side effect. Today the browser suite cannot run in CI at all, because Live! is third-party software under a signed Terms of Use that a public workflow cannot check out (`.github/workflows/ci.yml`). Standalone mode is what would eventually make it runnable — no database, no Live!, no licence.
+
+**But not a provider alone, and it is worth being exact about that.** The pages are served through UltiOrganizer's front controller and refuse to load without it (`UO_ROUTED_VIEW`), so a payload provider with nothing to serve the pages gets a workflow no further. Running the browser suite in CI needs **milestone 2 and milestone 3 together** — a provider that needs no API, and a front controller that needs no host. Either alone is not enough.
 
 **It must not quietly answer the licensing question.** Live! by BULA is distributed under a signed Terms of Use, and these overlays are built for it. A mode that runs without it is not obviously a circumvention — it serves games Live! was never going to hold — but it is a question for the people who signed, not one to settle by shipping. Ask before publishing.
 
 ## 7. A staging that produces something useful early
 
 1. **The provider seam, hosted only.** Introduce `shared/provider.js`, route the four call sites through it, change nothing else. Behaviour identical, and it is independently verifiable: the whole suite must stay green with no other change. This is the commit that makes everything after it cheap.
-2. **A recorded-payload provider.** The same interface reading captured JSON from disk. No editing UI. Immediately useful for development, and it is what lets the browser suite run without Live!. See §7a for what does the capturing and what a capture holds.
+2. **A recorded-payload provider.** The same interface reading captured JSON from disk. No editing UI. See §7a for what does the capturing, what a capture holds, and — since it is a fair question — what this actually buys on its own.
 3. **Auth and routing seams.** A standalone front controller and a local admin password. At this point the overlays run on a bare PHP host against recorded payloads.
 4. **The editor.** Teams, a game, the clock, and goal entry — the operator surface. This is the biggest single piece and the one worth prototyping against a real broadcast before committing to a shape.
 5. **Rosters via the existing CSV**, promoted to source of truth.
@@ -99,6 +101,8 @@ That has a pleasant side effect. Today the browser suite cannot run in CI at all
 Milestone 3 is the first point at which somebody who does not run UltiOrganizer can use this project. Milestone 1 is worth doing regardless of whether the rest ever happens.
 
 ### 7a. What "captured JSON" means
+
+**Not the `conf/` stores.** Worth separating first, because the two bodies of JSON are easy to conflate. `conf/show.json`, `team-colors.json`, `possession-<game>.json`, `lines/` and `notes/` are *this project's own* operator-authored state — already local, already the authority for what they hold, and they need no provider because standalone does not change them at all (§2). What milestone 2 records is the other half: what **Live!** answers, which today exists only in flight. Every poll fetches it and throws it away.
 
 **Captured by what:** a script driving `shared/provider.js` itself against a live instance, writing down what comes back. Using the provider to record is not a convenience — it means the recording is *by construction* in the shape the provider returns, so there is no third format to keep in step with the other two.
 
@@ -111,6 +115,22 @@ Plus a **manifest** recording the instant of capture and which event and game it
 So the replay provider has to rebase the clock by the age of the capture — which is the **synthetic `timer_start`** trick this project already performs twice, in `shared/demo.js` (fixture 702 has `timer_start: null`, so the demo manufactures one to show a running clock at all) and in the post-production frame. Third time; it should probably be shared code by then.
 
 **What a capture is not: a fixture to hand-edit.** The moment somebody adjusts a recorded payload it stops being evidence of what Live! actually sends and becomes a hand-written fake with extra steps — which `demo.js` already warns about: *"a hand-written fake payload drifts from the API shape, and then the demo starts proving things about a scoreboard nobody ships."* Variation belongs in a mutation layer over the recording, which is exactly how `demo.js` works and is the model to copy.
+
+### What milestone 2 actually buys on its own
+
+A fair challenge, and the honest answer is *less than the staging order implies* — so here is what it does and does not do.
+
+**It does not, by itself, get the browser suite into CI.** The pages refuse to load outside UltiOrganizer's front controller, so recorded payloads with nothing to serve the pages are of no use to a workflow. That needs milestone 3 as well.
+
+**What it does buy alone, in order of how much:**
+
+- **Reproducing a real broadcast.** Today, a defect seen at a tournament is gone the moment the game ends: the payload existed only in flight, and nothing keeps it. With a capture, "send me the recording" makes the bug reproducible on a laptop, exactly, months later. There is no other route to that.
+- **Fixture depth.** `PLAN.md` already lists this as an open item — `HRN2026` is *"two teams and one pool — enough to prove the pipeline, not enough to exercise progression, standings or spirit"*, and it says the fix is *"either a larger hand-built fixture or a sanitised dump from a real tournament."* A capture is that dump, and it arrives already in the right shape rather than being maintained by hand.
+- **Deterministic rendering tests.** The suite currently drives a live instance whose state its own tests mutate. Rendering assertions against a fixed recording cannot be perturbed by the test that ran before them.
+
+**And a reason that only appears if §3 is taken seriously.** Standalone's authored store must emit Live!'s payload shape, warts and all. If it does, then **a capture *is* a standalone event** — the same files, one recorded and one typed — and the reader built here is the reader standalone uses, not a throwaway. That is the strongest argument for doing it, and it is entirely contingent on not letting the authored format drift into something tidier.
+
+**If the goal is standalone working as soon as possible, this milestone can be deferred.** Milestone 1 → 3 → 4 is a coherent path, and the capture reader then falls out of the editor's store reader rather than preceding it. What is lost by deferring is the debugging capability, which is worth more than it sounds and costs little to build early.
 
 **A snapshot is one frame.** Replaying a game *progressing* needs a series of captures with their timestamps, played back in order. That is worth having eventually — it is the only way to test what an overlay does as a score changes without a live game — but it is a second step, and the first one is worth shipping without it.
 
