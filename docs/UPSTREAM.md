@@ -1,10 +1,10 @@
 # Upstream asks
 
-The features these overlays want from UltiOrganizer and Live! by BULA, in one place. This is a digest for an upstream reader: each entry says what is asked, what it unlocks and roughly what it costs, and links to the full case. The arguments live with the features that produced them in [`STUDIO.md`](STUDIO.md) and [`COMMENTATOR.md`](COMMENTATOR.md) and are deliberately not repeated here, so this page cannot drift far from them. Where an overlay-side workaround exists the entry names it — each one is evidence the feature was wanted enough to build a bridge, and each one retires when the upstream feature lands. When opening an upstream issue, paste the entry and link the full case.
+The features these overlays want from UltiOrganizer and Live! by BULA, in one place — plus one section that is not an ask at all, but a problem both projects share. This is a digest for an upstream reader: each entry says what is asked, what it unlocks and roughly what it costs, and links to the full case. The arguments live with the features that produced them in [`STUDIO.md`](STUDIO.md) and [`COMMENTATOR.md`](COMMENTATOR.md) and are deliberately not repeated here, so this page cannot drift far from them. Where an overlay-side workaround exists the entry names it — each one is evidence the feature was wanted enough to build a bridge, and each one retires when the upstream feature lands. When opening an upstream issue, paste the entry and link the full case.
 
 Everything below was established against real payloads and the UO schema while building the overlays, not guessed. Gaps that a config toggle or a directory of images already covers are not asks and are not listed — [`STUDIO.md`](STUDIO.md) §10.1 and the settings table in [`README.md`](README.md) cover those.
 
-**Last assessed:** 2026-08-29
+**Last assessed:** 2026-08-31
 
 ## If only one thing changed
 
@@ -28,6 +28,18 @@ Everything below was established against real payloads and the UO schema while b
 1. **Per-game block counts in the game payload** — they exist in `uo_defense` and via `GameTeamDefenseBoard()`, but `GameManager` never exposes them; `entity=teams` carries tournament totals only, so a "blocks in this game" card cannot be built at all. The contemplated workaround — an overlay-side endpoint reading `uo_defense` directly — is deliberately held open, because it would relax the project's no-direct-database rule. Full case: [`STUDIO.md`](STUDIO.md) §3.1 and §3.4.
 2. **Expose `uo_player_profile` in a payload** — `entity=players&id=<id>` returns `Invalid ID` even for ids the list endpoint itself returned, so nickname, position, story and the rest are unreachable despite already having a per-field `public` opt-in. This may be a bug rather than a decision, and it is the prerequisite for both profile asks above. Full case: [`COMMENTATOR.md`](COMMENTATOR.md) §5.
 3. **Player photos** — Live! has no player image field anywhere; `TEAM_PHOTOS_ENABLED` covers team photos only. The planned workaround is an overlay-local `players/` directory mirroring the existing team-logo store, which can only ever serve one installation; an image field in Live! would serve every deployment. Full case: [`STUDIO.md`](STUDIO.md) §5 and §10.1.
+
+## Not an ask: offline scorekeeping, where the interest is mutual
+
+Everything above is something these overlays want and cannot build. This is the opposite kind of entry, and it is here because there is nowhere better to put it: a place where the two projects have the **same problem**, and where whichever solves it first makes the other's version easier.
+
+**The observation.** Scorekeeper runs on a phone, at a pitch, and pitches are in parks and on playing fields where a phone has one bar. It is currently 21 files of server-rendered form posts — `<form method='post' data-ajax='false'>` followed by a redirect — with no service worker, no manifest, and no `localStorage`, `IndexedDB` or `navigator.onLine` in it. So every goal, timeout and halftime needs a working connection at the moment it is pressed. Nobody needs telling that this is awkward; it is offered only because the overlay project went looking at the same problem from the other end and found the ground more favourable than expected.
+
+**Why the sport's data shape makes it unusually tractable.** A scoresheet is **goals keyed by the point number they create**. That is idempotent by construction: a phone recording locally and uploading when it finds wifi cannot double-count a point on a retry, and two scorekeepers on one game converge rather than conflict. Most offline-sync work is hard because the merge rules are hard; here the merge rule is "the tenth point is the tenth point". The overlay project reached the same conclusion independently for its own score entry ([`MATCHCONTROL.md`](MATCHCONTROL.md) §4) and again while examining a peer-to-peer design ([`RELAY.md`](RELAY.md) §1), and both are written up if they are of any use.
+
+**Why it would help the overlays if UltiOrganizer did it.** The overlays' own resilience problem is the same one: a venue's uplink degrades in the second half, and a scoreboard that looked fine keeps drawing a score from four minutes ago. If Scorekeeper captures locally and reconciles later, the data reaching the overlays is complete rather than whatever survived the connection — and one of the main reasons to consider building a parallel local system of record here goes away. That is a real reduction in scope for this project, which is why the interest is mutual rather than polite.
+
+**What is not being claimed.** Not that this is easy, not that it is a priority, and not that anybody is waiting on it. The overlays work today without it. It is written down because the two projects would otherwise solve it twice, and because the harder half — deciding what merges and how — appears to already be settled by how the sport counts.
 
 ## Considered and excluded
 
