@@ -70,6 +70,8 @@ Ordered by what would bite first.
 
 **What can wait:** accumulating totals across games within a standalone event. It is real — it is every "Tournament" number a player sheet shows — but it turns a per-game store into an event database, which is the thing this mode exists to avoid needing.
 
+**What is deliberately not on this path.** [`RELAY.md`](RELAY.md) explores moving the state into the browsers with the server reduced to a relay, and peer-to-peer between the desks. It is a genuine direction and it is not this one: everything above assumes a small PHP server on the network, holding flat files, exactly as the architecture already does. The relay idea changes what the project *is* rather than how it is deployed, so it belongs after there is something to run, not before.
+
 ## 6. What a server needs
 
 The point of this section is that the answer is small. Everything below was read off the code rather than assumed, and the headline is that **standalone needs no database and no Composer** — the two things that make the hosted deployment heavy.
