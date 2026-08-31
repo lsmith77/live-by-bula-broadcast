@@ -140,11 +140,19 @@ And it does not stop at the first pull. **Teardown carries the two most expensiv
 
 ### [`RELAY.md`](RELAY.md) — state in the browser, server as a relay
 
-A concept, with nothing built. Could the state live in the participating browsers, with a server that only passes messages and stores nothing — cheap to run as a service, with no data to be responsible for?
+**A future direction, not scheduled work** — `STANDALONE.md` is the near-term path and stays server-based. Could the state live in the participating browsers, with a server that only passes messages and stores nothing — cheap to run as a service, with no data to be responsible for?
 
 The encouraging half: **the stores are already most of the way to CRDTs**, not by design but because each was fixed after "two people wrote and one lost". Notes are a per-field last-write-wins map, lines a register per side, possession an append-only keyed log, and a goal is written as the point it creates rather than as `+1`.
 
-The hard half: a relay that stores nothing cannot answer a client that joins late, and the client that joins late is **the scoreboard inside a video switcher** — no keyboard, unknown engine, reloads unattended. It also covers why peer-to-peer between the desks is tempting and why venue wifi is the worst place to try it, why "no data at rest" is a weaker claim than end-to-end encryption, and the two-tier rule: broadcast surfaces stay conservative, desk surfaces may take dependencies, and neither gets a build step.
+Because those stores merge without coordination, a late joiner can take a snapshot from **any** peer — which is what makes a peer-to-peer version viable rather than merely appealing. And on a single LAN, peer-to-peer needs no STUN, no TURN and no internet at all.
+
+What that is worth is narrower than it first appears, and worth stating plainly: **no internet means no stream**, whatever the overlays do. What offline buys is local recording, and — the valuable one — **fault tolerance against an uplink that comes and goes**, so a system that loaded fine does not quietly keep drawing a score from four minutes ago.
+
+It all turns on one unanswered hardware question: whether a switcher's browser source can hold a peer connection. If it can, the design is complete; if it cannot, something on the network must serve HTTP — which is a laptop running `php -S`, the deployment that already exists and is already offline. Hence the reframing worth keeping: **peer-to-peer is not what makes offline possible, it is what removes the need for a local server.** The doc also covers why "no data at rest" is a weaker claim than end-to-end encryption, and the two-tier rule: broadcast surfaces stay conservative, desk surfaces may take dependencies, and neither gets a build step.
+
+It is also honest about the cost, which is not the code — the pages are already JavaScript applications with a PHP header, and much of the store code is file locking that disappears when there is no file. The real price is a second implementation of every rule in a second language.
+
+And it ends somewhere unexpected: **the capability may belong upstream rather than here.** Holding state locally and reconciling when a network appears is exactly what UltiOrganizer's Scorekeeper needs and has none of — server-rendered form posts with no offline storage of any kind, on a phone at a pitch with one bar. Built here it makes the covered games fault-tolerant; built there it fixes every game at every tournament. [`UPSTREAM.md`](UPSTREAM.md) records it as shared ground rather than as a request — neither project is waiting on the other, but both would otherwise solve it twice.
 
 **Go here for:** whether this could be a service, and what would have to be true first.
 
