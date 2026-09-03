@@ -93,6 +93,100 @@ test.describe('commentator', () => {
     await expect(away).toHaveAttribute('aria-label', /1 of 2 left this half/);
   });
 
+  test('a player whose only entry is a captaincy still gets an identity line', async ({ page }) => {
+    // The identity line had two renderers: one drew the spans, the other built
+    // the hover title and decided whether the line existed at all. Adding a
+    // field to the first without the second made it invisible — drawn by one,
+    // declared absent by the other, so never created. They share one list now.
+    await page.evaluate((g) => localStorage.setItem(`uo-lines-code-${g}`, 'ZTEST'), GAME_ID);
+    await page.reload();
+    await expect(page.locator('.roster').first()).toBeVisible();
+
+    const id = await page.locator('.roster').first()
+      .locator('td.who button[data-player]').first().getAttribute('data-player');
+    await page.request.post('/index.php?view=live/overlays/notes', {
+      data: { code: 'ZTEST', player: Number(id), text: '', role: 'Captain', by: 'T' },
+    });
+    await page.reload();
+    await expect(page.locator('.roster').first()).toBeVisible();
+
+    await page.locator(`.roster td.who button[data-player="${id}"]`).click();
+    const say = page.locator('#sheet .sub.say');
+    await expect(say, 'the line exists at all').toBeVisible();
+    await expect(say).toContainText('Captain');
+
+    // Leave the room as it was found, and leave it EMPTY. Two things bite here,
+    // and both have bitten before (AGENTS.md): a save is a delta, so clearing
+    // one channel leaves the others to accumulate run over run; and the open
+    // sheet flushes on close, which re-saves whatever its inputs still hold and
+    // would undo a cleanup that ran while it was still open.
+    await page.keyboard.press('Escape');
+    const cleared = { code: 'ZTEST', player: Number(id), text: '', by: 'T' };
+    for (const field of ['nickname', 'pronouns', 'pronunciation', 'matching',
+      'role', 'nationality', 'position', 'hand']) {
+      cleared[field] = '';
+    }
+    await page.request.post('/index.php?view=live/overlays/notes', { data: cleared });
+    // This player specifically, not the whole room: the code is shared with
+    // every other spec here, and one of them legitimately leaves a matching
+    // behind. Asserting the room is empty asserts something about them.
+    const left = await (await page.request.get(
+      '/index.php?view=live/overlays/notes&code=ZTEST',
+    )).json();
+    expect(left.players[String(id)], 'this player is gone').toBeUndefined();
+  });
+
+  test('empty fields collapse, and a hidden one is not a cleared one', async ({ page }) => {
+    // Eight inputs for a player who declared nothing is a card of blank boxes,
+    // which is what pushed this sheet towards a scrollbar. They hide — but the
+    // desk still has to be able to add one, and, more dangerously, a hidden
+    // empty field must not be saved as an instruction to clear anything.
+    await page.evaluate((g) => {
+      localStorage.setItem(`uo-lines-code-${g}`, 'ZTEST');
+      localStorage.removeItem('uo-note-fields');
+    }, GAME_ID);
+    await page.reload();
+    await expect(page.locator('.roster').first()).toBeVisible();
+
+    const id = await page.locator('.roster').first()
+      .locator('td.who button[data-player]').first().getAttribute('data-player');
+    // One field declared: it shows, the other seven do not.
+    await page.request.post('/index.php?view=live/overlays/notes', {
+      data: { code: 'ZTEST', player: Number(id), text: '', nationality: 'GBR', by: 'T' },
+    });
+    await page.reload();
+    await expect(page.locator('.roster').first()).toBeVisible();
+    await page.locator(`.roster td.who button[data-player="${id}"]`).click();
+
+    await expect(page.locator('#sheet .note .fields .field')).toHaveCount(1);
+    await expect(page.locator('#sheet .fieldtoggle')).toContainText('Add details');
+
+    // Typing in the note saves the whole entry. The seven hidden fields must
+    // ride along untouched rather than being written as blanks.
+    await page.locator('#sheet .note textarea').fill('A note.');
+    await page.locator('#sheet .note textarea').blur();
+    await expect(page.locator('#sheet .note .state')).toHaveText('Saved');
+
+    const stored = await (await page.request.get(
+      '/index.php?view=live/overlays/notes&code=ZTEST',
+    )).json();
+    expect(stored.players[String(id)].nationality, 'survived a save it was hidden from')
+      .toBe('GBR');
+
+    // And the toggle brings the rest back so the desk can add one. Seven, not
+    // eight: matching only offers itself in a mixed division, and this fixture
+    // is open.
+    await page.locator('#sheet .fieldtoggle').click();
+    await expect(page.locator('#sheet .note .fields .field')).toHaveCount(7);
+
+    await page.evaluate(() => localStorage.removeItem('uo-note-fields'));
+    await page.keyboard.press('Escape');
+    const cleared = { code: 'ZTEST', player: Number(id), text: '', by: 'T' };
+    for (const f of ['nickname', 'pronouns', 'pronunciation', 'matching',
+      'role', 'nationality', 'position', 'hand']) { cleared[f] = ''; }
+    await page.request.post('/index.php?view=live/overlays/notes', { data: cleared });
+  });
+
   test('the notes box and its roster marker clear AAA too', async ({ page }) => {
     // The marker was first drawn in --accent, which is a FILL colour: it is the
     // background of a pressed button, with white text on top. Against the panel

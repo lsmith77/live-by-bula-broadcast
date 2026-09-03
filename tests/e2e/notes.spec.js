@@ -310,18 +310,20 @@ test.describe('prepared notes', () => {
     await rosters.nth(0).locator('.roster td.who button').first().click();
     await expect(page.locator('#sheet .note textarea'))
       .toHaveValue('Other sports played: Handball\nHow you came to ultimate: Followed a sibling, then stayed');
-    await expect(page.locator('#sheet .note .fields input').nth(1)).toHaveValue('she/her');
+    await expect(page.locator('#sheet').getByLabel(/^Pronouns for /)).toHaveValue('she/her');
   });
 
   test('the structured fields are shown beside the name, not buried in a note', async ({ page, request }) => {
     await openPage(page);
     await page.locator('.roster td.who button').first().click();
 
-    const fields = page.locator('#sheet .note .fields input');
-    await fields.nth(0).fill('Ace');
-    await fields.nth(1).fill('she/her');
-    await fields.nth(2).fill('OW-er');
-    await fields.nth(2).blur();
+    // Empty fields are collapsed, so a desk types into them only after asking
+    // for them — one click, remembered per browser. This is that click.
+    await page.locator('#sheet .fieldtoggle').click();
+    await page.locator('#sheet').getByLabel(/^Nickname for /).fill('Ace');
+    await page.locator('#sheet').getByLabel(/^Pronouns for /).fill('she/her');
+    await page.locator('#sheet').getByLabel(/^Say it for /).fill('OW-er');
+    await page.locator('#sheet').getByLabel(/^Say it for /).blur();
     await expect(page.locator('#sheet .note .state')).toHaveText('Saved');
     await page.keyboard.press('Escape');
 
@@ -345,7 +347,7 @@ test.describe('prepared notes', () => {
     await page.reload();
     await expect(page.locator('.roster').first()).toBeVisible();
     await page.locator('.roster td.who button').first().click();
-    await expect(page.locator('#sheet .note .fields input').nth(1)).toHaveValue('she/her');
+    await expect(page.locator('#sheet').getByLabel(/^Pronouns for /)).toHaveValue('she/her');
     await expect(page.locator('#sheetCard .sub.say')).toHaveText('“Ace” · she/her · say OW-er');
   });
 
@@ -357,14 +359,16 @@ test.describe('prepared notes', () => {
     const rows = page.locator('.roster').first().locator('td.who');
 
     await rows.nth(0).locator('button').click();
-    await page.locator('#sheet .note .fields input').nth(1).fill('they/them');
-    await page.locator('#sheet .note .fields input').nth(1).blur();
+    // The field is empty, so it is collapsed until asked for.
+    await page.locator('#sheet .fieldtoggle').click();
+    await page.locator('#sheet').getByLabel(/^Pronouns for /).fill('they/them');
+    await page.locator('#sheet').getByLabel(/^Pronouns for /).blur();
     await expect(page.locator('#sheet .note .state')).toHaveText('Saved');
     await page.keyboard.press('Escape');
 
     await rows.nth(1).locator('button').click();
-    await page.locator('#sheet .note .fields input').nth(1).fill('he/him');
-    await page.locator('#sheet .note .fields input').nth(1).blur();
+    await page.locator('#sheet').getByLabel(/^Pronouns for /).fill('he/him');
+    await page.locator('#sheet').getByLabel(/^Pronouns for /).blur();
     await expect(page.locator('#sheet .note .state')).toHaveText('Saved');
     await page.keyboard.press('Escape');
 
@@ -408,7 +412,7 @@ test.describe('prepared notes', () => {
 
     await page.locator('.roster td.who button').first().click();
     await expect(page.locator('#sheet .note textarea')).toHaveValue('Typed at the desk.');
-    await expect(page.locator('#sheet .note .fields input').nth(1)).toHaveValue('they/them');
+    await expect(page.locator('#sheet').getByLabel(/^Pronouns for /)).toHaveValue('they/them');
   });
 
   test('re-importing does not overwrite what the desk typed', async ({ page }, info) => {

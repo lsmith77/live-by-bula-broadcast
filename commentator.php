@@ -231,6 +231,9 @@ try {
     .teamhead .nm { font-size: 1.25rem; font-weight: 800; line-height: 1.15;
                     overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .teamhead .seed { color: var(--ink-mute); font-size: .75rem; font-weight: 600; white-space: nowrap; }
+    /* A captaincy is the one identity-line entry that is a fact about the game
+       rather than about saying the name, so it carries a little weight. */
+    .say .role { font-weight: 700; }
     /* Timeouts left: one tick per allowance, filled while it is unspent. Never
        colour alone — the count is in the title and the label spells it out. */
     .touts { display: inline-flex; gap: .18rem; align-items: center; flex: 0 0 auto;
@@ -591,6 +594,10 @@ try {
        a code. It gets real height because a two-line box invites two lines. */
     .note .fields { display: grid; grid-template-columns: repeat(3, 1fr); gap: .5rem;
         margin-bottom: .5rem; }
+    /* Empty by design when nobody has filled anything in: the row collapses
+       rather than leaving a gap above the toggle that reveals it. */
+    .note .fields:empty { display: none; }
+    .note .fieldtoggle { margin-bottom: .5rem; }
     /* min-width: 0 on the grid item, or a long placeholder sets the column's
        minimum and pushes the row out of the card. */
     .note .fields .field { display: flex; flex-direction: column; gap: .2rem; min-width: 0; }
@@ -749,7 +756,10 @@ try {
         codeLength: <?= (int) Lines::CODE_LENGTH ?>,
         noteMax: <?= (int) Notes::MAX_TEXT ?>,
         fieldMax: <?= (int) Notes::MAX_FIELD ?>,
-        noteDays: <?= (int) round(Notes::STALE_SECONDS / 86400) ?>
+        noteDays: <?= (int) round(Notes::STALE_SECONDS / 86400) ?>,
+        // The store's own list, so the page cannot save a field the store will
+        // drop, or forget one the store would have kept.
+        noteFields: <?= $json(Notes::FIELDS) ?>
     };
 
     // Every read of Live! goes through here — see shared/provider.js. The
@@ -1443,13 +1453,39 @@ try {
      * no placeholder, nothing implying the player was asked — and pronouns in
      * particular are shown only as declared, never derived (§5).
      */
+    /**
+     * The identity line's parts, in the order they are read.
+     *
+     * One list, because there are two renderers: sayInto() draws spans and
+     * sayLine() joins text for a hover title. They disagreed the moment a field
+     * was added to one of them — a player whose only entry was a captaincy had
+     * it drawn by one and declared absent by the other, so the line was never
+     * created and the captaincy was invisible.
+     *
+     * Order is what somebody about to speak needs: what this player IS, then
+     * what to call them, then how to say it, then where they are from.
+     */
+    function sayParts(note, opts) {
+        if (!note) { return []; }
+        var parts = [];
+        if (opts && opts.matching && note.matching) {
+            parts.push({ text: note.matching, cls: 'mt ' + note.matching.toLowerCase() });
+        }
+        if (note.role) { parts.push({ text: note.role, cls: 'role' }); }
+        if (note.nickname) { parts.push({ text: '“' + note.nickname + '”', cls: null }); }
+        if (note.pronouns) {
+            parts.push({
+                text: note.pronouns,
+                cls: emphasizedPronouns(note.pronouns) ? 'hi' : null
+            });
+        }
+        if (note.pronunciation) { parts.push({ text: 'say ' + note.pronunciation, cls: null }); }
+        if (note.nationality) { parts.push({ text: note.nationality, cls: null }); }
+        return parts;
+    }
+
     function sayLine(note) {
-        if (!note) { return ''; }
-        var bits = [];
-        if (note.nickname) { bits.push('“' + note.nickname + '”'); }
-        if (note.pronouns) { bits.push(note.pronouns); }
-        if (note.pronunciation) { bits.push('say ' + note.pronunciation); }
-        return bits.join(' · ');
+        return sayParts(note, null).map(function (p) { return p.text; }).join(' · ');
     }
 
     /**
@@ -1478,23 +1514,15 @@ try {
      */
     function sayInto(node, note, opts) {
         node.replaceChildren();
-        var add = function (text, cls) {
+        sayParts(note, opts).forEach(function (part) {
             if (node.childNodes.length) { node.append(document.createTextNode(' · ')); }
-            node.append(el('span', cls, text));
-        };
-        if (opts && opts.matching && note.matching) {
-            add(note.matching, 'mt ' + note.matching.toLowerCase());
-        }
-        if (note.nickname) { add('“' + note.nickname + '”', null); }
-        if (note.pronouns) {
-            add(note.pronouns, emphasizedPronouns(note.pronouns) ? 'hi' : null);
-        }
-        if (note.pronunciation) { add('say ' + note.pronunciation, null); }
+            node.append(el('span', part.cls, part.text));
+        });
     }
 
     /** Is there anything for sayInto() to draw? */
     function hasSayLine(note, opts) {
-        return !!(sayLine(note) || (opts && opts.matching && note && note.matching));
+        return sayParts(note, opts).length > 0;
     }
 
     /**
@@ -2061,12 +2089,33 @@ try {
         // correctable at the desk in seconds, so they are editable here too.
         // Matching only offers itself in a mixed division, where it means
         // something (§10.5).
+        // Empty fields are hidden, and the toggle below brings them back.
+        //
+        // A sheet that renders eight inputs for a player who declared two is
+        // mostly blank boxes, and blank boxes are what pushed this card towards
+        // a scrollbar. But the desk still has to be able to ADD one — a
+        // pronunciation researched mid-tournament is exactly the correction
+        // this box exists for — so hiding cannot mean removing.
+        //
+        // The choice is remembered per browser: a desk that fills these in
+        // should not re-open them for every player, and a desk that never does
+        // should not see them at all.
+        var showEmpty = false;
+        try {
+            showEmpty = window.localStorage.getItem('uo-note-fields') === 'all';
+        } catch (e) { showEmpty = false; }
+
         var fieldsRow = el('div', 'fields');
         var fieldInputs = {};
+        var hidden = 0;
         [
             { key: 'nickname', label: 'Nickname', hint: 'as the player uses it' },
             { key: 'pronouns', label: 'Pronouns', hint: 'as the player declared — never guessed' },
-            { key: 'pronunciation', label: 'Say it', hint: 'how to say the name' }
+            { key: 'pronunciation', label: 'Say it', hint: 'how to say the name' },
+            { key: 'role', label: 'Role', hint: 'captain, spirit captain' },
+            { key: 'nationality', label: 'Nationality', hint: 'country represented' },
+            { key: 'position', label: 'Position', hint: 'handler, cutter' },
+            { key: 'hand', label: 'Throws', hint: 'left or right' }
         ].concat(isMixedSide(side)
             ? [{ key: 'matching', label: 'Matching', select: ['', 'FMP', 'MMP'] }]
             : []).forEach(function (f) {
@@ -2091,10 +2140,35 @@ try {
             input.value = existing && existing[f.key] ? existing[f.key] : '';
             input.setAttribute('aria-label', f.label + ' for ' + p.name);
             wrap.append(input);
+            // Always built, so a save still carries every channel and a hidden
+            // empty field cannot be read as "clear this". Only the display is
+            // conditional.
             fieldInputs[f.key] = input;
-            fieldsRow.append(wrap);
+            if (input.value || showEmpty) {
+                fieldsRow.append(wrap);
+            } else {
+                hidden += 1;
+            }
         });
         box.append(fieldsRow);
+
+        if (hidden || showEmpty) {
+            var toggle = el('button', 'chip fieldtoggle',
+                showEmpty ? 'Hide empty fields' : 'Add details (' + hidden + ')');
+            toggle.type = 'button';
+            toggle.title = showEmpty
+                ? 'Show only the fields somebody has filled in.'
+                : 'Nickname, pronunciation, captaincy and the rest — blank until '
+                    + 'somebody fills them.';
+            toggle.addEventListener('click', function () {
+                try {
+                    window.localStorage.setItem('uo-note-fields', showEmpty ? 'filled' : 'all');
+                } catch (e) { /* a private window still gets the toggle, once */ }
+                // Re-open the same sheet so the row rebuilds with the new rule.
+                openSheet(p, side);
+            });
+            box.append(toggle);
+        }
 
         var area = document.createElement('textarea');
         area.value = existing ? existing.text : '';
@@ -2151,19 +2225,19 @@ try {
             // disagree about which channels exist. The review marker survives
             // only while the pronouns it reviewed stand unedited.
             var cur = noteFor(p.id);
-            pushNote(p.id, {
-                text: area.value,
-                nickname: fieldInputs.nickname.value,
-                pronouns: fieldInputs.pronouns.value,
-                pronunciation: fieldInputs.pronunciation.value,
-                // Without an input on this sheet, the stored value rides along
-                // unchanged rather than being cleared by a save.
-                matching: fieldInputs.matching
-                    ? fieldInputs.matching.value
-                    : (cur && cur.matching) || '',
-                pronounsok: !!(cur && cur.pronounsok
-                    && fieldInputs.pronouns.value.trim() === (cur.pronouns || ''))
-            }, function (ok) {
+            var entry = { text: area.value };
+            // Whatever inputs this sheet actually rendered, rather than a list
+            // repeated here. A field with no input on this sheet — matching,
+            // outside a mixed division — keeps the stored value rather than
+            // being cleared by a save it was not part of.
+            CONFIG.noteFields.forEach(function (k) {
+                entry[k] = fieldInputs[k]
+                    ? fieldInputs[k].value
+                    : (cur && cur[k]) || '';
+            });
+            entry.pronounsok = !!(cur && cur.pronounsok
+                && fieldInputs.pronouns.value.trim() === (cur.pronouns || ''));
+            pushNote(p.id, entry, function (ok) {
                 stateLabel.className = 'state ' + (ok ? 'saved' : 'failed');
                 stateLabel.textContent = ok ? 'Saved' : 'Not shared — kept on this screen';
                 renderMeta();
@@ -2266,6 +2340,11 @@ try {
         var fact = function (k, v) {
             facts.append(el('div', 'k', k), el('div', 'v', v));
         };
+        // Playing facts before season figures: they are what a commentator
+        // reaches for mid-point, where the averages are prepared reading.
+        var sheetNote = noteFor(p.id);
+        if (sheetNote && sheetNote.position) { fact('Position', sheetNote.position); }
+        if (sheetNote && sheetNote.hand) { fact('Throws', sheetNote.hand); }
         fact('Games played', p.games || 0);
         if (p.games) { fact('Points per game', p.avg.toFixed(1)); }
         if (p.tCallahan) { fact('Callahans', p.tCallahan); }

@@ -81,7 +81,11 @@
         'How you came to ultimate',
         'Occupation or study',
         'Interests outside ultimate',
-        'Clubs played for before'
+        'Clubs played for before',
+        'Home town',
+        'Currently living in',
+        'College or university',
+        'Years with this team'
     ];
 
     /**
@@ -100,29 +104,115 @@
         { key: 'pronouns', header: 'Pronouns', aliases: ['pronouns', 'pronoun'] },
         {
             key: 'pronunciation', header: 'Name pronunciation',
-            aliases: ['name pronunciation', 'pronunciation', 'pronounced', 'pronounce', 'how to say it']
+            aliases: [
+                'name pronunciation', 'pronunciation', 'pronounced', 'pronounce',
+                'how to say it', 'phonetic spelling', 'phonetic', 'phonetics'
+            ]
         },
         {
             key: 'matching', header: 'Matching (FMP/MMP)',
-            aliases: ['matching (fmp/mmp)', 'matching', 'fmp/mmp', 'fmp or mmp', 'gender matching']
+            // Rosters in the wild head this column "Gender/Match", or just
+            // "Gender", and fill it with M and F. That is a team answering
+            // which matching a player competes as, so it is read rather than
+            // refused — see fieldValue(), which explains why this is not the
+            // thing UPSTREAM.md asks upstream never to do.
+            aliases: [
+                'matching (fmp/mmp)', 'matching', 'fmp/mmp', 'fmp or mmp',
+                'gender matching', 'gender/match', 'gender / match',
+                'gender', 'sex'
+            ]
+        },
+        {
+            key: 'role', header: 'Role',
+            // Captain and spirit captain are said constantly and are the two a
+            // commentator is asked for by name. Free text rather than a list:
+            // teams invent roles, and refusing "vice captain" would lose it.
+            aliases: ['role', 'team role', 'captaincy']
+        },
+        {
+            key: 'nationality', header: 'Nationality',
+            // Three letters in the sheet that supplied this idea, which is
+            // sensible and is not enforced here — a team writing "Scotland" has
+            // still answered the question.
+            aliases: ['nationality', 'country', 'nation', 'representing']
+        },
+        {
+            key: 'position', header: 'Position',
+            aliases: ['position', 'playing position', 'o/d', 'line']
+        },
+        {
+            key: 'hand', header: 'Throwing hand',
+            // A left-handed thrower is a genuine on-air observation and one word.
+            aliases: ['throwing hand', 'hand', 'handedness', 'throws']
         }
     ];
 
     /**
      * `matching` is a competition designation with exactly two values — the
-     * sport's own terms, never a gender letter (docs/STUDIO.md §10.5). A cell
-     * that cannot say FMP or MMP is not supplying this data and imports as
-     * blank rather than as a guess.
+     * sport's own terms (docs/STUDIO.md §10.5). A cell that says neither, and
+     * is not one of the short forms below, imports as blank rather than as a
+     * guess.
+     *
+     * WHY M AND F ARE ACCEPTED, WHICH LOOKS LIKE THE THING WE REFUSE
+     *
+     * The ask upstream is that matching must never be derived from
+     * `uo_player_profile.gender` — a stored identity field, given for another
+     * purpose, about a person rather than about a competition. That still
+     * stands and nothing here changes it.
+     *
+     * This is a different act. Rosters in the wild head this column
+     * "Gender/Match" and put M and F in it, and a team writing M there has
+     * answered which matching that player competes as — the header asked. So
+     * this reads what they wrote rather than inferring anything.
+     *
+     * **The header is the gate, not this function.** A value only arrives here
+     * as `matching` if its column matched one of the matching aliases. A sheet
+     * carrying an unrelated column of letters cannot reach this code, which is
+     * what keeps the distinction above real rather than stated.
      */
+    var MATCHING_SHORT = {
+        M: 'MMP', MMP: 'MMP', MALE: 'MMP',
+        F: 'FMP', FMP: 'FMP', FEMALE: 'FMP',
+        // Some sheets use W where others use F. It means the same column.
+        W: 'FMP', WOMEN: 'FMP'
+    };
+
     function fieldValue(key, raw) {
         var v = String(raw === undefined || raw === null ? '' : raw).trim();
         if (key !== 'matching') { return v; }
-        v = v.toUpperCase();
-        return v === 'FMP' || v === 'MMP' ? v : '';
+
+        return MATCHING_SHORT[v.toUpperCase()] || '';
     }
 
     var ID_ALIASES = ['player id', 'player_id', 'playerid', 'id', 'identifier'];
     var NAME_ALIASES = ['name', 'player', 'player name', 'full name'];
+
+    /**
+     * A name split across two columns, which is how a roster built by hand
+     * tends to arrive.
+     *
+     * Recognised for two reasons. The name check in match() wants a name, and
+     * without these it silently has none — so a row matched by id against the
+     * wrong player passes unremarked. And more visibly: an unrecognised header
+     * composes into the note, so a player's own first and last name would be
+     * written into their prepared notes as labelled lines.
+     */
+    var FIRST_NAME_ALIASES = ['first name', 'firstname', 'given name', 'forename'];
+    var LAST_NAME_ALIASES = ['last name', 'lastname', 'surname', 'family name'];
+
+    /**
+     * Team-level columns some rosters carry on every row.
+     *
+     * Recognised only so they stay out of the note: a colour and a seed are
+     * facts about a team, and a sheet that repeats them per player would
+     * otherwise write one into somebody's prepared notes. This project reads
+     * the seed from Live! and keeps kit colours in the operator's palette, so
+     * nothing here consumes them — see docs/COMMENTATOR.md §5a.
+     */
+    var TEAM_LEVEL_ALIASES = [
+        'teamcolor', 'team color', 'teamcolour', 'team colour',
+        'teamseeding', 'team seeding', 'seed', 'seeding'
+    ];
     var NUMBER_ALIASES = ['number', 'no', 'no.', 'num', '#', 'jersey', 'jersey number'];
     var TEAM_ALIASES = ['team', 'team name', 'club'];
     var TEAM_ID_ALIASES = ['team id', 'team_id', 'teamid'];
@@ -158,13 +248,17 @@
      * person.
      */
     var NOTICE_ROW_ID = 'NOTICE';
-    var NOTICE_TEXT = 'Please read — treat everything you write in this sheet as '
-        + 'PUBLIC. It is shared with the commentary desk over a short room code, '
-        + 'which keeps desks apart but is not a password, and this file gets '
-        + 'emailed and copied around. Anything here may be said on air or seen by '
-        + 'others, so do not write what you would not want mentioned. Tell a '
-        + 'commentator anything else in person instead. Leave this row alone; the '
-        + 'import ignores it.';
+    var NOTICE_TEXT = 'Please read — every column here is a PROMPT, not a form. '
+        + 'They are there to suggest what a commentator can use, and filling one '
+        + 'in is how you decide what gets said about you: a blank column is '
+        + 'simply not mentioned. Fill in only what you would be happy to hear on '
+        + 'air, and leave the rest empty — nobody is checking. '
+        + 'Treat everything you DO write as PUBLIC. It is shared with the '
+        + 'commentary desk over a short room code, which keeps desks apart but is '
+        + 'not a password, and this file gets emailed and copied around, so do '
+        + 'not write what you would not want mentioned. Tell a commentator '
+        + 'anything else in person instead. Leave this row alone; the import '
+        + 'ignores it.';
     var TEAM_PROMPTS = ['Team history', 'Team achievements'];
     var TEAM_PROMPT_ALIASES = ['team history', 'team achievements'];
 
@@ -210,6 +304,9 @@
                 && TEAM_ALIASES.indexOf(n) === -1
                 && TEAM_ID_ALIASES.indexOf(n) === -1
                 && TEAM_PROMPT_ALIASES.indexOf(n) === -1
+                && FIRST_NAME_ALIASES.indexOf(n) === -1
+                && LAST_NAME_ALIASES.indexOf(n) === -1
+                && TEAM_LEVEL_ALIASES.indexOf(n) === -1
                 && FIELD_ALIASES.indexOf(n) === -1;
         });
     }
@@ -231,7 +328,11 @@
      * note text alone. Both mean the same thing: what is already written here.
      */
     function existingOf(value) {
-        var entry = { text: '', nickname: '', pronouns: '', pronunciation: '', matching: '' };
+        // Built from FIELDS rather than listed, so adding a field does not need
+        // this function edited — which is how the first four came to be spelled
+        // out in three places.
+        var entry = { text: '' };
+        FIELDS.forEach(function (f) { entry[f.key] = ''; });
         if (typeof value === 'string') { entry.text = value; return entry; }
         if (value && typeof value === 'object') {
             Object.keys(entry).forEach(function (k) {
@@ -324,6 +425,18 @@
         var headers = parsed.headers || [];
         var idHeader = findHeader(headers, ID_ALIASES);
         var nameHeader = findHeader(headers, NAME_ALIASES);
+        var firstHeader = findHeader(headers, FIRST_NAME_ALIASES);
+        var lastHeader = findHeader(headers, LAST_NAME_ALIASES);
+        /** One name from whichever columns this sheet used. */
+        var nameOf = function (row) {
+            if (nameHeader) { return row[nameHeader]; }
+            if (!firstHeader && !lastHeader) { return ''; }
+
+            return [firstHeader ? row[firstHeader] : '', lastHeader ? row[lastHeader] : '']
+                .map(function (v) { return String(v === undefined ? '' : v).trim(); })
+                .filter(Boolean).join(' ');
+        };
+        var haveName = !!(nameHeader || firstHeader || lastHeader);
         var teamIdHeader = findHeader(headers, TEAM_ID_ALIASES);
         var teamNameHeader = findHeader(headers, TEAM_ALIASES);
         var content = contentHeaders(headers);
@@ -386,7 +499,7 @@
         (parsed.rows || []).forEach(function (row, i) {
             var line = i + 2;                       // 1-based, plus the header row
             var raw = String(row[idHeader] === undefined ? '' : row[idHeader]).trim();
-            var name = nameHeader ? row[nameHeader] : '';
+            var name = nameOf(row);
 
             if (!raw) {
                 report.rejected.push({ line: line, name: name, why: 'no identifier' });
@@ -414,7 +527,7 @@
                 }
                 seenTeamRow = true;
                 if (
-                    nameHeader && String(name).trim() && team && team.name
+                    haveName && String(name).trim() && team && team.name
                     && !sameName(name, team.name)
                 ) {
                     report.rejected.push({
@@ -458,7 +571,7 @@
 
             // Rule 2: the name that left with this identifier must come back with
             // it. Only checked when the file actually carries a name column.
-            if (nameHeader && String(name).trim() && !sameName(name, player.name)) {
+            if (haveName && String(name).trim() && !sameName(name, player.name)) {
                 report.rejected.push({
                     line: line, name: name,
                     why: 'name does not match the roster (roster says "' + player.name + '")'
@@ -523,6 +636,7 @@
         TEAM_PROMPTS: TEAM_PROMPTS,
         exportHeaders: exportHeaders,
         exportRows: exportRows,
+        fieldValue: fieldValue,
         contentHeaders: contentHeaders,
         fieldHeaders: fieldHeaders,
         compose: compose,

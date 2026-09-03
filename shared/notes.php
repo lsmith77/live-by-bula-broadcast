@@ -81,15 +81,34 @@ final class Notes
      * The structured fields an entry may carry beside the note.
      *
      * Single-line and short: each is something said in a breath — a nickname, a
-     * pronoun set, how to say a name — not a place for prose. `matching` is the
-     * odd one out: a competition designation, not identity, and it accepts
-     * exactly FMP or MMP — the sport's own terms, never a gender letter
+     * pronoun set, how to say a name — not a place for prose. Anything longer
+     * belongs in the note, which is what the note is for.
+     *
+     * The test for adding one is whether a commentator LOOKS IT UP rather than
+     * reads it: a captaincy, a nationality, which hand somebody throws with are
+     * all glanced at mid-point and said in two words. A home town or a college
+     * is read once while preparing, so it composes into the note instead and
+     * costs no schema.
+     *
+     * `matching` is the odd one out: a competition designation, not identity,
+     * and what is STORED is always FMP or MMP — the sport's own terms
      * (docs/STUDIO.md section 10.5). Anything else is dropped rather than
-     * stored, so the short forms cannot creep in.
+     * stored, so a short form cannot become the stored value.
+     *
+     * The CSV import does translate M and F into those terms, because rosters
+     * head that column "Gender/Match" and a team writing M there has answered
+     * which matching the player competes as. That is reading an answer, not
+     * deriving one: see the note on `fieldValue()` in shared/bios.js. What the
+     * ask upstream rules out is a different thing — matching inferred from
+     * `uo_player_profile.gender`, a stored identity field given for another
+     * purpose — and that remains ruled out.
      *
      * @var list<string>
      */
-    public const FIELDS = ['nickname', 'pronouns', 'pronunciation', 'matching'];
+    public const FIELDS = [
+        'nickname', 'pronouns', 'pronunciation', 'matching',
+        'role', 'nationality', 'position', 'hand',
+    ];
 
     /** The only values `matching` may hold. */
     public const MATCHINGS = ['FMP', 'MMP'];
@@ -103,8 +122,9 @@ final class Notes
      * Two 28-player squads is 56, and a desk that keeps one code across a whole
      * tournament will touch several games — so this is generous rather than
      * tight. With MAX_TEXT and the structured fields it also fixes the document's
-     * ceiling at ~120 KB, which is the number that actually matters for an
-     * unauthenticated write.
+     * ceiling at roughly 150 KB, which is the number that actually matters for
+     * an unauthenticated write — eight fields of 60 characters plus a 1000
+     * character note, a hundred times over.
      */
     private const MAX_PLAYERS_PER_ROOM = 100;
 

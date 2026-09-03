@@ -37,6 +37,146 @@ function csv(rows, headers) {
   return Csv.stringify(headers || Bios.exportHeaders(), rows);
 }
 
+test.describe('fields borrowed from a roster used live', () => {
+  // A tournament roster built to be READ during commentary — not imported —
+  // turned out to collect several things this sheet did not ask for. Its column
+  // names are recognised where they overlap, and its ideas were taken where a
+  // commentator would look them up rather than read them out.
+
+  test('a phonetic spelling column is the pronunciation field', () => {
+    // The single most valuable alias here: without it that column imported as
+    // an unlabelled line in the note instead of the field shown beside a name.
+    const found = Bios.fieldHeaders(['Number', 'Name', 'Phonetic spelling']);
+    expect(found.pronunciation).toBe('Phonetic spelling');
+  });
+
+  test('the new structured fields are recognised by their own names', () => {
+    const found = Bios.fieldHeaders(
+      ['Role', 'Nationality', 'Position', 'Throwing hand'],
+    );
+    expect(found).toEqual({
+      role: 'Role', nationality: 'Nationality',
+      position: 'Position', hand: 'Throwing hand',
+    });
+  });
+
+  test('the short forms a roster actually uses become matchings', () => {
+    // Rosters head this column "Gender/Match", or just "Gender", and fill it
+    // with M and F. A team writing M there has answered which matching that
+    // player competes as, because the header asked — so it is read rather than
+    // refused. The header is the gate: a column of letters that did not match
+    // a matching alias never reaches this function at all.
+    for (const header of ['Gender/Match', 'Gender', 'Matching']) {
+      expect(Bios.fieldHeaders([header]).matching, header).toBe(header);
+    }
+    for (const [raw, want] of [['M', 'MMP'], ['F', 'FMP'], ['W', 'FMP'],
+      ['male', 'MMP'], ['Female', 'FMP'], [' m ', 'MMP'],
+      ['MMP', 'MMP'], ['fmp', 'FMP']]) {
+      expect(Bios.fieldValue('matching', raw), raw).toBe(want);
+    }
+  });
+
+  test('what is stored is always the sport\'s own term', () => {
+    // The distinction that keeps the above honest. Reading M as MMP is
+    // translating an answer a team gave; the value that lands in the store is
+    // the competition designation, never the letter. Anything unrecognised is
+    // blank rather than a guess.
+    for (const raw of ['X', 'other', '1', 'M/F', '?']) {
+      expect(Bios.fieldValue('matching', raw), raw).toBe('');
+    }
+  });
+
+  test('the exported sheet asks the new questions', () => {
+    const headers = Bios.exportHeaders(true);
+    for (const asked of ['Role', 'Nationality', 'Position', 'Throwing hand',
+      'Home town', 'Currently living in', 'College or university',
+      'Years with this team']) {
+      expect(headers, asked).toContain(asked);
+    }
+  });
+
+  test('a name split across two columns is still checked against the roster', () => {
+    // A roster built by hand splits the name, and our export does not. Without
+    // recognising both halves two things went wrong at once: the name check in
+    // match() silently had nothing to check, so a row carrying the wrong id
+    // passed unremarked; and the columns composed into the note, so a player's
+    // own name was written into their prepared notes as labelled lines.
+    const roster = [{ id: 11, name: 'Player One', num: 2 }, { id: 12, name: 'Player Two', num: 4 }];
+    const parsed = {
+      headers: ['Player ID', 'First Name', 'Last Name', 'Role'],
+      rows: [
+        { 'Player ID': 11, 'First Name': 'Player', 'Last Name': 'One', Role: 'Captain' },
+        { 'Player ID': 12, 'First Name': 'Someone', 'Last Name': 'Else', Role: 'Spirit Captain' },
+      ],
+    };
+    const report = Bios.match(parsed, roster, {}, { id: 1, name: 'Team A' });
+
+    expect(report.accepted.length, 'the matching row').toBe(1);
+    expect(report.accepted[0].fields.role).toBe('Captain');
+    expect(report.rejected.length, 'the mismatched row').toBe(1);
+    expect(report.rejected[0].why).toMatch(/name does not match/);
+    // And neither half reaches the note.
+    expect(report.contentHeaders).not.toContain('First Name');
+    expect(report.contentHeaders).not.toContain('Last Name');
+  });
+
+  test('team-level columns stay out of a player note', () => {
+    // Some rosters carry a colour and a seed on every row. They are facts about
+    // a team, and repeating them per player would write one into somebody's
+    // prepared notes. Recognised only so they are dropped: the seed comes from
+    // Live! and kit colours live in the operator's palette.
+    const content = Bios.contentHeaders(
+      ['Player ID', 'Name', 'TeamColor', 'TeamSeeding', 'Home town'],
+    );
+    expect(content).toEqual(['Home town']);
+  });
+
+  test('a whole foreign header row lands where it should', () => {
+    // The shape of a roster written to be read during commentary rather than
+    // imported. Every structured field is recognised — including a phonetic
+    // column with a trailing space in its header — and what remains is prose
+    // that belongs in the note.
+    const headers = ['Jersey Number', 'First Name', 'Last Name', 'Phonetic spelling ',
+      'Role', 'Pronouns', 'Gender/Match', 'Nationality', 'Age', 'Height', 'Home town',
+      'Currently residing', 'College', 'Previous teams', 'Years with Current Team',
+      'Throwing Hand', 'Position', 'Nickname', 'TeamColor', 'TeamSeeding'];
+
+    expect(Bios.fieldHeaders(headers)).toEqual({
+      nickname: 'Nickname', pronouns: 'Pronouns', pronunciation: 'Phonetic spelling ',
+      matching: 'Gender/Match', role: 'Role', nationality: 'Nationality',
+      position: 'Position', hand: 'Throwing Hand',
+    });
+    expect(Bios.contentHeaders(headers)).toEqual([
+      'Age', 'Height', 'Home town', 'Currently residing', 'College',
+      'Previous teams', 'Years with Current Team',
+    ]);
+  });
+
+  test('the notice says the columns are prompts, not a form', () => {
+    // The sheet grew from sixteen columns to twenty-four, and a longer form is
+    // a less-completed form unless it says it is not a form. This is the line
+    // that makes a blank column a decision rather than an omission.
+    const notice = Bios.NOTICE_TEXT;
+    expect(notice).toMatch(/PROMPT, not a form/);
+    expect(notice, 'a blank column has a stated consequence').toMatch(/not mentioned/);
+    expect(notice, 'and it stays a publicity warning').toMatch(/PUBLIC/);
+  });
+
+  test('a column nobody anticipated still reaches the note', () => {
+    // The reason most of that roster needs no schema at all: an unrecognised
+    // header composes into the note as a labelled line, so a team inventing a
+    // column loses nothing.
+    const headers = ['Player ID', 'Name', 'Height', 'Favourite disc'];
+    const content = Bios.contentHeaders(headers);
+    expect(content).toEqual(['Height', 'Favourite disc']);
+    const note = Bios.compose(
+      { Height: '175cm', 'Favourite disc': 'a very old one' }, content,
+    );
+    expect(note).toContain('Height: 175cm');
+    expect(note).toContain('Favourite disc: a very old one');
+  });
+});
+
 test.describe('csv parsing', () => {
   test('a quoted field keeps its commas and newlines', () => {
     // The case that makes split(',') wrong on the first real row, and the reason
@@ -364,14 +504,24 @@ test.describe('bio import: who a row is allowed to name', () => {
     expect(report.accepted[0].fields).toEqual({ pronouns: 'she/her' });
   });
 
-  test("a matching cell imports only as FMP or MMP, the sport's own terms", () => {
-    // A gender letter is not a matching (docs/STUDIO.md section 10.5): a cell
-    // that cannot say FMP or MMP imports as blank, never as a guess.
+  test("a matching cell stores FMP or MMP, whichever way it was written", () => {
+    // The stored value is always the sport's own term (docs/STUDIO.md §10.5).
+    // Reaching it from the short form a roster actually uses is translation
+    // rather than inference — the column asked which matching, and the team
+    // answered. See the note on fieldValue() in shared/bios.js.
     const out = Csv.parse('Player ID,Name,Matching (FMP/MMP)\r\n'
       + '301,Alex Auer,fmp\r\n302,Kim Ebner,F\r\n');
     const report = Bios.match(out, ROSTER, {});
-    expect(report.accepted).toHaveLength(1);
-    expect(report.accepted[0].fields).toEqual({ matching: 'FMP' });
+    expect(report.accepted).toHaveLength(2);
+    expect(report.accepted.map((a) => a.fields.matching)).toEqual(['FMP', 'FMP']);
+  });
+
+  test('a matching cell saying something else imports as nothing', () => {
+    // The half that has not changed: unrecognised is blank, never a guess.
+    const out = Csv.parse('Player ID,Name,Matching (FMP/MMP)\r\n'
+      + '301,Alex Auer,maybe\r\n');
+    const report = Bios.match(out, ROSTER, {});
+    expect(report.accepted).toHaveLength(0);
     expect(report.empty).toBe(1);
   });
 
